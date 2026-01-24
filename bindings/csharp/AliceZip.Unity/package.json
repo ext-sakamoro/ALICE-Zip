@@ -1,0 +1,38 @@
+{
+  "name": "com.alice-zip.core",
+  "version": "2.2.0",
+  "displayName": "ALICE-Zip",
+  "description": "High-performance procedural compression library for Unity. Generate Perlin noise textures, compress game data, and more.",
+  "unity": "2020.3",
+  "unityRelease": "0f1",
+  "documentationUrl": "https://github.com/ext-sakamoro/ALICE-Zip",
+  "changelogUrl": "https://github.com/ext-sakamoro/ALICE-Zip/blob/main/CHANGELOG.md",
+  "licensesUrl": "https://github.com/ext-sakamoro/ALICE-Zip/blob/main/LICENSE",
+  "keywords": [
+    "compression",
+    "procedural",
+    "perlin",
+    "noise",
+    "texture"
+  ],
+  "author": {
+    "name": "Moroya Sakamoto",
+    "url": "https://github.com/ext-sakamoro"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ext-sakamoro/ALICE-Zip.git"
+  },
+  "samples": [
+    {
+      "displayName": "Perlin Noise Texture",
+      "description": "Generate procedural Perlin noise textures at runtime",
+      "path": "Samples~/PerlinNoise"
+    },
+    {
+      "displayName": "Data Compression",
+      "description": "Compress and decompress game data using LZMA/zlib",
+      "path": "Samples~/Compression"
+    }
+  ]
+}

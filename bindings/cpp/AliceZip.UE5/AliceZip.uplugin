@@ -1,0 +1,29 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "2.2.0",
+	"FriendlyName": "ALICE-Zip",
+	"Description": "High-performance procedural compression library. Generate Perlin noise textures, compress game data, and more.",
+	"Category": "Compression",
+	"CreatedBy": "Moroya Sakamoto",
+	"CreatedByURL": "https://github.com/ext-sakamoro",
+	"DocsURL": "https://github.com/ext-sakamoro/ALICE-Zip",
+	"MarketplaceURL": "",
+	"SupportURL": "https://github.com/ext-sakamoro/ALICE-Zip/issues",
+	"CanContainContent": false,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "AliceZip",
+			"Type": "Runtime",
+			"LoadingPhase": "PreLoadingScreen",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux"
+			]
+		}
+	]
+}

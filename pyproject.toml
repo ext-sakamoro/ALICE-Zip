@@ -1,0 +1,101 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alice-zip"
+version = "1.0.0"
+description = "ALICE Procedural Generation Compression - Store algorithms, not data"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Moroya Sakamoto", email = "sakamoto@example.com"}
+]
+keywords = [
+    "compression",
+    "procedural-generation",
+    "image-compression",
+    "audio-compression",
+    "video-compression",
+    "kolmogorov-complexity"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: Other/Proprietary License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Multimedia :: Video",
+    "Topic :: System :: Archiving :: Compression",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.20.0",
+]
+
+[project.optional-dependencies]
+textures = [
+    "noise>=1.2.2",
+]
+images = [
+    "Pillow>=9.0.0",
+]
+audio = [
+    "scipy>=1.7.0",
+]
+video = [
+    "opencv-python>=4.5.0",
+    "Pillow>=9.0.0",
+]
+all = [
+    "noise>=1.2.2",
+    "Pillow>=9.0.0",
+    "scipy>=1.7.0",
+    "opencv-python>=4.5.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+    "black>=22.0.0",
+    "mypy>=0.950",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+alice-zip = "alice_zip.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/ext-sakamoro/ALICE-Zip"
+Documentation = "https://github.com/ext-sakamoro/ALICE-Zip#readme"
+Repository = "https://github.com/ext-sakamoro/ALICE-Zip"
+Issues = "https://github.com/ext-sakamoro/ALICE-Zip/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["alice_zip*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311', 'py312']
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v"

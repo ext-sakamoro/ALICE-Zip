@@ -1,0 +1,260 @@
+ALICE-Zip Open Core License
+============================
+
+Copyright (c) 2024-2026 Moroya Sakamoto
+
+================================================================================
+Open Core Strategy
+================================================================================
+
+ALICE-Zip uses an Open Core licensing model:
+
+| Product              | License        | Description                          |
+|----------------------|----------------|--------------------------------------|
+| ALICE Core (libalice)| MIT            | Free and open source                 |
+| ALICE Optimizer      | Commercial     | Subscription-based                   |
+| ALICE Enterprise     | Commercial     | Annual contract                      |
+
+================================================================================
+PART 1: MIT License (Core)
+================================================================================
+
+The following components are licensed under the MIT License:
+
+- libalice (Rust library)
+- alice CLI tool
+- Python bindings (libalice Python package)
+- .alice / .alz file format specification
+- Decompression functionality
+- Basic compression functionality
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+PART 2: Commercial License (Pro / Enterprise)
+================================================================================
+
+The following products require a commercial license:
+
+ALICE Optimizer (Pro)
+---------------------
+- Advanced pattern analysis and optimization
+- Priority support
+- Monthly subscription
+
+Target: Game studios, research labs
+Pricing: Contact for details
+
+ALICE Enterprise Brain
+----------------------
+- Data center integration
+- Real-time deduplication
+- Storage cost reduction guarantee
+- Dedicated support
+- Annual contract
+
+Target: Large enterprises, data centers
+Pricing: Contact for details
+
+For commercial licensing inquiries:
+  https://extoria.co.jp/en
+
+================================================================================
+PART 3: Game Industry Exception
+================================================================================
+
+As a token of gratitude to the game industry, the following exception applies:
+
+ELIGIBLE USES (Attribution Only - No License Fee Required)
+----------------------------------------------------------
+The following game development uses are granted a royalty-free license with
+attribution only:
+
+- Mobile games (iOS, Android, etc.)
+- Console games (PlayStation, Xbox, Nintendo Switch, etc.)
+- PC games (Steam, Epic Games Store, GOG, etc.)
+- Arcade games
+- VR games / AR games
+- Online games (MMORPG, FPS, TPS, fighting games, etc.)
+- Browser games
+- Serious games / Educational games
+
+ATTRIBUTION REQUIREMENT
+-----------------------
+Display the following attribution in your game's credits screen or About section:
+
+  "Powered by ALICE-Zip (https://github.com/ext-sakamoro/ALICE-Zip)"
+
+NON-ELIGIBLE USES (Commercial License Required)
+-----------------------------------------------
+The following uses are NOT covered by this exception and require a commercial
+license:
+
+- Game console firmware / OS integration (PlayStation, Xbox, Nintendo, etc.)
+- Game engines / Middleware integration (Unity, Unreal Engine, etc.)
+- VTuber / Streaming related tools
+- Metaverse platforms
+- Casino / Gambling applications
+- Pachinko / Pachislot machines
+- Social casino games
+- Esports management / streaming platforms
+- Game streaming support tools
+
+================================================================================
+Summary
+================================================================================
+
+| Use Case                        | Core (Free) | Pro        | Enterprise  |
+|---------------------------------|-------------|------------|-------------|
+| Personal / Educational          | MIT         | -          | -           |
+| Game Development (see Part 3)   | MIT + Attr  | Free*      | -           |
+| Commercial (small scale)        | MIT         | Optional   | -           |
+| Commercial (optimization needs) | MIT         | Required   | -           |
+| Enterprise / Data Center        | MIT         | -          | Required    |
+
+* Game Industry Exception: Pro features are also free with attribution for
+  eligible game development uses (see Part 3).
+
+The Core library (libalice) is always FREE under MIT license.
+Pro and Enterprise products provide additional value for professional use.
+
+================================================================================
+
+ALICE-Zip オープンコアライセンス（日本語）
+==========================================
+
+Copyright (c) 2024-2026 坂本師哉
+
+================================================================================
+オープンコア戦略
+================================================================================
+
+ALICE-Zipはオープンコアライセンスモデルを採用しています：
+
+| 製品                   | ライセンス | 説明                           |
+|-----------------------|-----------|--------------------------------|
+| ALICE Core (libalice) | MIT       | 無料・オープンソース             |
+| ALICE Optimizer       | 商用      | サブスクリプション               |
+| ALICE Enterprise      | 商用      | 年間契約                        |
+
+================================================================================
+パート1: MITライセンス（Core）
+================================================================================
+
+以下のコンポーネントはMITライセンスの下で提供されます：
+
+- libalice（Rustライブラリ）
+- alice CLIツール
+- Pythonバインディング（libalice Pythonパッケージ）
+- .alice / .alz ファイルフォーマット仕様
+- 展開（解凍）機能
+- 基本圧縮機能
+
+上記の著作権表示および本許諾表示を、ソフトウェアのすべての複製または
+重要な部分に記載するものとします。
+
+本ソフトウェアは「現状のまま」で提供され、明示または黙示を問わず、
+商品性、特定目的への適合性、権利非侵害についての保証を含め、
+いかなる保証も行いません。
+
+================================================================================
+パート2: 商用ライセンス（Pro / Enterprise）
+================================================================================
+
+以下の製品には商用ライセンスが必要です：
+
+ALICE Optimizer（Pro）
+----------------------
+- 高度なパターン分析と最適化
+- 優先サポート
+- 月額サブスクリプション
+
+対象: ゲームスタジオ、研究所
+価格: お問い合わせください
+
+ALICE Enterprise Brain
+----------------------
+- データセンター統合
+- リアルタイム重複排除
+- ストレージコスト削減保証
+- 専用サポート
+- 年間契約
+
+対象: 大企業、データセンター
+価格: お問い合わせください
+
+商用ライセンスに関するお問い合わせ：
+  https://extoria.co.jp/ja
+
+================================================================================
+パート3: ゲーム業界特別条項
+================================================================================
+
+ゲーム業界への感謝の意を込めて、以下の特別条項を設けます：
+
+対象となる使用（表記のみ・ライセンス料不要）
+--------------------------------------------
+以下のゲーム開発用途には、表記のみでロイヤリティフリーライセンスが付与されます：
+
+- モバイルゲーム（iOS、Android等）
+- 家庭用ゲーム機向けゲーム（PlayStation、Xbox、Nintendo Switch等）
+- PCゲーム（Steam、Epic Games Store、GOG等）
+- アーケードゲーム
+- VRゲーム / ARゲーム
+- オンラインゲーム（MMORPG、FPS、TPS、格闘ゲーム等）
+- ブラウザゲーム
+- シリアスゲーム / 教育ゲーム
+
+表記要件
+--------
+ゲームのクレジット画面またはAbout画面に以下の表記を記載してください：
+
+  "Powered by ALICE-Zip (https://github.com/ext-sakamoro/ALICE-Zip)"
+
+対象外の使用（商用ライセンスが必要）
+------------------------------------
+以下の用途はこの特別条項の対象外であり、商用ライセンスが必要です：
+
+- ゲーム機本体のファームウェア / OS への組み込み（PlayStation、Xbox、Nintendo等）
+- ゲームエンジン / ミドルウェアへの組み込み（Unity、Unreal Engine等）
+- VTuber・配信関連ツール
+- メタバースプラットフォーム
+- カジノ・ギャンブルアプリケーション
+- パチンコ・パチスロ機
+- ソーシャルカジノゲーム
+- eスポーツ運営・配信プラットフォーム
+- ゲーム実況支援ツール
+
+================================================================================
+サマリー
+================================================================================
+
+| ユースケース                  | Core（無料）| Pro        | Enterprise  |
+|-----------------------------|------------|------------|-------------|
+| 個人・教育利用                | MIT        | -          | -           |
+| ゲーム開発（パート3参照）      | MIT + 表記 | 無料*      | -           |
+| 商用（小規模）               | MIT        | オプション  | -           |
+| 商用（最適化が必要）          | MIT        | 必要       | -           |
+| エンタープライズ・データセンター | MIT        | -          | 必要        |
+
+* ゲーム業界特別条項: 対象となるゲーム開発用途では、Pro機能も表記のみで
+  無料で使用できます（パート3参照）。
+
+Coreライブラリ（libalice）は常にMITライセンスで無料です。
+ProおよびEnterprise製品は、プロフェッショナル向けの付加価値を提供します。

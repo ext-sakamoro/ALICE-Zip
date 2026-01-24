@@ -1,0 +1,32 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "alice-zip"
+version = "2.2.0"
+description = "Python bindings for ALICE procedural compression engine"
+authors = [
+    { name = "Moroya Sakamoto", email = "sakamoto@example.com" }
+]
+readme = "../README.md"
+license = { file = "../LICENSE" }
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Topic :: System :: Archiving :: Compression",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+keywords = ["compression", "procedural-generation", "lossless", "kolmogorov"]
+
+[project.urls]
+"Homepage" = "https://github.com/ext-sakamoro/ALICE-Zip"
+"Repository" = "https://github.com/ext-sakamoro/ALICE-Zip"
+
+[tool.maturin]
+features = ["python"]
+module-name = "libalice"
