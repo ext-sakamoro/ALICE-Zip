@@ -88,14 +88,20 @@ def benchmark_data(name: str, data: np.ndarray, data_type: str, notes: str = "")
     lzma_decompressed = lzma.decompress(lzma_compressed)
     lzma_decompress_time = (time.perf_counter() - start) * 1000
 
-    # ALICE-Zip compression (using benchmark method since compress is Commercial)
-    results = ALICEZip.benchmark_vs_traditional(data)
+    # ALICE-Zip compression
+    zipper = ALICEZip()
 
-    alice_compressed_size = results.get('alice_zip', {}).get('compressed_size', original_size)
+    start = time.perf_counter()
+    alice_compressed = zipper.compress(data)
+    alice_compress_time = (time.perf_counter() - start) * 1000
+
+    start = time.perf_counter()
+    alice_decompressed = zipper.decompress(alice_compressed)
+    alice_decompress_time = (time.perf_counter() - start) * 1000
+
+    alice_compressed_size = len(alice_compressed)
     alice_ratio = original_size / alice_compressed_size if alice_compressed_size > 0 else 1.0
-    alice_compress_time = results.get('alice_zip', {}).get('compress_time_ms', 0)
-    alice_decompress_time = results.get('alice_zip', {}).get('decompress_time_ms', 0)
-    alice_lossless = results.get('alice_zip', {}).get('lossless', False)
+    alice_lossless = np.allclose(data, alice_decompressed, rtol=1e-5)
 
     zip_ratio = original_size / len(zip_compressed)
     lzma_ratio = original_size / len(lzma_compressed)

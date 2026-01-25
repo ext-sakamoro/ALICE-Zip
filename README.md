@@ -90,19 +90,19 @@ Input:  Sine wave, 100,000 samples (400 KB)
         ↓
 Analysis: Detected as "Sine wave, freq=50Hz, amp=1.0"
         ↓
-Output: Parameters only (100 bytes)
+Output: Parameters only (~280 bytes)
         ↓
-Result: 400 KB → 100 bytes = 4000x compression
+Result: 400 KB → 280 bytes = 1400x compression
 ```
 
 ## Benchmarks
 
 | Data Type | Original | Compressed | Ratio |
 |-----------|----------|------------|-------|
-| Sine wave (100K samples) | 400 KB | ~100 bytes | **4000x** |
-| Polynomial (degree 3) | 400 KB | ~200 bytes | **2000x** |
-| Linear gradient | 400 KB | ~150 bytes | **2600x** |
-| Random data | 400 KB | ~380 KB | 1.05x (LZMA fallback) |
+| Sine wave (100K samples) | 400 KB | ~280 bytes | **1400x** |
+| Polynomial (degree 3) | 400 KB | ~285 bytes | **1400x** |
+| Linear gradient | 400 KB | ~250 bytes | **1600x** |
+| Random data | 400 KB | ~370 KB | 1.08x (LZMA fallback) |
 
 ## Ideal Use Cases
 
