@@ -75,7 +75,9 @@ mod python {
             ));
         }
 
-        let data = generators::generate_perlin_2d(width, height, seed, scale, octaves);
+        let data = py.allow_threads(|| {
+            generators::generate_perlin_2d(width, height, seed, scale, octaves)
+        });
         let array: Vec<Vec<f32>> = data
             .chunks(width)
             .map(|row| row.to_vec())
@@ -118,10 +120,11 @@ mod python {
             ));
         }
 
-        let data = generators::generate_perlin_advanced(
-            width, height, seed, scale, octaves, persistence, lacunarity
-        );
-        let flat: Vec<f32> = data;
+        let flat: Vec<f32> = py.allow_threads(|| {
+            generators::generate_perlin_advanced(
+                width, height, seed, scale, octaves, persistence, lacunarity
+            )
+        });
 
         numpy::PyArray::from_vec(py, flat)
             .reshape([height, width])
@@ -142,7 +145,9 @@ mod python {
         coefficients: Vec<(usize, f32, f32)>,
         dc_offset: f32,
     ) -> Bound<'py, PyArray1<f32>> {
-        let data = generators::generate_from_coefficients(n, &coefficients, dc_offset);
+        let data = py.allow_threads(|| {
+            generators::generate_from_coefficients(n, &coefficients, dc_offset)
+        });
         data.into_pyarray(py)
     }
 
@@ -168,18 +173,23 @@ mod python {
         components: Vec<(f32, f32, f32)>,
         dc_offset: f32,
     ) -> Bound<'py, PyArray1<f32>> {
-        let data = generators::generate_multi_sine(n, &components, dc_offset);
+        let data = py.allow_threads(|| {
+            generators::generate_multi_sine(n, &components, dc_offset)
+        });
         data.into_pyarray(py)
     }
 
     #[pyfunction]
     #[pyo3(signature = (signal, max_coefficients=20, energy_threshold=0.99))]
     fn fourier_analyze(
+        py: Python<'_>,
         signal: Vec<f32>,
         max_coefficients: usize,
         energy_threshold: f32,
     ) -> (Vec<(usize, f32, f32)>, f32) {
-        generators::analyze_signal(&signal, max_coefficients, energy_threshold)
+        py.allow_threads(|| {
+            generators::analyze_signal(&signal, max_coefficients, energy_threshold)
+        })
     }
 
     // ============================================================================
@@ -199,11 +209,14 @@ mod python {
     #[pyfunction]
     #[pyo3(signature = (data, max_degree=9, error_threshold=0.001))]
     fn polynomial_fit(
+        py: Python<'_>,
         data: Vec<f32>,
         max_degree: usize,
         error_threshold: f64,
     ) -> Option<(Vec<f64>, usize, f64)> {
-        generators::fit_polynomial(&data, max_degree, error_threshold)
+        py.allow_threads(|| {
+            generators::fit_polynomial(&data, max_degree, error_threshold)
+        })
     }
 
     // ============================================================================
@@ -218,60 +231,70 @@ mod python {
     #[pyfunction]
     #[pyo3(signature = (residual, bits=8, lzma_preset=6))]
     fn residual_compress(
+        py: Python<'_>,
         residual: Vec<f32>,
         bits: u8,
         lzma_preset: u32,
     ) -> PyResult<Vec<u8>> {
-        compression::compress_residual_quantized(&residual, bits, lzma_preset)
-            .map_err(io_err_to_pyerr)
+        py.allow_threads(|| {
+            compression::compress_residual_quantized(&residual, bits, lzma_preset)
+        }).map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
-    fn residual_decompress(data: Vec<u8>) -> PyResult<Vec<f32>> {
-        compression::decompress_residual_quantized(&data)
-            .map_err(io_err_to_pyerr)
+    fn residual_decompress(py: Python<'_>, data: Vec<u8>) -> PyResult<Vec<f32>> {
+        py.allow_threads(|| {
+            compression::decompress_residual_quantized(&data)
+        }).map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
     #[pyo3(signature = (residual, lzma_preset=6))]
     fn residual_compress_lossless(
+        py: Python<'_>,
         residual: Vec<f32>,
         lzma_preset: u32,
     ) -> PyResult<Vec<u8>> {
-        compression::compress_residual_lossless(&residual, lzma_preset)
-            .map_err(io_err_to_pyerr)
+        py.allow_threads(|| {
+            compression::compress_residual_lossless(&residual, lzma_preset)
+        }).map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
-    fn residual_decompress_lossless(data: Vec<u8>) -> PyResult<Vec<f32>> {
-        compression::decompress_residual_lossless(&data)
-            .map_err(io_err_to_pyerr)
+    fn residual_decompress_lossless(py: Python<'_>, data: Vec<u8>) -> PyResult<Vec<f32>> {
+        py.allow_threads(|| {
+            compression::decompress_residual_lossless(&data)
+        }).map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
     #[pyo3(signature = (data, preset=6))]
-    fn lzma_compress(data: Vec<u8>, preset: u32) -> PyResult<Vec<u8>> {
-        compression::lzma_compress(&data, preset)
-            .map_err(io_err_to_pyerr)
+    fn lzma_compress(py: Python<'_>, data: Vec<u8>, preset: u32) -> PyResult<Vec<u8>> {
+        py.allow_threads(|| {
+            compression::lzma_compress(&data, preset)
+        }).map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
-    fn lzma_decompress(data: Vec<u8>) -> PyResult<Vec<u8>> {
-        compression::lzma_decompress(&data)
-            .map_err(io_err_to_pyerr)
+    fn lzma_decompress(py: Python<'_>, data: Vec<u8>) -> PyResult<Vec<u8>> {
+        py.allow_threads(|| {
+            compression::lzma_decompress(&data)
+        }).map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
     #[pyo3(signature = (data, level=6))]
-    fn zlib_compress(data: Vec<u8>, level: u32) -> PyResult<Vec<u8>> {
-        compression::zlib_compress(&data, level)
-            .map_err(io_err_to_pyerr)
+    fn zlib_compress(py: Python<'_>, data: Vec<u8>, level: u32) -> PyResult<Vec<u8>> {
+        py.allow_threads(|| {
+            compression::zlib_compress(&data, level)
+        }).map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
-    fn zlib_decompress(data: Vec<u8>) -> PyResult<Vec<u8>> {
-        compression::zlib_decompress(&data)
-            .map_err(io_err_to_pyerr)
+    fn zlib_decompress(py: Python<'_>, data: Vec<u8>) -> PyResult<Vec<u8>> {
+        py.allow_threads(|| {
+            compression::zlib_decompress(&data)
+        }).map_err(io_err_to_pyerr)
     }
 }
 

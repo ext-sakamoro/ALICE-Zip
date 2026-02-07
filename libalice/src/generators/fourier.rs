@@ -61,8 +61,9 @@ pub fn generate_from_coefficients(
 
     // Extract real parts and add DC offset
     // Note: rustfft doesn't normalize, so we divide by n
+    let inv_n = 1.0 / n as f32;
     buffer.iter()
-        .map(|c| c.re / n as f32 + dc_offset)
+        .map(|c| c.re * inv_n + dc_offset)
         .collect()
 }
 
@@ -84,10 +85,11 @@ pub fn generate_sine_wave(
     phase: f32,
     dc_offset: f32,
 ) -> Vec<f32> {
+    let inv_n = 1.0 / n as f32;
     (0..n)
         .map(|i| {
             let t = i as f32;
-            dc_offset + amplitude * (2.0 * PI * frequency * t / n as f32 + phase).sin()
+            dc_offset + amplitude * (2.0 * PI * frequency * t * inv_n + phase).sin()
         })
         .collect()
 }
@@ -107,11 +109,12 @@ pub fn generate_multi_sine(
     dc_offset: f32,
 ) -> Vec<f32> {
     let mut result = vec![dc_offset; n];
+    let inv_n = 1.0 / n as f32;
 
     for &(freq, amp, phase) in components {
         for (i, sample) in result.iter_mut().enumerate() {
             let t = i as f32;
-            *sample += amp * (2.0 * PI * freq * t / n as f32 + phase).sin();
+            *sample += amp * (2.0 * PI * freq * t * inv_n + phase).sin();
         }
     }
 
@@ -133,7 +136,8 @@ pub fn analyze_signal(
     energy_threshold: f32,
 ) -> (Vec<(usize, f32, f32)>, f32) {
     let n = signal.len();
-    let dc_offset = signal.iter().sum::<f32>() / n as f32;
+    let inv_n = 1.0 / n as f32;
+    let dc_offset = signal.iter().sum::<f32>() * inv_n;
 
     // Remove DC and prepare for FFT
     let mut buffer: Vec<Complex<f32>> = signal
