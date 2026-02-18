@@ -146,26 +146,31 @@ impl AudioGenerator {
     // ------------------------------------------------------------------ //
 
     /// Return `n` zero samples
+    #[inline]
     fn generate_silence(n: usize) -> Vec<f32> {
         vec![0.0_f32; n]
     }
 
     /// Generate a single sine wave.
     ///
-    /// Pre-computes `omega = 2π * freq / sr` to avoid division inside the loop.
+    /// Pre-computes `omega = 2π * freq * rcp_sr` to avoid division inside the loop.
+    #[inline]
     fn generate_sine(n: usize, freq: f32, amp: f32, phase: f32, sr: u32) -> Vec<f32> {
-        let omega = 2.0 * PI * freq / sr as f32; // radians per sample
+        let rcp_sr = 1.0 / sr as f32;
+        let omega = 2.0 * PI * freq * rcp_sr; // radians per sample
         (0..n)
             .map(|i| amp * (omega * i as f32 + phase).sin())
             .collect()
     }
 
     /// Generate a sum of sine waves from `(freq_hz, amplitude, phase_rad)` components.
+    #[inline]
     fn generate_multi_sine(n: usize, components: &[(f32, f32, f32)], sr: u32) -> Vec<f32> {
-        // Pre-compute omega for each component
+        // Pre-compute omega for each component (reciprocal multiply, no division per component)
+        let rcp_sr = 1.0 / sr as f32;
         let omegas: Vec<(f32, f32, f32)> = components
             .iter()
-            .map(|&(f, a, p)| (2.0 * PI * f / sr as f32, a, p))
+            .map(|&(f, a, p)| (2.0 * PI * f * rcp_sr, a, p))
             .collect();
 
         (0..n)
@@ -179,6 +184,7 @@ impl AudioGenerator {
     }
 
     /// Generate white noise using ChaCha8 CSPRNG for reproducibility.
+    #[inline]
     fn generate_white_noise(n: usize, amp: f32, seed: u64) -> Vec<f32> {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         (0..n)
@@ -194,6 +200,7 @@ impl AudioGenerator {
     ///
     /// The envelope is applied per-sample according to the global sample position,
     /// matching the Python `_apply_envelope_chunk` logic.
+    #[inline]
     fn apply_adsr_envelope(
         mut samples: Vec<f32>,
         attack: f32,
