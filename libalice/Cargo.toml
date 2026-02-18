@@ -50,10 +50,14 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 bincode = "1.3"
 
+# ALICE-Codec wavelet bridge (optional)
+alice-codec = { path = "../../ALICE-Codec", optional = true }
+
 [features]
 default = ["cli"]
 cli = []
 python = ["dep:pyo3", "dep:numpy"]
+codec = ["dep:alice-codec"]
 
 [profile.release]
 opt-level = 3

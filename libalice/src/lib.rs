@@ -17,7 +17,14 @@
 
 pub mod generators;
 pub mod compression;
+pub mod residual;
 pub mod ffi;
+pub mod format;
+pub mod analyzer;
+pub mod media;
+
+#[cfg(feature = "codec")]
+pub mod codec_bridge;
 
 // ============================================================================
 // Python Bindings (only when python feature is enabled)
