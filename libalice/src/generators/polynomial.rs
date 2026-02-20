@@ -36,9 +36,12 @@ pub fn generate_polynomial(n: usize, coefficients: &[f64]) -> Vec<f32> {
         return vec![0.0; n];
     }
 
+    // Pre-compute reciprocal to avoid per-sample division inside the loop
+    let rcp_n_minus_1 = 1.0 / (n - 1).max(1) as f64;
+
     (0..n)
         .map(|i| {
-            let x = i as f64 / (n - 1).max(1) as f64;
+            let x = i as f64 * rcp_n_minus_1;
             horner_eval(x, coefficients) as f32
         })
         .collect()
@@ -48,7 +51,7 @@ pub fn generate_polynomial(n: usize, coefficients: &[f64]) -> Vec<f32> {
 ///
 /// More numerically stable and efficient than naive evaluation.
 /// Coefficients are ordered from highest degree to lowest.
-#[inline]
+#[inline(always)]
 fn horner_eval(x: f64, coefficients: &[f64]) -> f64 {
     coefficients.iter().fold(0.0, |acc, &c| acc * x + c)
 }
@@ -73,8 +76,10 @@ pub fn fit_polynomial(
     }
 
     // Normalize x to [0, 1]
+    // Pre-compute reciprocal to avoid per-element division inside the loop
+    let rcp_n_minus_1 = 1.0 / (n - 1).max(1) as f64;
     let x_data: Vec<f64> = (0..n)
-        .map(|i| i as f64 / (n - 1).max(1) as f64)
+        .map(|i| i as f64 * rcp_n_minus_1)
         .collect();
     let y_data: Vec<f64> = data.iter().map(|&y| y as f64).collect();
 
@@ -197,16 +202,18 @@ fn solve_linear_system(a: &mut [f64], b: &mut [f64], n: usize) -> Option<Vec<f64
 /// Calculate variance
 fn variance(data: &[f64]) -> f64 {
     let n = data.len() as f64;
-    let mean = data.iter().sum::<f64>() / n;
-    data.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / n
+    let rcp_n = 1.0 / n;
+    let mean = data.iter().sum::<f64>() * rcp_n;
+    data.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() * rcp_n
 }
 
 /// Calculate mean squared error
 fn mean_squared_error(a: &[f64], b: &[f64]) -> f64 {
+    let rcp_len = 1.0 / a.len() as f64;
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| (x - y).powi(2))
-        .sum::<f64>() / a.len() as f64
+        .sum::<f64>() * rcp_len
 }
 
 #[cfg(test)]

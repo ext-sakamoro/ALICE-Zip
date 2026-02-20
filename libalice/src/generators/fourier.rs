@@ -177,6 +177,9 @@ pub fn analyze_signal(
     // Calculate total energy
     let total_energy: f32 = freq_data.iter().map(|(_, m, _)| m * m).sum();
 
+    // Pre-compute reciprocal to avoid per-iteration division inside the loop
+    let rcp_total = if total_energy > 0.0 { 1.0 / total_energy } else { 0.0 };
+
     // Select coefficients until energy threshold is reached
     let mut coefficients = Vec::new();
     let mut captured_energy = 0.0f32;
@@ -192,7 +195,7 @@ pub fn analyze_signal(
         coefficients.push((idx, mag, phase));
         captured_energy += mag * mag;
 
-        if total_energy > 0.0 && captured_energy / total_energy > energy_threshold {
+        if total_energy > 0.0 && captured_energy * rcp_total > energy_threshold {
             break;
         }
     }

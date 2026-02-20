@@ -109,7 +109,7 @@ impl ImageGenerator {
     // ------------------------------------------------------------------ //
 
     /// Fill the entire image with a single colour
-    #[inline]
+    #[inline(always)]
     fn generate_solid(w: usize, h: usize, color: [u8; 3]) -> Vec<u8> {
         let n = w * h;
         let mut out = Vec::with_capacity(n * 3);
@@ -127,7 +127,7 @@ impl ImageGenerator {
     ///   - 0   → left-to-right
     ///   - 90  → top-to-bottom
     ///   - other → arbitrary direction
-    #[inline]
+    #[inline(always)]
     fn generate_linear_gradient(
         w: usize,
         h: usize,
@@ -177,7 +177,7 @@ impl ImageGenerator {
     }
 
     /// Radial gradient from centre (start) to edge (end)
-    #[inline]
+    #[inline(always)]
     fn generate_radial_gradient(
         w: usize,
         h: usize,
@@ -216,7 +216,7 @@ impl ImageGenerator {
     /// Checkerboard pattern — fully branchless colour selection
     ///
     /// `((x / block) + (y / block)) & 1` selects colour index (0 or 1).
-    #[inline]
+    #[inline(always)]
     fn generate_checkerboard(
         w: usize,
         h: usize,

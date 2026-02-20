@@ -68,7 +68,7 @@ impl PerlinNoise {
     }
 
     /// Sample noise at a single point
-    #[inline]
+    #[inline(always)]
     pub fn noise2d(&self, x: f32, y: f32) -> f32 {
         // Grid cell coordinates
         let xi = x.floor() as i32;
@@ -107,6 +107,7 @@ impl PerlinNoise {
     }
 
     /// Generate fractal Brownian motion (fBm) noise
+    #[inline(always)]
     pub fn fbm(&self, x: f32, y: f32, octaves: u32, persistence: f32, lacunarity: f32) -> f32 {
         let mut total = 0.0f32;
         let mut amplitude = 1.0f32;
@@ -120,7 +121,9 @@ impl PerlinNoise {
             frequency *= lacunarity;
         }
 
-        total / max_value
+        // Reciprocal multiply: avoid division on hot path
+        let rcp_max = 1.0 / max_value;
+        total * rcp_max
     }
 }
 
@@ -145,14 +148,16 @@ pub fn generate_perlin_2d(
     let noise = PerlinNoise::new(seed);
     let persistence = 0.5f32;
     let lacunarity = 2.0f32;
+    // Pre-compute reciprocal to avoid per-pixel division inside the loop
+    let rcp_scale = 1.0 / scale;
 
     // Parallel generation using Rayon
     (0..height)
         .into_par_iter()
         .flat_map(|y| {
             (0..width).map(move |x| {
-                let nx = x as f32 / scale;
-                let ny = y as f32 / scale;
+                let nx = x as f32 * rcp_scale;
+                let ny = y as f32 * rcp_scale;
                 // Normalize from [-1, 1] to [0, 1] and clamp to handle
                 // floating-point errors that may produce values slightly outside range
                 let normalized = (noise.fbm(nx, ny, octaves, persistence, lacunarity) + 1.0) * 0.5;
@@ -173,13 +178,15 @@ pub fn generate_perlin_advanced(
     lacunarity: f32,
 ) -> Vec<f32> {
     let noise = PerlinNoise::new(seed);
+    // Pre-compute reciprocal to avoid per-pixel division inside the loop
+    let rcp_scale = 1.0 / scale;
 
     (0..height)
         .into_par_iter()
         .flat_map(|y| {
             (0..width).map(move |x| {
-                let nx = x as f32 / scale;
-                let ny = y as f32 / scale;
+                let nx = x as f32 * rcp_scale;
+                let ny = y as f32 * rcp_scale;
                 // Normalize from [-1, 1] to [0, 1] and clamp to handle
                 // floating-point errors that may produce values slightly outside range
                 let normalized = (noise.fbm(nx, ny, octaves, persistence, lacunarity) + 1.0) * 0.5;
