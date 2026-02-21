@@ -434,7 +434,7 @@ fn reconstruct(fit: &FitResult, n: usize) -> Vec<f32> {
                 return vec![0.0; n];
             }
             // Last element is dc_offset; remainder are triples
-            let dc_offset = *coeff_slice.last().unwrap() as f32;
+            let dc_offset = coeff_slice.last().copied().unwrap_or(0.0) as f32;
             let triples_flat = &coeff_slice[..coeff_slice.len() - 1];
 
             let coefficients: Vec<(usize, f32, f32)> = triples_flat
