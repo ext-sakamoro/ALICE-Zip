@@ -16,8 +16,8 @@
 //! - Low-frequency (LLL): High preset (better ratio, acceptable speed)
 //! - High-frequency (HHH): Low preset (fast, noise-like data compresses poorly)
 
-use alice_codec::SubBand3D;
 use crate::compression;
+use alice_codec::SubBand3D;
 
 /// Compressed sub-band data with metadata for reconstruction.
 pub struct CompressedSubBand {
@@ -36,11 +36,11 @@ pub struct CompressedSubBand {
 /// data where extra effort yields diminishing returns.
 fn select_preset(subband: SubBand3D) -> u32 {
     match subband.quant_strength() {
-        1 => 6,     // LLL: DC, very compressible
-        2 => 5,     // LLH/LHL/HLL: low-freq, good compression
-        4 => 3,     // LHH/HLH/HHL: mid-freq, balanced
-        8 => 1,     // HHH: high-freq noise, fast is fine
-        _ => 4,     // Fallback
+        1 => 6, // LLL: DC, very compressible
+        2 => 5, // LLH/LHL/HLL: low-freq, good compression
+        4 => 3, // LHH/HLH/HHL: mid-freq, balanced
+        8 => 1, // HHH: high-freq noise, fast is fine
+        _ => 4, // Fallback
     }
 }
 
@@ -70,7 +70,10 @@ fn select_bits(subband: SubBand3D) -> u8 {
 ///
 /// # Returns
 /// Compressed byte stream including quantization header
-pub fn compress_subband(coefficients: &[i32], subband: SubBand3D) -> std::io::Result<CompressedSubBand> {
+pub fn compress_subband(
+    coefficients: &[i32],
+    subband: SubBand3D,
+) -> std::io::Result<CompressedSubBand> {
     let floats: Vec<f32> = coefficients.iter().map(|&v| v as f32).collect();
     let preset = select_preset(subband);
     let bits = select_bits(subband);
@@ -97,7 +100,9 @@ pub fn decompress_subband(compressed: &CompressedSubBand) -> std::io::Result<Vec
 ///
 /// Returns a Vec of compressed sub-band results. Each sub-band is compressed
 /// independently with parameters tuned to its frequency characteristics.
-pub fn compress_all_subbands(subbands: &[(SubBand3D, &[i32])]) -> std::io::Result<Vec<CompressedSubBand>> {
+pub fn compress_all_subbands(
+    subbands: &[(SubBand3D, &[i32])],
+) -> std::io::Result<Vec<CompressedSubBand>> {
     subbands
         .iter()
         .map(|&(sb, coeffs)| compress_subband(coeffs, sb))
@@ -105,7 +110,9 @@ pub fn compress_all_subbands(subbands: &[(SubBand3D, &[i32])]) -> std::io::Resul
 }
 
 /// Decompress all sub-bands from compressed data.
-pub fn decompress_all_subbands(compressed: &[CompressedSubBand]) -> std::io::Result<Vec<(SubBand3D, Vec<i32>)>> {
+pub fn decompress_all_subbands(
+    compressed: &[CompressedSubBand],
+) -> std::io::Result<Vec<(SubBand3D, Vec<i32>)>> {
     compressed
         .iter()
         .map(|csb| {
@@ -139,7 +146,9 @@ mod tests {
     #[test]
     fn test_compress_decompress_roundtrip() {
         // Sine-like correlated data (typical for low-frequency sub-band)
-        let data: Vec<i32> = (0..256).map(|i| ((i as f32 * 0.1).sin() * 1000.0) as i32).collect();
+        let data: Vec<i32> = (0..256)
+            .map(|i| ((i as f32 * 0.1).sin() * 1000.0) as i32)
+            .collect();
 
         let compressed = compress_subband(&data, SubBand3D::LLL).unwrap();
         assert_eq!(compressed.count, 256);
@@ -149,7 +158,9 @@ mod tests {
         assert_eq!(data.len(), decompressed.len());
 
         // 16-bit quantization for LLL: error should be small relative to range
-        let max_err: i32 = data.iter().zip(decompressed.iter())
+        let max_err: i32 = data
+            .iter()
+            .zip(decompressed.iter())
             .map(|(a, b)| (a - b).abs())
             .max()
             .unwrap_or(0);
@@ -167,7 +178,12 @@ mod tests {
 
         // 8-bit quantization for HHH: larger error tolerance
         for (a, b) in data.iter().zip(decompressed.iter()) {
-            assert!((a - b).abs() < 2, "HHH roundtrip error too large: {} vs {}", a, b);
+            assert!(
+                (a - b).abs() < 2,
+                "HHH roundtrip error too large: {} vs {}",
+                a,
+                b
+            );
         }
     }
 
@@ -197,7 +213,8 @@ mod tests {
         assert!(
             lll_ratio > hhh_ratio,
             "LLL ratio {} should exceed HHH ratio {}",
-            lll_ratio, hhh_ratio
+            lll_ratio,
+            hhh_ratio
         );
 
         // Mid-freq should be between

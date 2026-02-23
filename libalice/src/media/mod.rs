@@ -6,8 +6,8 @@
 //! License: MIT
 //! Author: Moroya Sakamoto
 
-pub mod image;
 pub mod audio;
+pub mod image;
 
-pub use image::{ImageGenerator, ImagePattern, ImageParams};
-pub use audio::{AudioGenerator, AudioPattern, AudioParams};
+pub use audio::{AudioGenerator, AudioParams, AudioPattern};
+pub use image::{ImageGenerator, ImageParams, ImagePattern};

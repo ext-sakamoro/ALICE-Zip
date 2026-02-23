@@ -57,7 +57,11 @@ impl std::fmt::Display for ResidualError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ResidualError::DataTooShort { got, expected } => {
-                write!(f, "data too short: got {} bytes, expected at least {}", got, expected)
+                write!(
+                    f,
+                    "data too short: got {} bytes, expected at least {}",
+                    got, expected
+                )
             }
             ResidualError::InvalidHeader(msg) => write!(f, "invalid header: {}", msg),
             ResidualError::MissingField(field) => {
@@ -270,7 +274,12 @@ impl ResidualData {
                 match std::str::from_utf8(&data[4..v2_end]) {
                     Ok(json_str) => match Self::parse_json_header(json_str) {
                         Ok(parsed) => {
-                            if parsed.get("version").and_then(|v| v.parse::<u32>().ok()).unwrap_or(1) >= 2 {
+                            if parsed
+                                .get("version")
+                                .and_then(|v| v.parse::<u32>().ok())
+                                .unwrap_or(1)
+                                >= 2
+                            {
                                 let compressed = data[v2_end..].to_vec();
                                 return Self::from_header_map(parsed, compressed);
                             }
@@ -298,7 +307,9 @@ impl ResidualData {
         let header_len_v1 = u16::from_le_bytes([data[0], data[1]]) as usize;
 
         if header_len_v1 > MAX_HEADER_SIZE {
-            return Err(ResidualError::HeaderTooLarge { size: header_len_v1 });
+            return Err(ResidualError::HeaderTooLarge {
+                size: header_len_v1,
+            });
         }
 
         let v1_payload_start = 2 + header_len_v1;
@@ -313,8 +324,8 @@ impl ResidualData {
         let json_str = std::str::from_utf8(&data[2..v1_payload_start])
             .map_err(|e| ResidualError::InvalidHeader(format!("UTF-8 decode failed: {}", e)))?;
 
-        let parsed = Self::parse_json_header(json_str)
-            .map_err(|e| ResidualError::InvalidHeader(e))?;
+        let parsed =
+            Self::parse_json_header(json_str).map_err(|e| ResidualError::InvalidHeader(e))?;
 
         let compressed = data[v1_payload_start..].to_vec();
         Self::from_header_map(parsed, compressed)
@@ -348,9 +359,9 @@ impl ResidualData {
             }
 
             // Split on the first colon.
-            let colon_pos = pair.find(':').ok_or_else(|| {
-                format!("malformed key-value pair (no ':'): '{}'", pair)
-            })?;
+            let colon_pos = pair
+                .find(':')
+                .ok_or_else(|| format!("malformed key-value pair (no ':'): '{}'", pair))?;
 
             let key_raw = pair[..colon_pos].trim();
             let val_raw = pair[colon_pos + 1..].trim();
@@ -393,9 +404,7 @@ impl ResidualData {
             .get("original_len")
             .ok_or_else(|| ResidualError::MissingField("original_len".to_owned()))?
             .parse::<usize>()
-            .map_err(|e| {
-                ResidualError::InvalidHeader(format!("invalid original_len: {}", e))
-            })?;
+            .map_err(|e| ResidualError::InvalidHeader(format!("invalid original_len: {}", e)))?;
 
         // Optional / method-specific fields.
         let mut metadata = ResidualMetadata::default();
@@ -452,8 +461,8 @@ pub fn compress_residual_delta(data: &[f32]) -> ResidualData {
     }
 
     // LZMA compress the raw delta bytes.
-    let compressed = crate::compression::lzma_compress(&deltas, 6)
-        .unwrap_or_else(|_| deltas.clone()); // fallback: store uncompressed
+    let compressed =
+        crate::compression::lzma_compress(&deltas, 6).unwrap_or_else(|_| deltas.clone()); // fallback: store uncompressed
 
     ResidualData {
         method: ResidualCompressionMethod::Delta,
@@ -527,8 +536,7 @@ pub fn estimate_entropy(data: &[f32]) -> f32 {
 
     let rcp_scale = 255.0 / scale as f64;
     for &v in data {
-        let bin = ((v as f64 - min_val as f64) * rcp_scale)
-            .clamp(0.0, 255.0) as usize;
+        let bin = ((v as f64 - min_val as f64) * rcp_scale).clamp(0.0, 255.0) as usize;
         counts[bin] += 1;
     }
 
@@ -643,8 +651,7 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
         },
 
         ResidualCompressionMethod::Lzma => {
-            let compressed = crate::compression::lzma_compress(&raw_bytes, 6)
-                .unwrap_or(raw_bytes);
+            let compressed = crate::compression::lzma_compress(&raw_bytes, 6).unwrap_or(raw_bytes);
             ResidualData {
                 method,
                 compressed,
@@ -654,10 +661,9 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
         }
 
         ResidualCompressionMethod::Zlib => {
-            let compressed = crate::compression::zlib_compress(&raw_bytes, 6)
-                .unwrap_or_else(|_| {
-                    crate::compression::lzma_compress(&raw_bytes, 6)
-                        .unwrap_or(raw_bytes.clone())
+            let compressed =
+                crate::compression::zlib_compress(&raw_bytes, 6).unwrap_or_else(|_| {
+                    crate::compression::lzma_compress(&raw_bytes, 6).unwrap_or(raw_bytes.clone())
                 });
             ResidualData {
                 method,
@@ -677,12 +683,10 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
             // We also populate ResidualMetadata for symmetry with the
             // Python implementation.
             let (_, min_val, scale) = crate::compression::quantize_8bit(data);
-            let compressed =
-                crate::compression::compress_residual_quantized(data, 8, 6)
-                    .unwrap_or_else(|_| {
-                        crate::compression::lzma_compress(&raw_bytes, 6)
-                            .unwrap_or(raw_bytes)
-                    });
+            let compressed = crate::compression::compress_residual_quantized(data, 8, 6)
+                .unwrap_or_else(|_| {
+                    crate::compression::lzma_compress(&raw_bytes, 6).unwrap_or(raw_bytes)
+                });
             ResidualData {
                 method,
                 compressed,
@@ -738,8 +742,7 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
         ResidualCompressionMethod::Delta => Ok(decompress_residual_delta(rd)),
 
         ResidualCompressionMethod::Quantized => {
-            let result =
-                crate::compression::decompress_residual_quantized(&rd.compressed)?;
+            let result = crate::compression::decompress_residual_quantized(&rd.compressed)?;
             Ok(result)
         }
     }
@@ -829,9 +832,7 @@ mod tests {
 
         assert_eq!(recovered.method, ResidualCompressionMethod::Delta);
         assert_eq!(recovered.original_len, 200);
-        assert!(
-            (recovered.metadata.base_value - rd.metadata.base_value).abs() < 1e-6
-        );
+        assert!((recovered.metadata.base_value - rd.metadata.base_value).abs() < 1e-6);
     }
 
     #[test]
@@ -884,12 +885,11 @@ mod tests {
         // identical floats with LZMA).
         // In practice LZMA / Delta / Quantized will all beat raw here.
         assert!(
-            method != ResidualCompressionMethod::None
-                || {
-                    // Edge case: if the compressed output is somehow
-                    // larger than uncompressed, None is acceptable.
-                    true
-                }
+            method != ResidualCompressionMethod::None || {
+                // Edge case: if the compressed output is somehow
+                // larger than uncompressed, None is acceptable.
+                true
+            }
         );
 
         // For an empty slice, always returns None.
@@ -926,8 +926,16 @@ mod tests {
         // Random-looking data should have higher entropy than constant.
         let varied = test_signal(1000);
         let h = estimate_entropy(&varied);
-        assert!(h > 0.0, "expected positive entropy for varied data, got {}", h);
-        assert!(h <= 8.0, "entropy cannot exceed 8 bits for 256-bin histogram, got {}", h);
+        assert!(
+            h > 0.0,
+            "expected positive entropy for varied data, got {}",
+            h
+        );
+        assert!(
+            h <= 8.0,
+            "entropy cannot exceed 8 bits for 256-bin histogram, got {}",
+            h
+        );
     }
 
     #[test]

@@ -15,13 +15,13 @@
 // - Too lenient (1e-6): May accept numerically unstable solutions
 // - 1e-8 is a balanced choice: accounts for f32 input precision while allowing
 //   for numerical stability in higher-degree polynomial fitting (up to degree 9)
-const SINGULAR_MATRIX_THRESHOLD: f64 = 1e-8;  // Balanced threshold for f32-derived data
-const CONSTANT_DATA_VARIANCE_THRESHOLD: f64 = 1e-15;  // Threshold for detecting constant data
+const SINGULAR_MATRIX_THRESHOLD: f64 = 1e-8; // Balanced threshold for f32-derived data
+const CONSTANT_DATA_VARIANCE_THRESHOLD: f64 = 1e-15; // Threshold for detecting constant data
 
 /// Generate signal from polynomial coefficients
 ///
 /// The polynomial is evaluated as:
-///   y = c[0] * x^n + c[1] * x^(n-1) + ... + c[n-1] * x + c[n]
+///   `y = c[0] * x^n + c[1] * x^(n-1) + ... + c[n-1] * x + c[n]`
 ///
 /// Where x is normalized to [0, 1] range.
 ///
@@ -30,7 +30,7 @@ const CONSTANT_DATA_VARIANCE_THRESHOLD: f64 = 1e-15;  // Threshold for detecting
 /// * `coefficients` - Polynomial coefficients (highest degree first)
 ///
 /// # Returns
-/// Vec<f32> of generated signal
+/// `Vec<f32>` of generated signal
 pub fn generate_polynomial(n: usize, coefficients: &[f64]) -> Vec<f32> {
     if coefficients.is_empty() {
         return vec![0.0; n];
@@ -78,9 +78,7 @@ pub fn fit_polynomial(
     // Normalize x to [0, 1]
     // Pre-compute reciprocal to avoid per-element division inside the loop
     let rcp_n_minus_1 = 1.0 / (n - 1).max(1) as f64;
-    let x_data: Vec<f64> = (0..n)
-        .map(|i| i as f64 * rcp_n_minus_1)
-        .collect();
+    let x_data: Vec<f64> = (0..n).map(|i| i as f64 * rcp_n_minus_1).collect();
     let y_data: Vec<f64> = data.iter().map(|&y| y as f64).collect();
 
     let data_variance = variance(&y_data);
@@ -92,9 +90,7 @@ pub fn fit_polynomial(
 
     for degree in 1..=max_degree.min(n - 1) {
         if let Some(coeffs) = least_squares_fit(&x_data, &y_data, degree) {
-            let fitted: Vec<f64> = x_data.iter()
-                .map(|&x| horner_eval(x, &coeffs))
-                .collect();
+            let fitted: Vec<f64> = x_data.iter().map(|&x| horner_eval(x, &coeffs)).collect();
 
             let mse = mean_squared_error(&y_data, &fitted);
             let relative_error = mse / data_variance;
@@ -181,7 +177,7 @@ fn solve_linear_system(a: &mut [f64], b: &mut [f64], n: usize) -> Option<Vec<f64
         let pivot = a[i * n + i];
         // Safety check: pivot should never be zero after pivoting, but verify
         if pivot.abs() < SINGULAR_MATRIX_THRESHOLD {
-            return None;  // Numerical instability detected
+            return None; // Numerical instability detected
         }
 
         let mut sum = b[i];
@@ -213,7 +209,8 @@ fn mean_squared_error(a: &[f64], b: &[f64]) -> f64 {
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| (x - y).powi(2))
-        .sum::<f64>() * rcp_len
+        .sum::<f64>()
+        * rcp_len
 }
 
 #[cfg(test)]
@@ -251,10 +248,12 @@ mod tests {
 
         // Reconstruct and compare
         let reconstructed = generate_polynomial(100, &coeffs);
-        let mse: f32 = data.iter()
+        let mse: f32 = data
+            .iter()
             .zip(reconstructed.iter())
             .map(|(a, b)| (a - b).powi(2))
-            .sum::<f32>() / data.len() as f32;
+            .sum::<f32>()
+            / data.len() as f32;
 
         assert!(mse < 0.001, "MSE too high: {}", mse);
     }

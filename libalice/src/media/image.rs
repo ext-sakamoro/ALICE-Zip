@@ -90,9 +90,7 @@ impl ImageGenerator {
             ImagePattern::LinearGradient => {
                 Self::generate_linear_gradient(w, h, color0, color1, params.angle_degrees)
             }
-            ImagePattern::RadialGradient => {
-                Self::generate_radial_gradient(w, h, color0, color1)
-            }
+            ImagePattern::RadialGradient => Self::generate_radial_gradient(w, h, color0, color1),
             ImagePattern::Checkerboard => {
                 let block = params.block_size.max(1);
                 Self::generate_checkerboard(w, h, color0, color1, block)
@@ -178,12 +176,7 @@ impl ImageGenerator {
 
     /// Radial gradient from centre (start) to edge (end)
     #[inline(always)]
-    fn generate_radial_gradient(
-        w: usize,
-        h: usize,
-        start: [u8; 3],
-        end: [u8; 3],
-    ) -> Vec<u8> {
+    fn generate_radial_gradient(w: usize, h: usize, start: [u8; 3], end: [u8; 3]) -> Vec<u8> {
         let cx = w as f32 * 0.5;
         let cy = h as f32 * 0.5;
 
@@ -191,7 +184,11 @@ impl ImageGenerator {
         let dx_max = cx.max(w as f32 - cx);
         let dy_max = cy.max(h as f32 - cy);
         let max_dist = (dx_max * dx_max + dy_max * dy_max).sqrt();
-        let rcp_max = if max_dist > 1e-10 { 1.0 / max_dist } else { 1.0 };
+        let rcp_max = if max_dist > 1e-10 {
+            1.0 / max_dist
+        } else {
+            1.0
+        };
 
         let s = [start[0] as f32, start[1] as f32, start[2] as f32];
         let e = [end[0] as f32, end[1] as f32, end[2] as f32];
@@ -365,10 +362,6 @@ mod tests {
 
         // Corner pixel (0,0) should be close to end colour (black / dark)
         let corner_r = pixels[0];
-        assert!(
-            corner_r < 80,
-            "corner R should be near 0, got {}",
-            corner_r
-        );
+        assert!(corner_r < 80, "corner R should be near 0, got {}", corner_r);
     }
 }

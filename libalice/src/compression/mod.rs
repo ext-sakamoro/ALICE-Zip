@@ -13,9 +13,9 @@
 //!
 //! This ensures consistent behavior across different CPU architectures.
 
-use std::io::{Read, Cursor};
 use flate2::read::{ZlibDecoder, ZlibEncoder};
 use flate2::Compression;
+use std::io::{Cursor, Read};
 
 /// Compress data using LZMA
 ///
@@ -27,8 +27,12 @@ use flate2::Compression;
 /// Compressed bytes or IO error
 pub fn lzma_compress(data: &[u8], _preset: u32) -> std::io::Result<Vec<u8>> {
     let mut output = Vec::new();
-    lzma_rs::lzma_compress(&mut Cursor::new(data), &mut output)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("LZMA compress error: {}", e)))?;
+    lzma_rs::lzma_compress(&mut Cursor::new(data), &mut output).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("LZMA compress error: {}", e),
+        )
+    })?;
     Ok(output)
 }
 
@@ -41,8 +45,12 @@ pub fn lzma_compress(data: &[u8], _preset: u32) -> std::io::Result<Vec<u8>> {
 /// Decompressed bytes or IO error
 pub fn lzma_decompress(data: &[u8]) -> std::io::Result<Vec<u8>> {
     let mut output = Vec::new();
-    lzma_rs::lzma_decompress(&mut Cursor::new(data), &mut output)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("LZMA decompress error: {}", e)))?;
+    lzma_rs::lzma_decompress(&mut Cursor::new(data), &mut output).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("LZMA decompress error: {}", e),
+        )
+    })?;
     Ok(output)
 }
 
@@ -100,7 +108,8 @@ pub fn quantize_8bit(data: &[f32]) -> (Vec<u8>, f64, f64) {
     // This results in all values quantizing to 0, which is correct for constant data.
     let scale = if scale < 1e-10 { 1.0 } else { scale };
 
-    let quantized: Vec<u8> = data.iter()
+    let quantized: Vec<u8> = data
+        .iter()
         .map(|&v| {
             let normalized = ((v as f64 - min_val) / scale).clamp(0.0, 1.0);
             (normalized * 255.0).round() as u8
@@ -146,7 +155,8 @@ pub fn quantize_16bit(data: &[f32]) -> (Vec<u8>, f64, f64) {
     // This results in all values quantizing to 0, which is correct for constant data.
     let scale = if scale < 1e-10 { 1.0 } else { scale };
 
-    let quantized: Vec<u16> = data.iter()
+    let quantized: Vec<u16> = data
+        .iter()
         .map(|&v| {
             let normalized = ((v as f64 - min_val) / scale).clamp(0.0, 1.0);
             (normalized * 65535.0).round() as u16
@@ -154,9 +164,7 @@ pub fn quantize_16bit(data: &[f32]) -> (Vec<u8>, f64, f64) {
         .collect();
 
     // Convert to bytes (little endian)
-    let bytes: Vec<u8> = quantized.iter()
-        .flat_map(|&v| v.to_le_bytes())
-        .collect();
+    let bytes: Vec<u8> = quantized.iter().flat_map(|&v| v.to_le_bytes()).collect();
 
     (bytes, min_val, scale)
 }
@@ -183,7 +191,11 @@ pub fn dequantize_16bit(data: &[u8], min_val: f64, scale: f64) -> Vec<f32> {
 ///
 /// # Returns
 /// Compressed bytes including header (min_val, scale) or IO error
-pub fn compress_residual_quantized(residual: &[f32], bits: u8, lzma_preset: u32) -> std::io::Result<Vec<u8>> {
+pub fn compress_residual_quantized(
+    residual: &[f32],
+    bits: u8,
+    lzma_preset: u32,
+) -> std::io::Result<Vec<u8>> {
     let (quantized, min_val, scale) = if bits == 16 {
         quantize_16bit(residual)
     } else {
@@ -216,7 +228,7 @@ pub fn decompress_residual_quantized(data: &[u8]) -> std::io::Result<Vec<f32>> {
     if data.len() < 21 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "Data too short for residual header (need at least 21 bytes)"
+            "Data too short for residual header (need at least 21 bytes)",
         ));
     }
 
@@ -224,30 +236,37 @@ pub fn decompress_residual_quantized(data: &[u8]) -> std::io::Result<Vec<f32>> {
     // Parse header fields with proper error handling
     // Note: length check above guarantees these slices are valid, but we use
     // map_err for robustness and to avoid panics in all circumstances
-    let min_val = f64::from_le_bytes(data[1..9].try_into()
-        .map_err(|_| std::io::Error::new(
+    let min_val = f64::from_le_bytes(data[1..9].try_into().map_err(|_| {
+        std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "Failed to parse min_val from header bytes [1..9]"
-        ))?);
-    let scale = f64::from_le_bytes(data[9..17].try_into()
-        .map_err(|_| std::io::Error::new(
+            "Failed to parse min_val from header bytes [1..9]",
+        )
+    })?);
+    let scale = f64::from_le_bytes(data[9..17].try_into().map_err(|_| {
+        std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "Failed to parse scale from header bytes [9..17]"
-        ))?);
-    let compressed_len = u32::from_le_bytes(data[17..21].try_into()
-        .map_err(|_| std::io::Error::new(
+            "Failed to parse scale from header bytes [9..17]",
+        )
+    })?);
+    let compressed_len = u32::from_le_bytes(data[17..21].try_into().map_err(|_| {
+        std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "Failed to parse compressed_len from header bytes [17..21]"
-        ))?) as usize;
+            "Failed to parse compressed_len from header bytes [17..21]",
+        )
+    })?) as usize;
 
     if data.len() < 21 + compressed_len {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("Data truncated: expected {} bytes, got {}", 21 + compressed_len, data.len())
+            format!(
+                "Data truncated: expected {} bytes, got {}",
+                21 + compressed_len,
+                data.len()
+            ),
         ));
     }
 
-    let compressed = &data[21..21+compressed_len];
+    let compressed = &data[21..21 + compressed_len];
     let quantized = lzma_decompress(compressed)?;
 
     if bits == 16 {
@@ -260,9 +279,7 @@ pub fn decompress_residual_quantized(data: &[u8]) -> std::io::Result<Vec<f32>> {
 /// Compress raw f32 residual (lossless) with LZMA
 pub fn compress_residual_lossless(residual: &[f32], lzma_preset: u32) -> std::io::Result<Vec<u8>> {
     // Convert f32 to bytes
-    let bytes: Vec<u8> = residual.iter()
-        .flat_map(|&v| v.to_le_bytes())
-        .collect();
+    let bytes: Vec<u8> = residual.iter().flat_map(|&v| v.to_le_bytes()).collect();
 
     // Compress
     let compressed = lzma_compress(&bytes, lzma_preset)?;
@@ -281,37 +298,51 @@ pub fn decompress_residual_lossless(data: &[u8]) -> std::io::Result<Vec<f32>> {
     if data.len() < 5 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "Data too short for lossless header (need at least 5 bytes)"
+            "Data too short for lossless header (need at least 5 bytes)",
         ));
     }
     if data[0] != 0xFF {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("Invalid lossless marker: expected 0xFF, got 0x{:02X}", data[0])
+            format!(
+                "Invalid lossless marker: expected 0xFF, got 0x{:02X}",
+                data[0]
+            ),
         ));
     }
 
     // Parse compressed length with proper error handling
-    let compressed_len = u32::from_le_bytes(data[1..5].try_into()
-        .map_err(|_| std::io::Error::new(
+    let compressed_len = u32::from_le_bytes(data[1..5].try_into().map_err(|_| {
+        std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "Failed to parse compressed_len from header bytes [1..5]"
-        ))?) as usize;
+            "Failed to parse compressed_len from header bytes [1..5]",
+        )
+    })?) as usize;
 
     if data.len() < 5 + compressed_len {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("Data truncated: expected {} bytes, got {}", 5 + compressed_len, data.len())
+            format!(
+                "Data truncated: expected {} bytes, got {}",
+                5 + compressed_len,
+                data.len()
+            ),
         ));
     }
 
-    let compressed = &data[5..5+compressed_len];
+    let compressed = &data[5..5 + compressed_len];
     let bytes = lzma_decompress(compressed)?;
 
     // Safety: chunks_exact(4) guarantees each chunk is exactly 4 bytes
-    Ok(bytes.chunks_exact(4)
-        .map(|chunk| f32::from_le_bytes(chunk.try_into()
-            .expect("chunks_exact(4) guarantees 4 bytes")))
+    Ok(bytes
+        .chunks_exact(4)
+        .map(|chunk| {
+            f32::from_le_bytes(
+                chunk
+                    .try_into()
+                    .expect("chunks_exact(4) guarantees 4 bytes"),
+            )
+        })
         .collect())
 }
 
@@ -353,7 +384,8 @@ mod tests {
         assert_eq!(data.len(), restored.len());
 
         // Check approximate equality
-        let max_err: f32 = data.iter()
+        let max_err: f32 = data
+            .iter()
             .zip(restored.iter())
             .map(|(a, b)| (a - b).abs())
             .fold(0.0, f32::max);

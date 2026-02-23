@@ -15,13 +15,13 @@
 //! # Author
 //! Moroya Sakamoto
 
-pub mod generators;
+pub mod analyzer;
 pub mod compression;
-pub mod residual;
 pub mod ffi;
 pub mod format;
-pub mod analyzer;
+pub mod generators;
 pub mod media;
+pub mod residual;
 
 #[cfg(feature = "codec")]
 pub mod codec_bridge;
@@ -32,9 +32,9 @@ pub mod codec_bridge;
 
 #[cfg(feature = "python")]
 mod python {
+    use super::{compression, generators};
+    use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods};
     use pyo3::prelude::*;
-    use numpy::{PyArray1, PyArray2, IntoPyArray, PyArrayMethods};
-    use super::{generators, compression};
 
     /// libalice - High-performance procedural generation for ALICE-Zip
     #[pymodule]
@@ -78,24 +78,23 @@ mod python {
         // Validate input parameters
         if width == 0 || height == 0 {
             return Err(pyo3::exceptions::PyValueError::new_err(
-                "width and height must be greater than 0"
+                "width and height must be greater than 0",
             ));
         }
 
-        let data = py.allow_threads(|| {
-            generators::generate_perlin_2d(width, height, seed, scale, octaves)
-        });
-        let array: Vec<Vec<f32>> = data
-            .chunks(width)
-            .map(|row| row.to_vec())
-            .collect();
+        let data = py
+            .allow_threads(|| generators::generate_perlin_2d(width, height, seed, scale, octaves));
+        let array: Vec<Vec<f32>> = data.chunks(width).map(|row| row.to_vec()).collect();
         let flat: Vec<f32> = array.into_iter().flatten().collect();
 
         numpy::PyArray::from_vec(py, flat)
             .reshape([height, width])
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(
-                format!("Failed to reshape array: {:?}", e)
-            ))
+            .map_err(|e| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "Failed to reshape array: {:?}",
+                    e
+                ))
+            })
     }
 
     #[pyfunction]
@@ -113,31 +112,40 @@ mod python {
         // Validate input parameters
         if width == 0 || height == 0 {
             return Err(pyo3::exceptions::PyValueError::new_err(
-                "width and height must be greater than 0"
+                "width and height must be greater than 0",
             ));
         }
         if scale <= 0.0 {
             return Err(pyo3::exceptions::PyValueError::new_err(
-                "scale must be greater than 0"
+                "scale must be greater than 0",
             ));
         }
         if octaves == 0 {
             return Err(pyo3::exceptions::PyValueError::new_err(
-                "octaves must be greater than 0"
+                "octaves must be greater than 0",
             ));
         }
 
         let flat: Vec<f32> = py.allow_threads(|| {
             generators::generate_perlin_advanced(
-                width, height, seed, scale, octaves, persistence, lacunarity
+                width,
+                height,
+                seed,
+                scale,
+                octaves,
+                persistence,
+                lacunarity,
             )
         });
 
         numpy::PyArray::from_vec(py, flat)
             .reshape([height, width])
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(
-                format!("Failed to reshape array: {:?}", e)
-            ))
+            .map_err(|e| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "Failed to reshape array: {:?}",
+                    e
+                ))
+            })
     }
 
     // ============================================================================
@@ -152,9 +160,8 @@ mod python {
         coefficients: Vec<(usize, f32, f32)>,
         dc_offset: f32,
     ) -> Bound<'py, PyArray1<f32>> {
-        let data = py.allow_threads(|| {
-            generators::generate_from_coefficients(n, &coefficients, dc_offset)
-        });
+        let data = py
+            .allow_threads(|| generators::generate_from_coefficients(n, &coefficients, dc_offset));
         data.into_pyarray(py)
     }
 
@@ -180,9 +187,7 @@ mod python {
         components: Vec<(f32, f32, f32)>,
         dc_offset: f32,
     ) -> Bound<'py, PyArray1<f32>> {
-        let data = py.allow_threads(|| {
-            generators::generate_multi_sine(n, &components, dc_offset)
-        });
+        let data = py.allow_threads(|| generators::generate_multi_sine(n, &components, dc_offset));
         data.into_pyarray(py)
     }
 
@@ -194,9 +199,7 @@ mod python {
         max_coefficients: usize,
         energy_threshold: f32,
     ) -> (Vec<(usize, f32, f32)>, f32) {
-        py.allow_threads(|| {
-            generators::analyze_signal(&signal, max_coefficients, energy_threshold)
-        })
+        py.allow_threads(|| generators::analyze_signal(&signal, max_coefficients, energy_threshold))
     }
 
     // ============================================================================
@@ -221,9 +224,7 @@ mod python {
         max_degree: usize,
         error_threshold: f64,
     ) -> Option<(Vec<f64>, usize, f64)> {
-        py.allow_threads(|| {
-            generators::fit_polynomial(&data, max_degree, error_threshold)
-        })
+        py.allow_threads(|| generators::fit_polynomial(&data, max_degree, error_threshold))
     }
 
     // ============================================================================
@@ -243,16 +244,14 @@ mod python {
         bits: u8,
         lzma_preset: u32,
     ) -> PyResult<Vec<u8>> {
-        py.allow_threads(|| {
-            compression::compress_residual_quantized(&residual, bits, lzma_preset)
-        }).map_err(io_err_to_pyerr)
+        py.allow_threads(|| compression::compress_residual_quantized(&residual, bits, lzma_preset))
+            .map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
     fn residual_decompress(py: Python<'_>, data: Vec<u8>) -> PyResult<Vec<f32>> {
-        py.allow_threads(|| {
-            compression::decompress_residual_quantized(&data)
-        }).map_err(io_err_to_pyerr)
+        py.allow_threads(|| compression::decompress_residual_quantized(&data))
+            .map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
@@ -262,46 +261,40 @@ mod python {
         residual: Vec<f32>,
         lzma_preset: u32,
     ) -> PyResult<Vec<u8>> {
-        py.allow_threads(|| {
-            compression::compress_residual_lossless(&residual, lzma_preset)
-        }).map_err(io_err_to_pyerr)
+        py.allow_threads(|| compression::compress_residual_lossless(&residual, lzma_preset))
+            .map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
     fn residual_decompress_lossless(py: Python<'_>, data: Vec<u8>) -> PyResult<Vec<f32>> {
-        py.allow_threads(|| {
-            compression::decompress_residual_lossless(&data)
-        }).map_err(io_err_to_pyerr)
+        py.allow_threads(|| compression::decompress_residual_lossless(&data))
+            .map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
     #[pyo3(signature = (data, preset=6))]
     fn lzma_compress(py: Python<'_>, data: Vec<u8>, preset: u32) -> PyResult<Vec<u8>> {
-        py.allow_threads(|| {
-            compression::lzma_compress(&data, preset)
-        }).map_err(io_err_to_pyerr)
+        py.allow_threads(|| compression::lzma_compress(&data, preset))
+            .map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
     fn lzma_decompress(py: Python<'_>, data: Vec<u8>) -> PyResult<Vec<u8>> {
-        py.allow_threads(|| {
-            compression::lzma_decompress(&data)
-        }).map_err(io_err_to_pyerr)
+        py.allow_threads(|| compression::lzma_decompress(&data))
+            .map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
     #[pyo3(signature = (data, level=6))]
     fn zlib_compress(py: Python<'_>, data: Vec<u8>, level: u32) -> PyResult<Vec<u8>> {
-        py.allow_threads(|| {
-            compression::zlib_compress(&data, level)
-        }).map_err(io_err_to_pyerr)
+        py.allow_threads(|| compression::zlib_compress(&data, level))
+            .map_err(io_err_to_pyerr)
     }
 
     #[pyfunction]
     fn zlib_decompress(py: Python<'_>, data: Vec<u8>) -> PyResult<Vec<u8>> {
-        py.allow_threads(|| {
-            compression::zlib_decompress(&data)
-        }).map_err(io_err_to_pyerr)
+        py.allow_threads(|| compression::zlib_decompress(&data))
+            .map_err(io_err_to_pyerr)
     }
 }
 

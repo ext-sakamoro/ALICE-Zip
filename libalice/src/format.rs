@@ -77,10 +77,10 @@ pub const HEADER_V2_SIZE: usize = 66;
 #[repr(u8)]
 pub enum AliceFileType {
     NumpyArray = 0x01,
-    Image      = 0x02,
-    Audio      = 0x03,
-    Text       = 0x04,
-    Binary     = 0x05,
+    Image = 0x02,
+    Audio = 0x03,
+    Text = 0x04,
+    Binary = 0x05,
 }
 
 impl AliceFileType {
@@ -100,7 +100,7 @@ impl AliceFileType {
             0x03 => Ok(AliceFileType::Audio),
             0x04 => Ok(AliceFileType::Text),
             0x05 => Ok(AliceFileType::Binary),
-            _    => Err(FormatError::InvalidFileType(v)),
+            _ => Err(FormatError::InvalidFileType(v)),
         }
     }
 }
@@ -109,10 +109,10 @@ impl fmt::Display for AliceFileType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AliceFileType::NumpyArray => write!(f, "NumpyArray"),
-            AliceFileType::Image      => write!(f, "Image"),
-            AliceFileType::Audio      => write!(f, "Audio"),
-            AliceFileType::Text       => write!(f, "Text"),
-            AliceFileType::Binary     => write!(f, "Binary"),
+            AliceFileType::Image => write!(f, "Image"),
+            AliceFileType::Audio => write!(f, "Audio"),
+            AliceFileType::Text => write!(f, "Text"),
+            AliceFileType::Binary => write!(f, "Binary"),
         }
     }
 }
@@ -127,15 +127,15 @@ impl fmt::Display for AliceFileType {
 #[repr(u8)]
 pub enum AlicePayloadType {
     /// Procedural parameters (original ALICE_ZIP format).
-    Procedural  = 0x00,
+    Procedural = 0x00,
     /// ALICE_IMG — JSON-based image payload.
-    MediaImage  = 0x10,
+    MediaImage = 0x10,
     /// ALICE_AUD — JSON-based audio payload.
-    MediaAudio  = 0x11,
+    MediaAudio = 0x11,
     /// ALICE_VID — JSON-based video payload.
-    MediaVideo  = 0x12,
+    MediaVideo = 0x12,
     /// ALICE_TEX — JSON-based texture payload.
-    Texture     = 0x20,
+    Texture = 0x20,
     /// LZMA-compressed fallback payload.
     LzmaFallback = 0x30,
 }
@@ -159,7 +159,7 @@ impl AlicePayloadType {
             0x12 => AlicePayloadType::MediaVideo,
             0x20 => AlicePayloadType::Texture,
             0x30 => AlicePayloadType::LzmaFallback,
-            _    => AlicePayloadType::Procedural, // graceful fallback
+            _ => AlicePayloadType::Procedural, // graceful fallback
         }
     }
 
@@ -172,7 +172,7 @@ impl AlicePayloadType {
             0x12 => Ok(AlicePayloadType::MediaVideo),
             0x20 => Ok(AlicePayloadType::Texture),
             0x30 => Ok(AlicePayloadType::LzmaFallback),
-            _    => Err(FormatError::InvalidPayloadType(v)),
+            _ => Err(FormatError::InvalidPayloadType(v)),
         }
     }
 }
@@ -180,11 +180,11 @@ impl AlicePayloadType {
 impl fmt::Display for AlicePayloadType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AlicePayloadType::Procedural  => write!(f, "Procedural"),
-            AlicePayloadType::MediaImage  => write!(f, "MediaImage"),
-            AlicePayloadType::MediaAudio  => write!(f, "MediaAudio"),
-            AlicePayloadType::MediaVideo  => write!(f, "MediaVideo"),
-            AlicePayloadType::Texture     => write!(f, "Texture"),
+            AlicePayloadType::Procedural => write!(f, "Procedural"),
+            AlicePayloadType::MediaImage => write!(f, "MediaImage"),
+            AlicePayloadType::MediaAudio => write!(f, "MediaAudio"),
+            AlicePayloadType::MediaVideo => write!(f, "MediaVideo"),
+            AlicePayloadType::Texture => write!(f, "Texture"),
             AlicePayloadType::LzmaFallback => write!(f, "LzmaFallback"),
         }
     }
@@ -210,14 +210,18 @@ pub enum FormatError {
 impl fmt::Display for FormatError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FormatError::InvalidMagic =>
-                write!(f, "invalid magic bytes (expected b\"ALICE_ZIP\")"),
-            FormatError::TooShort { expected, got } =>
-                write!(f, "data too short: expected at least {} bytes, got {}", expected, got),
-            FormatError::InvalidFileType(v) =>
-                write!(f, "invalid AliceFileType discriminant: 0x{:02X}", v),
-            FormatError::InvalidPayloadType(v) =>
-                write!(f, "invalid AlicePayloadType discriminant: 0x{:02X}", v),
+            FormatError::InvalidMagic => write!(f, "invalid magic bytes (expected b\"ALICE_ZIP\")"),
+            FormatError::TooShort { expected, got } => write!(
+                f,
+                "data too short: expected at least {} bytes, got {}",
+                expected, got
+            ),
+            FormatError::InvalidFileType(v) => {
+                write!(f, "invalid AliceFileType discriminant: 0x{:02X}", v)
+            }
+            FormatError::InvalidPayloadType(v) => {
+                write!(f, "invalid AlicePayloadType discriminant: 0x{:02X}", v)
+            }
         }
     }
 }
@@ -369,8 +373,13 @@ impl AliceFileHeader {
         // checksum / flags (4 LE)
         out.extend_from_slice(&self.checksum.to_le_bytes());
 
-        debug_assert_eq!(out.len(), HEADER_V2_SIZE,
-            "to_bytes() produced {} bytes, expected {}", out.len(), HEADER_V2_SIZE);
+        debug_assert_eq!(
+            out.len(),
+            HEADER_V2_SIZE,
+            "to_bytes() produced {} bytes, expected {}",
+            out.len(),
+            HEADER_V2_SIZE
+        );
         out
     }
 
@@ -438,19 +447,16 @@ impl AliceFileHeader {
         let payload_type = AlicePayloadType::from_u8_lenient(data[13]);
 
         // Bytes 14..22: original_size (u64 LE)
-        let original_size = u64::from_le_bytes(
-            data[14..22].try_into().expect("slice length guaranteed"),
-        );
+        let original_size =
+            u64::from_le_bytes(data[14..22].try_into().expect("slice length guaranteed"));
         // Bytes 22..30: compressed_size (u64 LE)
-        let compressed_size = u64::from_le_bytes(
-            data[22..30].try_into().expect("slice length guaranteed"),
-        );
+        let compressed_size =
+            u64::from_le_bytes(data[22..30].try_into().expect("slice length guaranteed"));
         // Bytes 30..62: original_hash (32 bytes)
         let original_hash: [u8; 32] = data[30..62].try_into().expect("slice length guaranteed");
         // Bytes 62..66: checksum (u32 LE)
-        let checksum = u32::from_le_bytes(
-            data[62..66].try_into().expect("slice length guaranteed"),
-        );
+        let checksum =
+            u32::from_le_bytes(data[62..66].try_into().expect("slice length guaranteed"));
 
         Ok(Self {
             magic,
@@ -485,19 +491,16 @@ impl AliceFileHeader {
         // No payload_type byte in v1 — default to Procedural.
 
         // Bytes 13..21: original_size (u64 LE)
-        let original_size = u64::from_le_bytes(
-            data[13..21].try_into().expect("slice length guaranteed"),
-        );
+        let original_size =
+            u64::from_le_bytes(data[13..21].try_into().expect("slice length guaranteed"));
         // Bytes 21..29: compressed_size (u64 LE)
-        let compressed_size = u64::from_le_bytes(
-            data[21..29].try_into().expect("slice length guaranteed"),
-        );
+        let compressed_size =
+            u64::from_le_bytes(data[21..29].try_into().expect("slice length guaranteed"));
         // Bytes 29..61: original_hash (32 bytes)
         let original_hash: [u8; 32] = data[29..61].try_into().expect("slice length guaranteed");
         // Bytes 61..65: checksum (u32 LE)
-        let checksum = u32::from_le_bytes(
-            data[61..65].try_into().expect("slice length guaranteed"),
-        );
+        let checksum =
+            u32::from_le_bytes(data[61..65].try_into().expect("slice length guaranteed"));
 
         Ok(Self {
             magic,
@@ -589,16 +592,16 @@ mod tests {
         checksum: u32,
     ) -> Vec<u8> {
         let mut buf = Vec::with_capacity(HEADER_V2_SIZE);
-        buf.extend_from_slice(ALICE_MAGIC);       //  0.. 9
-        buf.push(version_major);                  //  9
-        buf.push(version_minor);                  // 10
-        buf.push(file_type);                      // 11
-        buf.push(engine_idx);                     // 12
-        buf.push(payload_type);                   // 13
-        buf.extend_from_slice(&original_size.to_le_bytes());    // 14..22
-        buf.extend_from_slice(&compressed_size.to_le_bytes());  // 22..30
-        buf.extend_from_slice(&original_hash);    // 30..62
-        buf.extend_from_slice(&checksum.to_le_bytes());         // 62..66
+        buf.extend_from_slice(ALICE_MAGIC); //  0.. 9
+        buf.push(version_major); //  9
+        buf.push(version_minor); // 10
+        buf.push(file_type); // 11
+        buf.push(engine_idx); // 12
+        buf.push(payload_type); // 13
+        buf.extend_from_slice(&original_size.to_le_bytes()); // 14..22
+        buf.extend_from_slice(&compressed_size.to_le_bytes()); // 22..30
+        buf.extend_from_slice(&original_hash); // 30..62
+        buf.extend_from_slice(&checksum.to_le_bytes()); // 62..66
         assert_eq!(buf.len(), HEADER_V2_SIZE);
         buf
     }
@@ -615,16 +618,16 @@ mod tests {
         checksum: u32,
     ) -> Vec<u8> {
         let mut buf = Vec::with_capacity(HEADER_V1_SIZE);
-        buf.extend_from_slice(ALICE_MAGIC);       //  0.. 9
-        buf.push(version_major);                  //  9
-        buf.push(version_minor);                  // 10
-        buf.push(file_type);                      // 11
-        buf.push(engine_idx);                     // 12
-        // no payload_type byte in v1
-        buf.extend_from_slice(&original_size.to_le_bytes());    // 13..21
-        buf.extend_from_slice(&compressed_size.to_le_bytes());  // 21..29
-        buf.extend_from_slice(&original_hash);    // 29..61
-        buf.extend_from_slice(&checksum.to_le_bytes());         // 61..65
+        buf.extend_from_slice(ALICE_MAGIC); //  0.. 9
+        buf.push(version_major); //  9
+        buf.push(version_minor); // 10
+        buf.push(file_type); // 11
+        buf.push(engine_idx); // 12
+                              // no payload_type byte in v1
+        buf.extend_from_slice(&original_size.to_le_bytes()); // 13..21
+        buf.extend_from_slice(&compressed_size.to_le_bytes()); // 21..29
+        buf.extend_from_slice(&original_hash); // 29..61
+        buf.extend_from_slice(&checksum.to_le_bytes()); // 61..65
         assert_eq!(buf.len(), HEADER_V1_SIZE);
         buf
     }
@@ -643,23 +646,26 @@ mod tests {
         );
 
         let bytes = original.to_bytes();
-        assert_eq!(bytes.len(), HEADER_V2_SIZE, "to_bytes() must produce exactly 66 bytes");
+        assert_eq!(
+            bytes.len(),
+            HEADER_V2_SIZE,
+            "to_bytes() must produce exactly 66 bytes"
+        );
 
-        let parsed = AliceFileHeader::from_bytes(&bytes)
-            .expect("roundtrip parse must succeed");
+        let parsed = AliceFileHeader::from_bytes(&bytes).expect("roundtrip parse must succeed");
 
-        assert_eq!(parsed.magic,           original.magic);
-        assert_eq!(parsed.version_major,   original.version_major);
-        assert_eq!(parsed.version_minor,   original.version_minor);
-        assert_eq!(parsed.file_type,       original.file_type);
-        assert_eq!(parsed.engine_index,    original.engine_index);
-        assert_eq!(parsed.payload_type,    original.payload_type);
-        assert_eq!(parsed.original_size,   original.original_size);
+        assert_eq!(parsed.magic, original.magic);
+        assert_eq!(parsed.version_major, original.version_major);
+        assert_eq!(parsed.version_minor, original.version_minor);
+        assert_eq!(parsed.file_type, original.file_type);
+        assert_eq!(parsed.engine_index, original.engine_index);
+        assert_eq!(parsed.payload_type, original.payload_type);
+        assert_eq!(parsed.original_size, original.original_size);
         assert_eq!(parsed.compressed_size, original.compressed_size);
-        assert_eq!(parsed.original_hash,   original.original_hash);
-        assert_eq!(parsed.checksum,        original.checksum);
+        assert_eq!(parsed.original_hash, original.original_hash);
+        assert_eq!(parsed.checksum, original.checksum);
         assert_eq!(parsed.header_version(), 2);
-        assert_eq!(parsed.header_size(),    HEADER_V2_SIZE);
+        assert_eq!(parsed.header_size(), HEADER_V2_SIZE);
     }
 
     #[test]
@@ -675,8 +681,11 @@ mod tests {
             let hdr = AliceFileHeader::new(ft, AlicePayloadType::Procedural, 0, 0);
             let bytes = hdr.to_bytes();
             let parsed = AliceFileHeader::from_bytes(&bytes).unwrap();
-            assert_eq!(parsed.file_type, ft,
-                "file_type {:?} must survive roundtrip", ft);
+            assert_eq!(
+                parsed.file_type, ft,
+                "file_type {:?} must survive roundtrip",
+                ft
+            );
         }
     }
 
@@ -694,8 +703,11 @@ mod tests {
             let hdr = AliceFileHeader::new(AliceFileType::Binary, pt, 0, 0);
             let bytes = hdr.to_bytes();
             let parsed = AliceFileHeader::from_bytes(&bytes).unwrap();
-            assert_eq!(parsed.payload_type, pt,
-                "payload_type {:?} must survive roundtrip", pt);
+            assert_eq!(
+                parsed.payload_type, pt,
+                "payload_type {:?} must survive roundtrip",
+                pt
+            );
         }
     }
 
@@ -711,13 +723,14 @@ mod tests {
         hash[31] = 0xCD;
 
         let buf = build_v1_bytes(
-            1, 0,                        // version 1.0  → triggers v1 path
+            1,
+            0, // version 1.0  → triggers v1 path
             AliceFileType::Image.to_u8(),
-            0,                           // engine_index
-            9_999_999,                   // original_size
-            1_234_567,                   // compressed_size
+            0,         // engine_index
+            9_999_999, // original_size
+            1_234_567, // compressed_size
             hash,
-            0xDEAD_BEEF,                 // checksum
+            0xDEAD_BEEF, // checksum
         );
         assert_eq!(buf.len(), HEADER_V1_SIZE);
 
@@ -728,8 +741,11 @@ mod tests {
         assert_eq!(hdr.version_major, 1);
         assert_eq!(hdr.version_minor, 0);
         assert_eq!(hdr.file_type, AliceFileType::Image);
-        assert_eq!(hdr.payload_type, AlicePayloadType::Procedural,
-            "v1 headers must default payload_type to Procedural");
+        assert_eq!(
+            hdr.payload_type,
+            AlicePayloadType::Procedural,
+            "v1 headers must default payload_type to Procedural"
+        );
         assert_eq!(hdr.original_size, 9_999_999);
         assert_eq!(hdr.compressed_size, 1_234_567);
         assert_eq!(hdr.original_hash, hash);
@@ -739,15 +755,13 @@ mod tests {
     #[test]
     fn test_v1_with_trailing_bytes_ignored() {
         // Extra bytes after a v1 buffer must not cause an error (forward compat).
-        let mut buf = build_v1_bytes(
-            1, 0,
-            AliceFileType::Binary.to_u8(),
-            0,
-            0, 0, [0u8; 32], 0,
-        );
+        let mut buf = build_v1_bytes(1, 0, AliceFileType::Binary.to_u8(), 0, 0, 0, [0u8; 32], 0);
         buf.extend_from_slice(&[0xFFu8; 10]); // spurious trailing bytes
         let hdr = AliceFileHeader::from_bytes(&buf);
-        assert!(hdr.is_ok(), "trailing bytes after a v1 header must be tolerated");
+        assert!(
+            hdr.is_ok(),
+            "trailing bytes after a v1 header must be tolerated"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -762,7 +776,8 @@ mod tests {
         }
 
         let buf = build_v2_bytes(
-            1, 1,                                      // version 1.1 → v2
+            1,
+            1, // version 1.1 → v2
             AliceFileType::Audio.to_u8(),
             0,
             AlicePayloadType::MediaAudio.to_u8(),
@@ -791,15 +806,22 @@ mod tests {
     fn test_v2_with_trailing_bytes_ignored() {
         // Extra bytes after a v2 buffer must not cause an error.
         let mut buf = build_v2_bytes(
-            1, 2,
+            1,
+            2,
             AliceFileType::Text.to_u8(),
             0,
             AlicePayloadType::LzmaFallback.to_u8(),
-            0, 0, [0u8; 32], 0,
+            0,
+            0,
+            [0u8; 32],
+            0,
         );
         buf.extend_from_slice(&[0xAAu8; 32]);
         let hdr = AliceFileHeader::from_bytes(&buf);
-        assert!(hdr.is_ok(), "trailing bytes after a v2 header must be tolerated");
+        assert!(
+            hdr.is_ok(),
+            "trailing bytes after a v2 header must be tolerated"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -809,11 +831,15 @@ mod tests {
     #[test]
     fn test_invalid_magic() {
         let mut buf = build_v2_bytes(
-            1, 1,
+            1,
+            1,
             AliceFileType::NumpyArray.to_u8(),
             0,
             AlicePayloadType::Procedural.to_u8(),
-            0, 0, [0u8; 32], 0,
+            0,
+            0,
+            [0u8; 32],
+            0,
         );
         // Corrupt the magic bytes
         buf[0] = b'X';
@@ -828,28 +854,50 @@ mod tests {
     fn test_too_short() {
         // Empty slice
         let result = AliceFileHeader::from_bytes(&[]);
-        assert_eq!(result, Err(FormatError::TooShort { expected: HEADER_V1_SIZE, got: 0 }));
+        assert_eq!(
+            result,
+            Err(FormatError::TooShort {
+                expected: HEADER_V1_SIZE,
+                got: 0
+            })
+        );
 
         // 10 bytes — magic is fine but body is missing
         let mut buf = vec![0u8; 10];
         buf[..9].copy_from_slice(ALICE_MAGIC);
         let result = AliceFileHeader::from_bytes(&buf);
-        assert_eq!(result, Err(FormatError::TooShort { expected: HEADER_V1_SIZE, got: 10 }));
+        assert_eq!(
+            result,
+            Err(FormatError::TooShort {
+                expected: HEADER_V1_SIZE,
+                got: 10
+            })
+        );
 
         // 64 bytes — one byte short of v1
         let buf = vec![0u8; 64];
         let result = AliceFileHeader::from_bytes(&buf);
-        assert_eq!(result, Err(FormatError::TooShort { expected: HEADER_V1_SIZE, got: 64 }));
+        assert_eq!(
+            result,
+            Err(FormatError::TooShort {
+                expected: HEADER_V1_SIZE,
+                got: 64
+            })
+        );
     }
 
     #[test]
     fn test_invalid_file_type_discriminant() {
         let mut buf = build_v2_bytes(
-            1, 1,
+            1,
+            1,
             0xFF, // invalid file_type
             0,
             AlicePayloadType::Procedural.to_u8(),
-            0, 0, [0u8; 32], 0,
+            0,
+            0,
+            [0u8; 32],
+            0,
         );
         // Ensure magic is correct
         buf[..9].copy_from_slice(ALICE_MAGIC);
@@ -866,15 +914,26 @@ mod tests {
     fn test_file_type_roundtrip() {
         let cases: &[(AliceFileType, u8)] = &[
             (AliceFileType::NumpyArray, 0x01),
-            (AliceFileType::Image,      0x02),
-            (AliceFileType::Audio,      0x03),
-            (AliceFileType::Text,       0x04),
-            (AliceFileType::Binary,     0x05),
+            (AliceFileType::Image, 0x02),
+            (AliceFileType::Audio, 0x03),
+            (AliceFileType::Text, 0x04),
+            (AliceFileType::Binary, 0x05),
         ];
         for &(ft, byte) in cases {
-            assert_eq!(ft.to_u8(), byte, "{:?}.to_u8() should be 0x{:02X}", ft, byte);
-            assert_eq!(AliceFileType::from_u8(byte).unwrap(), ft,
-                "from_u8(0x{:02X}) should yield {:?}", byte, ft);
+            assert_eq!(
+                ft.to_u8(),
+                byte,
+                "{:?}.to_u8() should be 0x{:02X}",
+                ft,
+                byte
+            );
+            assert_eq!(
+                AliceFileType::from_u8(byte).unwrap(),
+                ft,
+                "from_u8(0x{:02X}) should yield {:?}",
+                byte,
+                ft
+            );
         }
         // Unknown value
         assert_eq!(
@@ -890,19 +949,35 @@ mod tests {
     #[test]
     fn test_payload_type_roundtrip() {
         let cases: &[(AlicePayloadType, u8)] = &[
-            (AlicePayloadType::Procedural,   0x00),
-            (AlicePayloadType::MediaImage,   0x10),
-            (AlicePayloadType::MediaAudio,   0x11),
-            (AlicePayloadType::MediaVideo,   0x12),
-            (AlicePayloadType::Texture,      0x20),
+            (AlicePayloadType::Procedural, 0x00),
+            (AlicePayloadType::MediaImage, 0x10),
+            (AlicePayloadType::MediaAudio, 0x11),
+            (AlicePayloadType::MediaVideo, 0x12),
+            (AlicePayloadType::Texture, 0x20),
             (AlicePayloadType::LzmaFallback, 0x30),
         ];
         for &(pt, byte) in cases {
-            assert_eq!(pt.to_u8(), byte, "{:?}.to_u8() should be 0x{:02X}", pt, byte);
-            assert_eq!(AlicePayloadType::from_u8_lenient(byte), pt,
-                "from_u8_lenient(0x{:02X}) should yield {:?}", byte, pt);
-            assert_eq!(AlicePayloadType::from_u8_strict(byte).unwrap(), pt,
-                "from_u8_strict(0x{:02X}) should yield {:?}", byte, pt);
+            assert_eq!(
+                pt.to_u8(),
+                byte,
+                "{:?}.to_u8() should be 0x{:02X}",
+                pt,
+                byte
+            );
+            assert_eq!(
+                AlicePayloadType::from_u8_lenient(byte),
+                pt,
+                "from_u8_lenient(0x{:02X}) should yield {:?}",
+                byte,
+                pt
+            );
+            assert_eq!(
+                AlicePayloadType::from_u8_strict(byte).unwrap(),
+                pt,
+                "from_u8_strict(0x{:02X}) should yield {:?}",
+                byte,
+                pt
+            );
         }
         // Unknown value — lenient should fall back to Procedural, strict should error
         assert_eq!(
@@ -941,11 +1016,7 @@ mod tests {
 
     #[test]
     fn test_checksum_little_endian() {
-        let mut hdr = AliceFileHeader::new(
-            AliceFileType::Text,
-            AlicePayloadType::Procedural,
-            0, 0,
-        );
+        let mut hdr = AliceFileHeader::new(AliceFileType::Text, AlicePayloadType::Procedural, 0, 0);
         hdr.checksum = 0x1234_5678;
         let bytes = hdr.to_bytes();
 
@@ -969,16 +1040,24 @@ mod tests {
             512,
         );
         let s = hdr.to_string();
-        assert!(s.contains("Image"),       "Display should mention file type");
-        assert!(s.contains("MediaImage"),  "Display should mention payload type");
-        assert!(s.contains("1024"),        "Display should mention original_size");
-        assert!(s.contains("512"),         "Display should mention compressed_size");
+        assert!(s.contains("Image"), "Display should mention file type");
+        assert!(
+            s.contains("MediaImage"),
+            "Display should mention payload type"
+        );
+        assert!(s.contains("1024"), "Display should mention original_size");
+        assert!(s.contains("512"), "Display should mention compressed_size");
     }
 
     #[test]
     fn test_format_error_display() {
         assert!(!FormatError::InvalidMagic.to_string().is_empty());
-        assert!(!FormatError::TooShort { expected: 65, got: 10 }.to_string().is_empty());
+        assert!(!FormatError::TooShort {
+            expected: 65,
+            got: 10
+        }
+        .to_string()
+        .is_empty());
         assert!(!FormatError::InvalidFileType(0xFF).to_string().is_empty());
         assert!(!FormatError::InvalidPayloadType(0x99).to_string().is_empty());
     }
@@ -989,11 +1068,7 @@ mod tests {
 
     #[test]
     fn test_has_valid_magic() {
-        let good = AliceFileHeader::new(
-            AliceFileType::Binary,
-            AlicePayloadType::Procedural,
-            0, 0,
-        );
+        let good = AliceFileHeader::new(AliceFileType::Binary, AlicePayloadType::Procedural, 0, 0);
         assert!(good.has_valid_magic());
 
         let mut bad = good.clone();
@@ -1008,20 +1083,13 @@ mod tests {
     #[test]
     fn test_header_size_v1_vs_v2() {
         // Fresh header is always v2
-        let hdr_v2 = AliceFileHeader::new(
-            AliceFileType::Binary,
-            AlicePayloadType::Procedural,
-            0, 0,
-        );
+        let hdr_v2 =
+            AliceFileHeader::new(AliceFileType::Binary, AlicePayloadType::Procedural, 0, 0);
         assert_eq!(hdr_v2.header_size(), HEADER_V2_SIZE);
         assert_eq!(hdr_v2.header_size(), 66);
 
         // Header parsed from v1 bytes
-        let v1_buf = build_v1_bytes(
-            1, 0,
-            AliceFileType::Text.to_u8(),
-            0, 0, 0, [0u8; 32], 0,
-        );
+        let v1_buf = build_v1_bytes(1, 0, AliceFileType::Text.to_u8(), 0, 0, 0, [0u8; 32], 0);
         let hdr_v1 = AliceFileHeader::from_bytes(&v1_buf).unwrap();
         assert_eq!(hdr_v1.header_size(), HEADER_V1_SIZE);
         assert_eq!(hdr_v1.header_size(), 65);

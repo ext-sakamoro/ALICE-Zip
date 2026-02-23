@@ -3,22 +3,19 @@
 //! Command-line interface for ALICE-Zip procedural compression.
 //!
 //! Usage:
-//!   alice compress <input> -o <output> [--quality <lossy|near-lossless|lossless>]
-//!   alice decompress <input> -o <output>
-//!   alice info <file>
+//!   `alice compress <input> -o <output> [--quality <lossy|near-lossless|lossless>]`
+//!   `alice decompress <input> -o <output>`
+//!   `alice info <file>`
 //!   alice benchmark <input>
 
 use clap::{Parser, Subcommand, ValueEnum};
 use std::fs::File;
-use std::io::{Read, Write, BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
 use std::time::Instant;
 
 // Use the library's compression module (DRY principle)
-use alice_core::compression::{
-    zlib_compress, zlib_decompress,
-    quantize_8bit, dequantize_8bit,
-};
+use alice_core::compression::{dequantize_8bit, quantize_8bit, zlib_compress, zlib_decompress};
 
 /// ALICE-Zip: Procedural Compression for Scientific Data
 #[derive(Parser)]
@@ -114,13 +111,13 @@ const FORMAT_VERSION: u8 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 enum CompressionMode {
-    RawLzma = 0,        // Pure LZMA, no procedural
-    Polynomial = 1,     // Polynomial fit + residual
-    Fourier = 2,        // Fourier fit + residual
-    Perlin = 3,         // Perlin noise + residual
-    Quantized8 = 10,    // 8-bit quantized residual
-    Quantized16 = 11,   // 16-bit quantized residual
-    Lossless = 20,      // Full precision residual
+    RawLzma = 0,      // Pure LZMA, no procedural
+    Polynomial = 1,   // Polynomial fit + residual
+    Fourier = 2,      // Fourier fit + residual
+    Perlin = 3,       // Perlin noise + residual
+    Quantized8 = 10,  // 8-bit quantized residual
+    Quantized16 = 11, // 16-bit quantized residual
+    Lossless = 20,    // Full precision residual
 }
 
 impl From<u8> for CompressionMode {
@@ -139,23 +136,24 @@ impl From<u8> for CompressionMode {
 }
 
 /// .alz file header (fixed size: 32 bytes)
+///
 /// Layout:
-///   [0..4]   magic "ALZ\x01"
-///   [4]      version
-///   [5]      mode
-///   [6]      dtype
-///   [7]      ndim
-///   [8..24]  shape (4 x u32)
-///   [24..32] original_size (u64)
+/// - `[0..4]`   magic "ALZ\x01"
+/// - `[4]`      version
+/// - `[5]`      mode
+/// - `[6]`      dtype
+/// - `[7]`      ndim
+/// - `[8..24]`  shape (4 x u32)
+/// - `[24..32]` original_size (u64)
 #[derive(Debug)]
 struct AlzHeader {
-    magic: [u8; 4],          // "ALZ\x01"
-    version: u8,             // Format version
-    mode: CompressionMode,   // Compression mode
-    dtype: u8,               // Data type (0=f32, 1=f64, 2=u8, 3=i16, etc.)
-    ndim: u8,                // Number of dimensions
-    shape: [u32; 4],         // Shape (up to 4D)
-    original_size: u64,      // Original uncompressed size
+    magic: [u8; 4],        // "ALZ\x01"
+    version: u8,           // Format version
+    mode: CompressionMode, // Compression mode
+    dtype: u8,             // Data type (0=f32, 1=f64, 2=u8, 3=i16, etc.)
+    ndim: u8,              // Number of dimensions
+    shape: [u32; 4],       // Shape (up to 4D)
+    original_size: u64,    // Original uncompressed size
 }
 
 impl AlzHeader {
@@ -195,8 +193,8 @@ impl AlzHeader {
                 u32::from_le_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]),
             ],
             original_size: u64::from_le_bytes([
-                bytes[24], bytes[25], bytes[26], bytes[27],
-                bytes[28], bytes[29], bytes[30], bytes[31],
+                bytes[24], bytes[25], bytes[26], bytes[27], bytes[28], bytes[29], bytes[30],
+                bytes[31],
             ]),
         })
     }
@@ -239,7 +237,8 @@ fn cmd_compress(
 
         if is_f32 && quality != Quality::Lossless {
             // Quantized compression
-            let floats: Vec<f32> = data.chunks_exact(4)
+            let floats: Vec<f32> = data
+                .chunks_exact(4)
                 .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
                 .collect();
 
@@ -310,8 +309,7 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
     println!("Input: {} ({} bytes)", input.display(), data.len());
 
     // Parse header
-    let header = AlzHeader::from_bytes(&data)
-        .ok_or("Invalid .alz file: bad header")?;
+    let header = AlzHeader::from_bytes(&data).ok_or("Invalid .alz file: bad header")?;
 
     let payload = &data[32..];
 
@@ -319,9 +317,7 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
 
     // Decompress based on mode
     let decompressed = match header.mode {
-        CompressionMode::RawLzma | CompressionMode::Lossless => {
-            zlib_decompress(payload)?
-        }
+        CompressionMode::RawLzma | CompressionMode::Lossless => zlib_decompress(payload)?,
         CompressionMode::Quantized8 | CompressionMode::Quantized16 => {
             // Validate payload length
             if payload.len() < 16 {
@@ -340,9 +336,7 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
             let floats = dequantize_8bit(&quantized, min_val, scale);
 
             // Convert to bytes
-            floats.iter()
-                .flat_map(|&f| f.to_le_bytes())
-                .collect()
+            floats.iter().flat_map(|&f| f.to_le_bytes()).collect()
         }
         _ => {
             return Err("Unsupported compression mode".into());
@@ -356,7 +350,11 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
     out_file.write_all(&decompressed)?;
     out_file.flush()?;
 
-    println!("Output: {} ({} bytes)", output.display(), decompressed.len());
+    println!(
+        "Output: {} ({} bytes)",
+        output.display(),
+        decompressed.len()
+    );
     println!("Time: {:.2}ms", elapsed.as_secs_f64() * 1000.0);
 
     Ok(())
@@ -385,7 +383,10 @@ fn cmd_info(file: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         println!("Format version: {}", header.version);
         println!("Mode: {:?}", header.mode);
         println!("Original size: {} bytes", header.original_size);
-        println!("Compression ratio: {:.2}x", header.original_size as f64 / file_size as f64);
+        println!(
+            "Compression ratio: {:.2}x",
+            header.original_size as f64 / file_size as f64
+        );
         println!("Shape: {:?}", &header.shape[..header.ndim as usize]);
     } else {
         // Raw data file
@@ -405,7 +406,11 @@ fn cmd_info(file: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn cmd_benchmark(input: PathBuf, iterations: u32, level: u32) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_benchmark(
+    input: PathBuf,
+    iterations: u32,
+    level: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("ALICE-Zip Benchmark v0.1.0");
     println!("==========================");
 
@@ -431,13 +436,22 @@ fn cmd_benchmark(input: PathBuf, iterations: u32, level: u32) -> Result<(), Box<
 
     let avg_zlib = zlib_times.iter().map(|d| d.as_secs_f64()).sum::<f64>() / iterations as f64;
     println!("zlib (level {}):", level);
-    println!("  Size: {} -> {} bytes ({:.2}x)", original_size, zlib_size, original_size as f64 / zlib_size as f64);
+    println!(
+        "  Size: {} -> {} bytes ({:.2}x)",
+        original_size,
+        zlib_size,
+        original_size as f64 / zlib_size as f64
+    );
     println!("  Time: {:.2}ms avg", avg_zlib * 1000.0);
-    println!("  Throughput: {:.2} MB/s", (original_size as f64 / 1024.0 / 1024.0) / avg_zlib);
+    println!(
+        "  Throughput: {:.2} MB/s",
+        (original_size as f64 / 1024.0 / 1024.0) / avg_zlib
+    );
 
     // Benchmark 8-bit quantization + zlib (if f32 data)
     if original_size % 4 == 0 {
-        let floats: Vec<f32> = data.chunks_exact(4)
+        let floats: Vec<f32> = data
+            .chunks_exact(4)
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect();
 
@@ -451,11 +465,20 @@ fn cmd_benchmark(input: PathBuf, iterations: u32, level: u32) -> Result<(), Box<
             quant_size = 16 + compressed.len(); // header + compressed
         }
 
-        let avg_quant = quant_times.iter().map(|d| d.as_secs_f64()).sum::<f64>() / iterations as f64;
+        let avg_quant =
+            quant_times.iter().map(|d| d.as_secs_f64()).sum::<f64>() / iterations as f64;
         println!("\n8-bit Quantized + zlib (level {}):", level);
-        println!("  Size: {} -> {} bytes ({:.2}x)", original_size, quant_size, original_size as f64 / quant_size as f64);
+        println!(
+            "  Size: {} -> {} bytes ({:.2}x)",
+            original_size,
+            quant_size,
+            original_size as f64 / quant_size as f64
+        );
         println!("  Time: {:.2}ms avg", avg_quant * 1000.0);
-        println!("  Throughput: {:.2} MB/s", (original_size as f64 / 1024.0 / 1024.0) / avg_quant);
+        println!(
+            "  Throughput: {:.2} MB/s",
+            (original_size as f64 / 1024.0 / 1024.0) / avg_quant
+        );
     }
 
     Ok(())
@@ -465,18 +488,21 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Compress { input, output, quality, bits, level, raw } => {
-            cmd_compress(input, output, quality, bits, level, raw)
-        }
-        Commands::Decompress { input, output } => {
-            cmd_decompress(input, output)
-        }
-        Commands::Info { file } => {
-            cmd_info(file)
-        }
-        Commands::Benchmark { input, iterations, level } => {
-            cmd_benchmark(input, iterations, level)
-        }
+        Commands::Compress {
+            input,
+            output,
+            quality,
+            bits,
+            level,
+            raw,
+        } => cmd_compress(input, output, quality, bits, level, raw),
+        Commands::Decompress { input, output } => cmd_decompress(input, output),
+        Commands::Info { file } => cmd_info(file),
+        Commands::Benchmark {
+            input,
+            iterations,
+            level,
+        } => cmd_benchmark(input, iterations, level),
     };
 
     if let Err(e) = result {

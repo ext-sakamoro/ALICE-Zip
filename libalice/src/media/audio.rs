@@ -7,11 +7,11 @@
 //! License: MIT
 //! Author: Moroya Sakamoto
 
+use rand::Rng;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use std::f32::consts::PI;
 use std::io::{self, Write};
-use rand::SeedableRng;
-use rand::Rng;
-use rand_chacha::ChaCha8Rng;
 
 // ============================================================================
 // Enums
@@ -102,9 +102,7 @@ impl AudioGenerator {
             AudioPattern::Sine => {
                 Self::generate_sine(n, params.frequency, params.amplitude, 0.0, sr)
             }
-            AudioPattern::MultiSine => {
-                Self::generate_multi_sine(n, &params.components, sr)
-            }
+            AudioPattern::MultiSine => Self::generate_multi_sine(n, &params.components, sr),
             AudioPattern::WhiteNoise => {
                 Self::generate_white_noise(n, params.amplitude, params.seed)
             }
@@ -130,11 +128,7 @@ impl AudioGenerator {
     /// No external crate is required — the 44-byte RIFF/WAV header is
     /// constructed manually and the f32 samples are serialised as
     /// little-endian bytes.
-    pub fn generate_to_wav(
-        &self,
-        params: &AudioParams,
-        path: &std::path::Path,
-    ) -> io::Result<()> {
+    pub fn generate_to_wav(&self, params: &AudioParams, path: &std::path::Path) -> io::Result<()> {
         let samples = self.generate(params);
         let file = std::fs::File::create(path)?;
         let mut writer = io::BufWriter::new(file);
@@ -217,11 +211,23 @@ impl AudioGenerator {
         let release_start = n.saturating_sub((release * sr_f) as usize);
 
         // Pre-compute reciprocals to avoid repeated division
-        let rcp_attack = if attack_end > 0 { 1.0 / attack_end as f32 } else { 1.0 };
+        let rcp_attack = if attack_end > 0 {
+            1.0 / attack_end as f32
+        } else {
+            1.0
+        };
         let decay_len = (decay * sr_f) as usize;
-        let rcp_decay = if decay_len > 0 { 1.0 / decay_len as f32 } else { 1.0 };
+        let rcp_decay = if decay_len > 0 {
+            1.0 / decay_len as f32
+        } else {
+            1.0
+        };
         let release_len = n - release_start;
-        let rcp_release = if release_len > 0 { 1.0 / release_len as f32 } else { 1.0 };
+        let rcp_release = if release_len > 0 {
+            1.0 / release_len as f32
+        } else {
+            1.0
+        };
 
         for (i, s) in samples.iter_mut().enumerate() {
             let env = if i < attack_end {
@@ -296,13 +302,13 @@ fn write_wav_f32<W: Write>(
 
     // fmt sub-chunk
     writer.write_all(b"fmt ")?;
-    writer.write_all(&16_u32.to_le_bytes())?;       // sub-chunk size
-    writer.write_all(&3_u16.to_le_bytes())?;         // audio format: IEEE float
+    writer.write_all(&16_u32.to_le_bytes())?; // sub-chunk size
+    writer.write_all(&3_u16.to_le_bytes())?; // audio format: IEEE float
     writer.write_all(&num_channels.to_le_bytes())?;
     writer.write_all(&sample_rate.to_le_bytes())?;
     writer.write_all(&byte_rate.to_le_bytes())?;
     writer.write_all(&block_align.to_le_bytes())?;
-    writer.write_all(&32_u16.to_le_bytes())?;        // bits per sample
+    writer.write_all(&32_u16.to_le_bytes())?; // bits per sample
 
     // data sub-chunk
     writer.write_all(b"data")?;
@@ -347,7 +353,10 @@ mod tests {
         let gen = AudioGenerator::new();
         let samples = gen.generate(&default_params(AudioPattern::Silence));
         assert_eq!(samples.len(), SR as usize);
-        assert!(samples.iter().all(|&s| s == 0.0), "silence must be all zeros");
+        assert!(
+            samples.iter().all(|&s| s == 0.0),
+            "silence must be all zeros"
+        );
     }
 
     #[test]
@@ -422,8 +431,8 @@ mod tests {
             amplitude: 1.0,
             components: vec![],
             seed: 0,
-            attack: 0.5,  // 500 samples
-            decay: 0.3,   // 300 samples
+            attack: 0.5, // 500 samples
+            decay: 0.3,  // 300 samples
             sustain: 0.6,
             release: 0.2, // 200 samples
         };
@@ -478,7 +487,8 @@ mod tests {
 
         // Write to a temp file
         let tmp_path = std::env::temp_dir().join("alice_test_audio.wav");
-        gen.generate_to_wav(&params, &tmp_path).expect("WAV write failed");
+        gen.generate_to_wav(&params, &tmp_path)
+            .expect("WAV write failed");
 
         // Read back and inspect the 44-byte header
         let mut file = std::fs::File::open(&tmp_path).expect("open failed");

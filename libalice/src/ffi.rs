@@ -11,7 +11,7 @@ use std::ffi::c_char;
 use std::ptr;
 use std::slice;
 
-use crate::{generators, compression};
+use crate::{compression, generators};
 
 // ============================================================================
 // Error Handling
@@ -163,13 +163,19 @@ pub extern "C" fn alice_version() -> *const c_char {
 #[no_mangle]
 pub extern "C" fn alice_version_numbers(major: *mut u32, minor: *mut u32, patch: *mut u32) {
     if !major.is_null() {
-        unsafe { *major = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0); }
+        unsafe {
+            *major = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
+        }
     }
     if !minor.is_null() {
-        unsafe { *minor = env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0); }
+        unsafe {
+            *minor = env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
+        }
     }
     if !patch.is_null() {
-        unsafe { *patch = env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0); }
+        unsafe {
+            *patch = env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);
+        }
     }
 }
 
@@ -240,7 +246,13 @@ pub extern "C" fn alice_perlin_advanced(
     }
 
     let data = generators::generate_perlin_advanced(
-        width, height, seed, scale, octaves, persistence, lacunarity
+        width,
+        height,
+        seed,
+        scale,
+        octaves,
+        persistence,
+        lacunarity,
     );
     unsafe {
         *out_buffer = AliceFloatBuffer::new(data);
@@ -386,12 +398,16 @@ pub extern "C" fn alice_lzma_compress(
 
     match compression::lzma_compress(input, preset) {
         Ok(compressed) => {
-            unsafe { *out_buffer = AliceBuffer::new(compressed); }
+            unsafe {
+                *out_buffer = AliceBuffer::new(compressed);
+            }
             AliceError::Success
         }
         Err(e) => {
             set_last_error(&format!("LZMA compression failed: {}", e));
-            unsafe { *out_buffer = AliceBuffer::null(); }
+            unsafe {
+                *out_buffer = AliceBuffer::null();
+            }
             AliceError::CompressionError
         }
     }
@@ -421,12 +437,16 @@ pub extern "C" fn alice_lzma_decompress(
 
     match compression::lzma_decompress(input) {
         Ok(decompressed) => {
-            unsafe { *out_buffer = AliceBuffer::new(decompressed); }
+            unsafe {
+                *out_buffer = AliceBuffer::new(decompressed);
+            }
             AliceError::Success
         }
         Err(e) => {
             set_last_error(&format!("LZMA decompression failed: {}", e));
-            unsafe { *out_buffer = AliceBuffer::null(); }
+            unsafe {
+                *out_buffer = AliceBuffer::null();
+            }
             AliceError::DecompressionError
         }
     }
@@ -457,12 +477,16 @@ pub extern "C" fn alice_zlib_compress(
 
     match compression::zlib_compress(input, level) {
         Ok(compressed) => {
-            unsafe { *out_buffer = AliceBuffer::new(compressed); }
+            unsafe {
+                *out_buffer = AliceBuffer::new(compressed);
+            }
             AliceError::Success
         }
         Err(e) => {
             set_last_error(&format!("zlib compression failed: {}", e));
-            unsafe { *out_buffer = AliceBuffer::null(); }
+            unsafe {
+                *out_buffer = AliceBuffer::null();
+            }
             AliceError::CompressionError
         }
     }
@@ -492,12 +516,16 @@ pub extern "C" fn alice_zlib_decompress(
 
     match compression::zlib_decompress(input) {
         Ok(decompressed) => {
-            unsafe { *out_buffer = AliceBuffer::new(decompressed); }
+            unsafe {
+                *out_buffer = AliceBuffer::new(decompressed);
+            }
             AliceError::Success
         }
         Err(e) => {
             set_last_error(&format!("zlib decompression failed: {}", e));
-            unsafe { *out_buffer = AliceBuffer::null(); }
+            unsafe {
+                *out_buffer = AliceBuffer::null();
+            }
             AliceError::DecompressionError
         }
     }
@@ -529,12 +557,16 @@ pub extern "C" fn alice_residual_compress(
 
     match compression::compress_residual_quantized(&input, bits, lzma_preset) {
         Ok(compressed) => {
-            unsafe { *out_buffer = AliceBuffer::new(compressed); }
+            unsafe {
+                *out_buffer = AliceBuffer::new(compressed);
+            }
             AliceError::Success
         }
         Err(e) => {
             set_last_error(&format!("Residual compression failed: {}", e));
-            unsafe { *out_buffer = AliceBuffer::null(); }
+            unsafe {
+                *out_buffer = AliceBuffer::null();
+            }
             AliceError::CompressionError
         }
     }
@@ -564,12 +596,16 @@ pub extern "C" fn alice_residual_decompress(
 
     match compression::decompress_residual_quantized(input) {
         Ok(decompressed) => {
-            unsafe { *out_buffer = AliceFloatBuffer::new(decompressed); }
+            unsafe {
+                *out_buffer = AliceFloatBuffer::new(decompressed);
+            }
             AliceError::Success
         }
         Err(e) => {
             set_last_error(&format!("Residual decompression failed: {}", e));
-            unsafe { *out_buffer = AliceFloatBuffer::null(); }
+            unsafe {
+                *out_buffer = AliceFloatBuffer::null();
+            }
             AliceError::DecompressionError
         }
     }

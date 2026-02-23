@@ -5,9 +5,9 @@
 //! License: MIT
 //! Author: Moroya Sakamoto
 
-use rustfft::{FftPlanner, num_complex::Complex};
-use std::f32::consts::PI;
+use rustfft::{num_complex::Complex, FftPlanner};
 use std::cell::RefCell;
+use std::f32::consts::PI;
 
 // Thread-local FftPlanner cache for performance optimization.
 // FftPlanner internally caches FFT plans, but creating a new planner each call
@@ -32,7 +32,7 @@ pub struct FourierCoefficient {
 /// * `dc_offset` - DC component (mean value)
 ///
 /// # Returns
-/// Vec<f32> of generated signal
+/// `Vec<f32>` of generated signal
 pub fn generate_from_coefficients(
     n: usize,
     coefficients: &[(usize, f32, f32)],
@@ -62,9 +62,7 @@ pub fn generate_from_coefficients(
     // Extract real parts and add DC offset
     // Note: rustfft doesn't normalize, so we divide by n
     let inv_n = 1.0 / n as f32;
-    buffer.iter()
-        .map(|c| c.re * inv_n + dc_offset)
-        .collect()
+    buffer.iter().map(|c| c.re * inv_n + dc_offset).collect()
 }
 
 /// Generate a simple sine wave
@@ -77,7 +75,7 @@ pub fn generate_from_coefficients(
 /// * `dc_offset` - DC offset
 ///
 /// # Returns
-/// Vec<f32> of sine wave samples
+/// `Vec<f32>` of sine wave samples
 pub fn generate_sine_wave(
     n: usize,
     frequency: f32,
@@ -102,12 +100,8 @@ pub fn generate_sine_wave(
 /// * `dc_offset` - DC offset
 ///
 /// # Returns
-/// Vec<f32> of generated signal
-pub fn generate_multi_sine(
-    n: usize,
-    components: &[(f32, f32, f32)],
-    dc_offset: f32,
-) -> Vec<f32> {
+/// `Vec<f32>` of generated signal
+pub fn generate_multi_sine(n: usize, components: &[(f32, f32, f32)], dc_offset: f32) -> Vec<f32> {
     let mut result = vec![dc_offset; n];
     let inv_n = 1.0 / n as f32;
 
@@ -168,7 +162,7 @@ pub fn analyze_signal(
     freq_data.sort_by(|a, b| {
         match (a.1.is_nan(), b.1.is_nan()) {
             (true, true) => std::cmp::Ordering::Equal,
-            (true, false) => std::cmp::Ordering::Greater,  // NaN goes to end
+            (true, false) => std::cmp::Ordering::Greater, // NaN goes to end
             (false, true) => std::cmp::Ordering::Less,
             (false, false) => b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal),
         }
@@ -178,7 +172,11 @@ pub fn analyze_signal(
     let total_energy: f32 = freq_data.iter().map(|(_, m, _)| m * m).sum();
 
     // Pre-compute reciprocal to avoid per-iteration division inside the loop
-    let rcp_total = if total_energy > 0.0 { 1.0 / total_energy } else { 0.0 };
+    let rcp_total = if total_energy > 0.0 {
+        1.0 / total_energy
+    } else {
+        0.0
+    };
 
     // Select coefficients until energy threshold is reached
     let mut coefficients = Vec::new();
@@ -232,10 +230,12 @@ mod tests {
         let reconstructed = generate_from_coefficients(256, &coeffs, dc);
 
         // Check similarity
-        let mse: f32 = original.iter()
+        let mse: f32 = original
+            .iter()
             .zip(reconstructed.iter())
             .map(|(a, b)| (a - b).powi(2))
-            .sum::<f32>() / original.len() as f32;
+            .sum::<f32>()
+            / original.len() as f32;
 
         assert!(mse < 0.01, "MSE too high: {}", mse);
     }

@@ -5,13 +5,13 @@
 //! License: MIT
 //! Author: Moroya Sakamoto
 
-pub mod perlin;
 pub mod fourier;
+pub mod perlin;
 pub mod polynomial;
 
 // Re-export main functions
-pub use perlin::{generate_perlin_2d, generate_perlin_advanced, PerlinNoise};
 pub use fourier::{
-    generate_from_coefficients, generate_sine_wave, generate_multi_sine, analyze_signal
+    analyze_signal, generate_from_coefficients, generate_multi_sine, generate_sine_wave,
 };
-pub use polynomial::{generate_polynomial, fit_polynomial};
+pub use perlin::{generate_perlin_2d, generate_perlin_advanced, PerlinNoise};
+pub use polynomial::{fit_polynomial, generate_polynomial};

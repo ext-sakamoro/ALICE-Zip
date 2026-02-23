@@ -6,15 +6,21 @@
 //! License: MIT
 //! Author: Moroya Sakamoto
 
-use rand::SeedableRng;
 use rand::Rng;
+use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
 
 /// Perlin noise gradient vectors (precomputed)
 const GRAD2: [[f32; 2]; 8] = [
-    [1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0],
-    [0.7071, 0.7071], [-0.7071, 0.7071], [0.7071, -0.7071], [-0.7071, -0.7071],
+    [1.0, 0.0],
+    [-1.0, 0.0],
+    [0.0, 1.0],
+    [0.0, -1.0],
+    [0.7071, 0.7071],
+    [-0.7071, 0.7071],
+    [0.7071, -0.7071],
+    [-0.7071, -0.7071],
 ];
 
 /// Permutation table for noise generation
@@ -99,11 +105,7 @@ impl PerlinNoise {
         let v = Self::fade(yf);
 
         // Bilinear interpolation
-        Self::lerp(
-            Self::lerp(g00, g10, u),
-            Self::lerp(g01, g11, u),
-            v
-        )
+        Self::lerp(Self::lerp(g00, g10, u), Self::lerp(g01, g11, u), v)
     }
 
     /// Generate fractal Brownian motion (fBm) noise
@@ -155,14 +157,17 @@ pub fn generate_perlin_2d(
     (0..height)
         .into_par_iter()
         .flat_map(|y| {
-            (0..width).map(move |x| {
-                let nx = x as f32 * rcp_scale;
-                let ny = y as f32 * rcp_scale;
-                // Normalize from [-1, 1] to [0, 1] and clamp to handle
-                // floating-point errors that may produce values slightly outside range
-                let normalized = (noise.fbm(nx, ny, octaves, persistence, lacunarity) + 1.0) * 0.5;
-                normalized.clamp(0.0, 1.0)
-            }).collect::<Vec<_>>()
+            (0..width)
+                .map(move |x| {
+                    let nx = x as f32 * rcp_scale;
+                    let ny = y as f32 * rcp_scale;
+                    // Normalize from [-1, 1] to [0, 1] and clamp to handle
+                    // floating-point errors that may produce values slightly outside range
+                    let normalized =
+                        (noise.fbm(nx, ny, octaves, persistence, lacunarity) + 1.0) * 0.5;
+                    normalized.clamp(0.0, 1.0)
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
 }
@@ -184,14 +189,17 @@ pub fn generate_perlin_advanced(
     (0..height)
         .into_par_iter()
         .flat_map(|y| {
-            (0..width).map(move |x| {
-                let nx = x as f32 * rcp_scale;
-                let ny = y as f32 * rcp_scale;
-                // Normalize from [-1, 1] to [0, 1] and clamp to handle
-                // floating-point errors that may produce values slightly outside range
-                let normalized = (noise.fbm(nx, ny, octaves, persistence, lacunarity) + 1.0) * 0.5;
-                normalized.clamp(0.0, 1.0)
-            }).collect::<Vec<_>>()
+            (0..width)
+                .map(move |x| {
+                    let nx = x as f32 * rcp_scale;
+                    let ny = y as f32 * rcp_scale;
+                    // Normalize from [-1, 1] to [0, 1] and clamp to handle
+                    // floating-point errors that may produce values slightly outside range
+                    let normalized =
+                        (noise.fbm(nx, ny, octaves, persistence, lacunarity) + 1.0) * 0.5;
+                    normalized.clamp(0.0, 1.0)
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
 }

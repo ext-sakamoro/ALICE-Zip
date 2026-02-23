@@ -13,9 +13,9 @@
 
 use std::f64::consts::PI;
 
-use crate::generators::fourier::{analyze_signal, generate_sine_wave, generate_from_coefficients};
-use crate::generators::polynomial::{fit_polynomial, generate_polynomial};
 use crate::compression::{lzma_compress, lzma_decompress};
+use crate::generators::fourier::{analyze_signal, generate_from_coefficients, generate_sine_wave};
+use crate::generators::polynomial::{fit_polynomial, generate_polynomial};
 
 // ---------------------------------------------------------------------------
 // Constants (mirrors Python analyzer constants)
@@ -109,11 +109,18 @@ fn variance_f64(data: &[f64]) -> f64 {
 #[inline]
 fn normalized_mse(data: &[f64], fitted: &[f64]) -> f64 {
     let n = data.len() as f64;
-    let mse = data.iter().zip(fitted.iter())
+    let mse = data
+        .iter()
+        .zip(fitted.iter())
         .map(|(&a, &b)| (a - b).powi(2))
-        .sum::<f64>() / n;
+        .sum::<f64>()
+        / n;
     let var = variance_f64(data);
-    if var > 1e-15 { mse / var } else { mse }
+    if var > 1e-15 {
+        mse / var
+    } else {
+        mse
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -160,17 +167,20 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
         freq_idx as f64
     } else {
         // Fallback: estimate from zero crossings
-        let crossings: Vec<usize> = centered.windows(2)
+        let crossings: Vec<usize> = centered
+            .windows(2)
             .enumerate()
             .filter_map(|(i, w)| {
-                if (w[0] < 0.0) != (w[1] < 0.0) { Some(i) } else { None }
+                if (w[0] < 0.0) != (w[1] < 0.0) {
+                    Some(i)
+                } else {
+                    None
+                }
             })
             .collect();
 
         if crossings.len() >= 2 {
-            let diffs: Vec<f64> = crossings.windows(2)
-                .map(|w| (w[1] - w[0]) as f64)
-                .collect();
+            let diffs: Vec<f64> = crossings.windows(2).map(|w| (w[1] - w[0]) as f64).collect();
             let avg_half_period = diffs.iter().sum::<f64>() / diffs.len() as f64;
             if avg_half_period > 0.0 {
                 n as f64 / (2.0 * avg_half_period)
@@ -195,14 +205,16 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
 
     for step in 0..360usize {
         let phase = step as f64 * phase_step;
-        let mse = args.iter()
+        let mse = args
+            .iter()
             .zip(data.iter())
             .map(|(&arg, &y)| {
                 let fitted = amplitude * (arg + phase).sin() + dc_offset;
                 let diff = y as f64 - fitted;
                 diff * diff
             })
-            .sum::<f64>() * inv_n;
+            .sum::<f64>()
+            * inv_n;
 
         // Branchless-style: update best using direct comparison
         if mse < best_error {
@@ -212,7 +224,8 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
     }
 
     // --- Normalized error ---
-    let fitted_vals: Vec<f64> = args.iter()
+    let fitted_vals: Vec<f64> = args
+        .iter()
         .map(|&arg| amplitude * (arg + best_phase).sin() + dc_offset)
         .collect();
     let data_f64: Vec<f64> = data.iter().map(|&x| x as f64).collect();
@@ -253,8 +266,11 @@ pub fn try_fourier_fit(data: &[f32], max_coeffs: usize) -> Option<FitResult> {
         return None;
     }
 
-    let (coefficients, dc_offset) =
-        analyze_signal(data, max_coeffs.min(MAX_FOURIER_COEFFICIENTS), FOURIER_ENERGY_THRESHOLD);
+    let (coefficients, dc_offset) = analyze_signal(
+        data,
+        max_coeffs.min(MAX_FOURIER_COEFFICIENTS),
+        FOURIER_ENERGY_THRESHOLD,
+    );
 
     if coefficients.is_empty() {
         return None;
@@ -367,7 +383,9 @@ pub fn analyze_data(data: &[f32]) -> FitResult {
     // Helper: replace `best` if `candidate` has a higher compression_ratio
     let mut update_best = |candidate: Option<FitResult>| {
         if let Some(c) = candidate {
-            let replace = best.as_ref().map_or(true, |b| c.compression_ratio > b.compression_ratio);
+            let replace = best
+                .as_ref()
+                .map_or(true, |b| c.compression_ratio > b.compression_ratio);
             if replace {
                 best = Some(c);
             }
@@ -386,15 +404,17 @@ pub fn analyze_data(data: &[f32]) -> FitResult {
     }
 
     // Fallback: LZMA (ratio computed from actual compressed size)
-    let raw_bytes: Vec<u8> = data.iter()
-        .flat_map(|&v| v.to_le_bytes())
-        .collect();
+    let raw_bytes: Vec<u8> = data.iter().flat_map(|&v| v.to_le_bytes()).collect();
     let original_bytes = raw_bytes.len() as f32;
 
     let compression_ratio = lzma_compress(&raw_bytes, 6)
         .map(|compressed| {
             let cb = compressed.len() as f32;
-            if cb > 0.0 { original_bytes / cb } else { 1.0 }
+            if cb > 0.0 {
+                original_bytes / cb
+            } else {
+                1.0
+            }
         })
         .unwrap_or(1.0);
 
@@ -421,9 +441,9 @@ fn reconstruct(fit: &FitResult, n: usize) -> Vec<f32> {
                 return vec![0.0; n];
             }
             let freq = fit.coefficients[0] as f32;
-            let amp  = fit.coefficients[1] as f32;
-            let phase= fit.coefficients[2] as f32;
-            let dc   = fit.coefficients[3] as f32;
+            let amp = fit.coefficients[1] as f32;
+            let phase = fit.coefficients[2] as f32;
+            let dc = fit.coefficients[3] as f32;
             generate_sine_wave(n, freq, amp, phase, dc)
         }
 
@@ -445,9 +465,7 @@ fn reconstruct(fit: &FitResult, n: usize) -> Vec<f32> {
             generate_from_coefficients(n, &coefficients, dc_offset)
         }
 
-        FitMethod::Polynomial => {
-            generate_polynomial(n, &fit.coefficients)
-        }
+        FitMethod::Polynomial => generate_polynomial(n, &fit.coefficients),
 
         FitMethod::LzmaFallback => {
             // Cannot reconstruct without compressed bytes; return zeros
@@ -483,7 +501,9 @@ pub struct ProceduralCompressionDesigner {
 impl ProceduralCompressionDesigner {
     /// Create a designer with default settings.
     pub fn new() -> Self {
-        Self { max_error: MAX_ACCEPTABLE_ERROR }
+        Self {
+            max_error: MAX_ACCEPTABLE_ERROR,
+        }
     }
 
     /// Create a designer with a custom error threshold.
@@ -506,9 +526,7 @@ impl ProceduralCompressionDesigner {
         match fit_result.method {
             FitMethod::LzmaFallback => {
                 // Compress raw f32 bytes with LZMA
-                let raw_bytes: Vec<u8> = data.iter()
-                    .flat_map(|&v| v.to_le_bytes())
-                    .collect();
+                let raw_bytes: Vec<u8> = data.iter().flat_map(|&v| v.to_le_bytes()).collect();
                 let residual = lzma_compress(&raw_bytes, 6).ok();
                 CompressedPayload {
                     fit_result,
@@ -521,20 +539,21 @@ impl ProceduralCompressionDesigner {
                 // Reconstruct and compute residual for near-lossless storage
                 let reconstructed = reconstruct(&fit_result, n);
 
-                let residual_f32: Vec<f32> = data.iter()
+                let residual_f32: Vec<f32> = data
+                    .iter()
                     .zip(reconstructed.iter())
                     .map(|(&orig, &rec)| orig - rec)
                     .collect();
 
                 // Check whether residual is significant
-                let max_abs_residual = residual_f32.iter()
+                let max_abs_residual = residual_f32
+                    .iter()
                     .map(|&v| v.abs())
                     .fold(0.0_f32, f32::max);
 
                 let residual = if max_abs_residual > 1e-10 {
-                    let residual_bytes: Vec<u8> = residual_f32.iter()
-                        .flat_map(|&v| v.to_le_bytes())
-                        .collect();
+                    let residual_bytes: Vec<u8> =
+                        residual_f32.iter().flat_map(|&v| v.to_le_bytes()).collect();
                     lzma_compress(&residual_bytes, 6).ok()
                 } else {
                     None
@@ -558,7 +577,8 @@ impl ProceduralCompressionDesigner {
                 // Decompress raw LZMA bytes back to f32
                 if let Some(ref compressed) = payload.residual {
                     if let Ok(raw) = lzma_decompress(compressed) {
-                        return raw.chunks_exact(4)
+                        return raw
+                            .chunks_exact(4)
                             .map(|c| f32::from_le_bytes(c.try_into().unwrap_or([0; 4])))
                             .collect();
                     }
@@ -572,7 +592,8 @@ impl ProceduralCompressionDesigner {
                 // Add residual if present
                 if let Some(ref compressed_residual) = payload.residual {
                     if let Ok(raw) = lzma_decompress(compressed_residual) {
-                        let residual: Vec<f32> = raw.chunks_exact(4)
+                        let residual: Vec<f32> = raw
+                            .chunks_exact(4)
                             .map(|c| f32::from_le_bytes(c.try_into().unwrap_or([0; 4])))
                             .collect();
                         for (s, r) in signal.iter_mut().zip(residual.iter()) {
@@ -624,19 +645,29 @@ mod tests {
         let data = make_sine(n, freq, amp, phase, dc);
         let result = try_sine_fit(&data);
 
-        assert!(result.is_some(), "Sine fit should succeed for a pure sine wave");
+        assert!(
+            result.is_some(),
+            "Sine fit should succeed for a pure sine wave"
+        );
         let fit = result.unwrap();
         assert_eq!(fit.method, FitMethod::Sine);
-        assert!(fit.error < MAX_ACCEPTABLE_ERROR,
-            "Normalized error should be below threshold: {}", fit.error);
+        assert!(
+            fit.error < MAX_ACCEPTABLE_ERROR,
+            "Normalized error should be below threshold: {}",
+            fit.error
+        );
 
         // Coefficients: [frequency, amplitude, phase, dc_offset]
         assert_eq!(fit.coefficients.len(), 4);
 
         // Amplitude should be close to the true amplitude
         let fitted_amp = fit.coefficients[1].abs();
-        assert!((fitted_amp - amp as f64).abs() < 0.5,
-            "Amplitude mismatch: fitted={:.4}, true={:.4}", fitted_amp, amp);
+        assert!(
+            (fitted_amp - amp as f64).abs() < 0.5,
+            "Amplitude mismatch: fitted={:.4}, true={:.4}",
+            fitted_amp,
+            amp
+        );
     }
 
     // ------------------------------------------------------------------
@@ -650,21 +681,28 @@ mod tests {
         let data: Vec<f32> = (0..n)
             .map(|i| {
                 let t = i as f32 / n as f32;
-                (2.0 * PI * 3.0 * t).sin() * 1.5
-                    + (2.0 * PI * 7.0 * t).sin() * 0.8
+                (2.0 * PI * 3.0 * t).sin() * 1.5 + (2.0 * PI * 7.0 * t).sin() * 0.8
             })
             .collect();
 
         let result = try_fourier_fit(&data, MAX_FOURIER_COEFFICIENTS);
-        assert!(result.is_some(), "Fourier fit should succeed for multi-sine signal");
+        assert!(
+            result.is_some(),
+            "Fourier fit should succeed for multi-sine signal"
+        );
 
         let fit = result.unwrap();
         assert_eq!(fit.method, FitMethod::Fourier);
-        assert!(fit.error < MAX_ACCEPTABLE_ERROR,
-            "Normalized error should be below threshold: {}", fit.error);
+        assert!(
+            fit.error < MAX_ACCEPTABLE_ERROR,
+            "Normalized error should be below threshold: {}",
+            fit.error
+        );
         // Must have at least one triple + dc_offset
-        assert!(fit.coefficients.len() >= 4,
-            "Must have at least one (idx, mag, phase) triple + dc_offset");
+        assert!(
+            fit.coefficients.len() >= 4,
+            "Must have at least one (idx, mag, phase) triple + dc_offset"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -683,12 +721,18 @@ mod tests {
             .collect();
 
         let result = try_polynomial_fit(&data, MAX_POLYNOMIAL_DEGREE);
-        assert!(result.is_some(), "Polynomial fit should succeed for quadratic data");
+        assert!(
+            result.is_some(),
+            "Polynomial fit should succeed for quadratic data"
+        );
 
         let fit = result.unwrap();
         assert_eq!(fit.method, FitMethod::Polynomial);
-        assert!(fit.error < MAX_ACCEPTABLE_ERROR,
-            "Normalized error should be below threshold: {}", fit.error);
+        assert!(
+            fit.error < MAX_ACCEPTABLE_ERROR,
+            "Normalized error should be below threshold: {}",
+            fit.error
+        );
     }
 
     // ------------------------------------------------------------------
@@ -703,10 +747,16 @@ mod tests {
         let result = analyze_data(&data);
 
         // Should be a procedural method (Sine or Fourier), not LZMA
-        assert_ne!(result.method, FitMethod::LzmaFallback,
-            "Pure sine should not fall back to LZMA");
-        assert!(result.compression_ratio >= MIN_PROCEDURAL_RATIO,
-            "Compression ratio should meet minimum threshold: {}", result.compression_ratio);
+        assert_ne!(
+            result.method,
+            FitMethod::LzmaFallback,
+            "Pure sine should not fall back to LZMA"
+        );
+        assert!(
+            result.compression_ratio >= MIN_PROCEDURAL_RATIO,
+            "Compression ratio should meet minimum threshold: {}",
+            result.compression_ratio
+        );
     }
 
     #[test]
@@ -728,8 +778,12 @@ mod tests {
         let result = analyze_data(&data);
         // For random data the procedural fits should fail; LZMA is the fallback
         // (This assertion is probabilistic but deterministic with fixed seed above)
-        assert_eq!(result.method, FitMethod::LzmaFallback,
-            "Random noise should fall back to LZMA; method={:?}", result.method);
+        assert_eq!(
+            result.method,
+            FitMethod::LzmaFallback,
+            "Random noise should fall back to LZMA; method={:?}",
+            result.method
+        );
     }
 
     // ------------------------------------------------------------------
@@ -747,12 +801,17 @@ mod tests {
 
         assert_eq!(recovered.len(), n);
 
-        let max_err = data.iter().zip(recovered.iter())
+        let max_err = data
+            .iter()
+            .zip(recovered.iter())
             .map(|(&a, &b)| (a - b).abs())
             .fold(0.0_f32, f32::max);
 
-        assert!(max_err < 1e-4,
-            "Roundtrip max error too high for sine: {}", max_err);
+        assert!(
+            max_err < 1e-4,
+            "Roundtrip max error too high for sine: {}",
+            max_err
+        );
     }
 
     #[test]
@@ -772,12 +831,17 @@ mod tests {
 
         assert_eq!(recovered.len(), n);
 
-        let max_err = data.iter().zip(recovered.iter())
+        let max_err = data
+            .iter()
+            .zip(recovered.iter())
             .map(|(&a, &b)| (a - b).abs())
             .fold(0.0_f32, f32::max);
 
-        assert!(max_err < 1e-4,
-            "Roundtrip max error too high for polynomial: {}", max_err);
+        assert!(
+            max_err < 1e-4,
+            "Roundtrip max error too high for polynomial: {}",
+            max_err
+        );
     }
 
     #[test]
@@ -801,8 +865,7 @@ mod tests {
             let recovered = designer.decompress(&payload);
             assert_eq!(recovered.len(), n);
             for (a, b) in data.iter().zip(recovered.iter()) {
-                assert_eq!(a.to_bits(), b.to_bits(),
-                    "LZMA fallback must be bit-exact");
+                assert_eq!(a.to_bits(), b.to_bits(), "LZMA fallback must be bit-exact");
             }
         }
     }
