@@ -27,12 +27,8 @@ use std::io::{Cursor, Read};
 /// Compressed bytes or IO error
 pub fn lzma_compress(data: &[u8], _preset: u32) -> std::io::Result<Vec<u8>> {
     let mut output = Vec::new();
-    lzma_rs::lzma_compress(&mut Cursor::new(data), &mut output).map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("LZMA compress error: {}", e),
-        )
-    })?;
+    lzma_rs::lzma_compress(&mut Cursor::new(data), &mut output)
+        .map_err(|e| std::io::Error::other(format!("LZMA compress error: {}", e)))?;
     Ok(output)
 }
 

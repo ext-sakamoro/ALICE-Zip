@@ -17,10 +17,22 @@ const GRAD2: [[f32; 2]; 8] = [
     [-1.0, 0.0],
     [0.0, 1.0],
     [0.0, -1.0],
-    [0.7071, 0.7071],
-    [-0.7071, 0.7071],
-    [0.7071, -0.7071],
-    [-0.7071, -0.7071],
+    [
+        std::f32::consts::FRAC_1_SQRT_2,
+        std::f32::consts::FRAC_1_SQRT_2,
+    ],
+    [
+        -std::f32::consts::FRAC_1_SQRT_2,
+        std::f32::consts::FRAC_1_SQRT_2,
+    ],
+    [
+        std::f32::consts::FRAC_1_SQRT_2,
+        -std::f32::consts::FRAC_1_SQRT_2,
+    ],
+    [
+        -std::f32::consts::FRAC_1_SQRT_2,
+        -std::f32::consts::FRAC_1_SQRT_2,
+    ],
 ];
 
 /// Permutation table for noise generation
@@ -36,8 +48,8 @@ impl PerlinNoise {
         let mut perm = [0u8; 512];
 
         // Initialize permutation table
-        for i in 0..256 {
-            perm[i] = i as u8;
+        for (i, p) in perm.iter_mut().enumerate().take(256) {
+            *p = i as u8;
         }
 
         // Fisher-Yates shuffle

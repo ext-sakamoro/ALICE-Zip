@@ -176,7 +176,7 @@ impl AlzHeader {
         if bytes.len() < 32 {
             return None;
         }
-        if &bytes[0..4] != &MAGIC {
+        if bytes[0..4] != MAGIC {
             return None;
         }
 
@@ -371,7 +371,7 @@ fn cmd_info(file: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    if &header_bytes[0..4] == &MAGIC {
+    if header_bytes[0..4] == MAGIC {
         // Valid .alz file
         let header = AlzHeader::from_bytes(&header_bytes)
             .ok_or("Invalid .alz file: failed to parse header")?;

@@ -32,7 +32,7 @@ pub enum AliceError {
 
 // Thread-local error message storage
 thread_local! {
-    static LAST_ERROR: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
+    static LAST_ERROR: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
 fn set_last_error(msg: &str) {
@@ -120,31 +120,35 @@ impl AliceFloatBuffer {
     }
 }
 
-/// Free a buffer allocated by libalice
+/// Free a buffer allocated by libalice.
+///
+/// # Safety
+///
+/// `buffer` must be a valid pointer from a libalice FFI call or null.
 #[no_mangle]
-pub extern "C" fn alice_free_buffer(buffer: *mut AliceBuffer) {
+pub unsafe extern "C" fn alice_free_buffer(buffer: *mut AliceBuffer) {
     if buffer.is_null() {
         return;
     }
-    unsafe {
-        let buf = &*buffer;
-        if !buf.data.is_null() && buf.capacity > 0 {
-            let _ = Vec::from_raw_parts(buf.data, buf.len, buf.capacity);
-        }
+    let buf = &*buffer;
+    if !buf.data.is_null() && buf.capacity > 0 {
+        let _ = Vec::from_raw_parts(buf.data, buf.len, buf.capacity);
     }
 }
 
-/// Free a float buffer allocated by libalice
+/// Free a float buffer allocated by libalice.
+///
+/// # Safety
+///
+/// `buffer` must be a valid pointer from a libalice FFI call or null.
 #[no_mangle]
-pub extern "C" fn alice_free_float_buffer(buffer: *mut AliceFloatBuffer) {
+pub unsafe extern "C" fn alice_free_float_buffer(buffer: *mut AliceFloatBuffer) {
     if buffer.is_null() {
         return;
     }
-    unsafe {
-        let buf = &*buffer;
-        if !buf.data.is_null() && buf.capacity > 0 {
-            let _ = Vec::from_raw_parts(buf.data, buf.len, buf.capacity);
-        }
+    let buf = &*buffer;
+    if !buf.data.is_null() && buf.capacity > 0 {
+        let _ = Vec::from_raw_parts(buf.data, buf.len, buf.capacity);
     }
 }
 
@@ -159,23 +163,21 @@ pub extern "C" fn alice_version() -> *const c_char {
     VERSION.as_ptr() as *const c_char
 }
 
-/// Get the library version as integers
+/// Get the library version as integers.
+///
+/// # Safety
+///
+/// Non-null pointers must be valid writable `u32` locations.
 #[no_mangle]
-pub extern "C" fn alice_version_numbers(major: *mut u32, minor: *mut u32, patch: *mut u32) {
+pub unsafe extern "C" fn alice_version_numbers(major: *mut u32, minor: *mut u32, patch: *mut u32) {
     if !major.is_null() {
-        unsafe {
-            *major = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
-        }
+        *major = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
     }
     if !minor.is_null() {
-        unsafe {
-            *minor = env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
-        }
+        *minor = env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
     }
     if !patch.is_null() {
-        unsafe {
-            *patch = env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);
-        }
+        *patch = env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);
     }
 }
 
@@ -183,20 +185,13 @@ pub extern "C" fn alice_version_numbers(major: *mut u32, minor: *mut u32, patch:
 // Perlin Noise Generation
 // ============================================================================
 
-/// Generate 2D Perlin noise
+/// Generate 2D Perlin noise.
 ///
-/// # Parameters
-/// - `width`: Width of the output texture
-/// - `height`: Height of the output texture
-/// - `seed`: Random seed for reproducibility
-/// - `scale`: Noise scale (larger = more zoomed out)
-/// - `octaves`: Number of octaves for fractal noise
-/// - `out_buffer`: Output buffer (will be allocated by the function)
+/// # Safety
 ///
-/// # Returns
-/// AliceError::Success on success, error code otherwise
+/// `out_buffer` must be a valid writable pointer.
 #[no_mangle]
-pub extern "C" fn alice_perlin_2d(
+pub unsafe extern "C" fn alice_perlin_2d(
     width: usize,
     height: usize,
     seed: u64,
@@ -218,15 +213,17 @@ pub extern "C" fn alice_perlin_2d(
     }
 
     let data = generators::generate_perlin_2d(width, height, seed, scale, octaves);
-    unsafe {
-        *out_buffer = AliceFloatBuffer::new(data);
-    }
+    *out_buffer = AliceFloatBuffer::new(data);
     AliceError::Success
 }
 
-/// Generate advanced 2D Perlin noise with persistence and lacunarity
+/// Generate advanced 2D Perlin noise with persistence and lacunarity.
+///
+/// # Safety
+///
+/// `out_buffer` must be a valid writable pointer.
 #[no_mangle]
-pub extern "C" fn alice_perlin_advanced(
+pub unsafe extern "C" fn alice_perlin_advanced(
     width: usize,
     height: usize,
     seed: u64,
@@ -254,9 +251,7 @@ pub extern "C" fn alice_perlin_advanced(
         persistence,
         lacunarity,
     );
-    unsafe {
-        *out_buffer = AliceFloatBuffer::new(data);
-    }
+    *out_buffer = AliceFloatBuffer::new(data);
     AliceError::Success
 }
 
@@ -264,9 +259,13 @@ pub extern "C" fn alice_perlin_advanced(
 // Fourier / Sine Wave Generation
 // ============================================================================
 
-/// Generate a sine wave
+/// Generate a sine wave.
+///
+/// # Safety
+///
+/// `out_buffer` must be a valid writable pointer.
 #[no_mangle]
-pub extern "C" fn alice_sine_wave(
+pub unsafe extern "C" fn alice_sine_wave(
     n: usize,
     frequency: f32,
     amplitude: f32,
@@ -284,9 +283,7 @@ pub extern "C" fn alice_sine_wave(
     }
 
     let data = generators::generate_sine_wave(n, frequency, amplitude, phase, dc_offset);
-    unsafe {
-        *out_buffer = AliceFloatBuffer::new(data);
-    }
+    *out_buffer = AliceFloatBuffer::new(data);
     AliceError::Success
 }
 
@@ -299,9 +296,13 @@ pub struct FourierCoefficient {
     pub phase: f32,
 }
 
-/// Generate signal from Fourier coefficients
+/// Generate signal from Fourier coefficients.
+///
+/// # Safety
+///
+/// `coefficients`/`num_coefficients` must describe a valid buffer. `out_buffer` must be valid.
 #[no_mangle]
-pub extern "C" fn alice_fourier_generate(
+pub unsafe extern "C" fn alice_fourier_generate(
     n: usize,
     coefficients: *const FourierCoefficient,
     num_coefficients: usize,
@@ -318,20 +319,16 @@ pub extern "C" fn alice_fourier_generate(
     }
 
     let coeffs: Vec<(usize, f32, f32)> = if num_coefficients > 0 {
-        unsafe {
-            slice::from_raw_parts(coefficients, num_coefficients)
-                .iter()
-                .map(|c| (c.frequency, c.amplitude, c.phase))
-                .collect()
-        }
+        slice::from_raw_parts(coefficients, num_coefficients)
+            .iter()
+            .map(|c| (c.frequency, c.amplitude, c.phase))
+            .collect()
     } else {
         Vec::new()
     };
 
     let data = generators::generate_from_coefficients(n, &coeffs, dc_offset);
-    unsafe {
-        *out_buffer = AliceFloatBuffer::new(data);
-    }
+    *out_buffer = AliceFloatBuffer::new(data);
     AliceError::Success
 }
 
@@ -340,8 +337,12 @@ pub extern "C" fn alice_fourier_generate(
 // ============================================================================
 
 /// Generate polynomial data: y = c0 + c1*x + c2*x^2 + ...
+///
+/// # Safety
+///
+/// `coefficients`/`num_coefficients` must describe a valid buffer. `out_buffer` must be valid.
 #[no_mangle]
-pub extern "C" fn alice_polynomial_generate(
+pub unsafe extern "C" fn alice_polynomial_generate(
     n: usize,
     coefficients: *const f64,
     num_coefficients: usize,
@@ -357,15 +358,13 @@ pub extern "C" fn alice_polynomial_generate(
     }
 
     let coeffs: Vec<f64> = if num_coefficients > 0 {
-        unsafe { slice::from_raw_parts(coefficients, num_coefficients).to_vec() }
+        slice::from_raw_parts(coefficients, num_coefficients).to_vec()
     } else {
         Vec::new()
     };
 
     let data = generators::generate_polynomial(n, &coeffs);
-    unsafe {
-        *out_buffer = AliceFloatBuffer::new(data);
-    }
+    *out_buffer = AliceFloatBuffer::new(data);
     AliceError::Success
 }
 
@@ -373,9 +372,13 @@ pub extern "C" fn alice_polynomial_generate(
 // Compression Functions
 // ============================================================================
 
-/// Compress data using LZMA
+/// Compress data using LZMA.
+///
+/// # Safety
+///
+/// `data`/`len` must describe a valid buffer. `out_buffer` must be valid.
 #[no_mangle]
-pub extern "C" fn alice_lzma_compress(
+pub unsafe extern "C" fn alice_lzma_compress(
     data: *const u8,
     len: usize,
     preset: u32,
@@ -391,31 +394,31 @@ pub extern "C" fn alice_lzma_compress(
     }
 
     let input = if len > 0 {
-        unsafe { slice::from_raw_parts(data, len) }
+        slice::from_raw_parts(data, len)
     } else {
         &[]
     };
 
     match compression::lzma_compress(input, preset) {
         Ok(compressed) => {
-            unsafe {
-                *out_buffer = AliceBuffer::new(compressed);
-            }
+            *out_buffer = AliceBuffer::new(compressed);
             AliceError::Success
         }
         Err(e) => {
             set_last_error(&format!("LZMA compression failed: {}", e));
-            unsafe {
-                *out_buffer = AliceBuffer::null();
-            }
+            *out_buffer = AliceBuffer::null();
             AliceError::CompressionError
         }
     }
 }
 
-/// Decompress LZMA data
+/// Decompress LZMA data.
+///
+/// # Safety
+///
+/// `data`/`len` must describe a valid buffer. `out_buffer` must be valid.
 #[no_mangle]
-pub extern "C" fn alice_lzma_decompress(
+pub unsafe extern "C" fn alice_lzma_decompress(
     data: *const u8,
     len: usize,
     out_buffer: *mut AliceBuffer,
@@ -430,31 +433,31 @@ pub extern "C" fn alice_lzma_decompress(
     }
 
     let input = if len > 0 {
-        unsafe { slice::from_raw_parts(data, len) }
+        slice::from_raw_parts(data, len)
     } else {
         &[]
     };
 
     match compression::lzma_decompress(input) {
         Ok(decompressed) => {
-            unsafe {
-                *out_buffer = AliceBuffer::new(decompressed);
-            }
+            *out_buffer = AliceBuffer::new(decompressed);
             AliceError::Success
         }
         Err(e) => {
             set_last_error(&format!("LZMA decompression failed: {}", e));
-            unsafe {
-                *out_buffer = AliceBuffer::null();
-            }
+            *out_buffer = AliceBuffer::null();
             AliceError::DecompressionError
         }
     }
 }
 
-/// Compress data using zlib
+/// Compress data using zlib.
+///
+/// # Safety
+///
+/// `data`/`len` must describe a valid buffer. `out_buffer` must be valid.
 #[no_mangle]
-pub extern "C" fn alice_zlib_compress(
+pub unsafe extern "C" fn alice_zlib_compress(
     data: *const u8,
     len: usize,
     level: u32,
@@ -470,31 +473,31 @@ pub extern "C" fn alice_zlib_compress(
     }
 
     let input = if len > 0 {
-        unsafe { slice::from_raw_parts(data, len) }
+        slice::from_raw_parts(data, len)
     } else {
         &[]
     };
 
     match compression::zlib_compress(input, level) {
         Ok(compressed) => {
-            unsafe {
-                *out_buffer = AliceBuffer::new(compressed);
-            }
+            *out_buffer = AliceBuffer::new(compressed);
             AliceError::Success
         }
         Err(e) => {
             set_last_error(&format!("zlib compression failed: {}", e));
-            unsafe {
-                *out_buffer = AliceBuffer::null();
-            }
+            *out_buffer = AliceBuffer::null();
             AliceError::CompressionError
         }
     }
 }
 
-/// Decompress zlib data
+/// Decompress zlib data.
+///
+/// # Safety
+///
+/// `data`/`len` must describe a valid buffer. `out_buffer` must be valid.
 #[no_mangle]
-pub extern "C" fn alice_zlib_decompress(
+pub unsafe extern "C" fn alice_zlib_decompress(
     data: *const u8,
     len: usize,
     out_buffer: *mut AliceBuffer,
@@ -509,31 +512,31 @@ pub extern "C" fn alice_zlib_decompress(
     }
 
     let input = if len > 0 {
-        unsafe { slice::from_raw_parts(data, len) }
+        slice::from_raw_parts(data, len)
     } else {
         &[]
     };
 
     match compression::zlib_decompress(input) {
         Ok(decompressed) => {
-            unsafe {
-                *out_buffer = AliceBuffer::new(decompressed);
-            }
+            *out_buffer = AliceBuffer::new(decompressed);
             AliceError::Success
         }
         Err(e) => {
             set_last_error(&format!("zlib decompression failed: {}", e));
-            unsafe {
-                *out_buffer = AliceBuffer::null();
-            }
+            *out_buffer = AliceBuffer::null();
             AliceError::DecompressionError
         }
     }
 }
 
-/// Compress float residuals with quantization
+/// Compress float residuals with quantization.
+///
+/// # Safety
+///
+/// `residual`/`len` must describe a valid f32 buffer. `out_buffer` must be valid.
 #[no_mangle]
-pub extern "C" fn alice_residual_compress(
+pub unsafe extern "C" fn alice_residual_compress(
     residual: *const f32,
     len: usize,
     bits: u8,
@@ -550,31 +553,31 @@ pub extern "C" fn alice_residual_compress(
     }
 
     let input: Vec<f32> = if len > 0 {
-        unsafe { slice::from_raw_parts(residual, len).to_vec() }
+        slice::from_raw_parts(residual, len).to_vec()
     } else {
         Vec::new()
     };
 
     match compression::compress_residual_quantized(&input, bits, lzma_preset) {
         Ok(compressed) => {
-            unsafe {
-                *out_buffer = AliceBuffer::new(compressed);
-            }
+            *out_buffer = AliceBuffer::new(compressed);
             AliceError::Success
         }
         Err(e) => {
             set_last_error(&format!("Residual compression failed: {}", e));
-            unsafe {
-                *out_buffer = AliceBuffer::null();
-            }
+            *out_buffer = AliceBuffer::null();
             AliceError::CompressionError
         }
     }
 }
 
-/// Decompress quantized residuals
+/// Decompress quantized residuals.
+///
+/// # Safety
+///
+/// `data`/`len` must describe a valid buffer. `out_buffer` must be valid.
 #[no_mangle]
-pub extern "C" fn alice_residual_decompress(
+pub unsafe extern "C" fn alice_residual_decompress(
     data: *const u8,
     len: usize,
     out_buffer: *mut AliceFloatBuffer,
@@ -589,23 +592,19 @@ pub extern "C" fn alice_residual_decompress(
     }
 
     let input = if len > 0 {
-        unsafe { slice::from_raw_parts(data, len) }
+        slice::from_raw_parts(data, len)
     } else {
         &[]
     };
 
     match compression::decompress_residual_quantized(input) {
         Ok(decompressed) => {
-            unsafe {
-                *out_buffer = AliceFloatBuffer::new(decompressed);
-            }
+            *out_buffer = AliceFloatBuffer::new(decompressed);
             AliceError::Success
         }
         Err(e) => {
             set_last_error(&format!("Residual decompression failed: {}", e));
-            unsafe {
-                *out_buffer = AliceFloatBuffer::null();
-            }
+            *out_buffer = AliceFloatBuffer::null();
             AliceError::DecompressionError
         }
     }
@@ -627,35 +626,41 @@ mod tests {
 
     #[test]
     fn test_perlin_2d() {
-        let mut buffer = AliceFloatBuffer::null();
-        let result = alice_perlin_2d(64, 64, 42, 10.0, 4, &mut buffer);
-        assert_eq!(result, AliceError::Success);
-        assert!(!buffer.data.is_null());
-        assert_eq!(buffer.len, 64 * 64);
-        alice_free_float_buffer(&mut buffer);
+        unsafe {
+            let mut buffer = AliceFloatBuffer::null();
+            let result = alice_perlin_2d(64, 64, 42, 10.0, 4, &mut buffer);
+            assert_eq!(result, AliceError::Success);
+            assert!(!buffer.data.is_null());
+            assert_eq!(buffer.len, 64 * 64);
+            alice_free_float_buffer(&mut buffer);
+        }
     }
 
     #[test]
     fn test_lzma_roundtrip() {
-        let data = b"Hello, World! This is a test for LZMA compression.";
-        let mut compressed = AliceBuffer::null();
-        let result = alice_lzma_compress(data.as_ptr(), data.len(), 6, &mut compressed);
-        assert_eq!(result, AliceError::Success);
+        unsafe {
+            let data = b"Hello, World! This is a test for LZMA compression.";
+            let mut compressed = AliceBuffer::null();
+            let result = alice_lzma_compress(data.as_ptr(), data.len(), 6, &mut compressed);
+            assert_eq!(result, AliceError::Success);
 
-        let mut decompressed = AliceBuffer::null();
-        let result = alice_lzma_decompress(compressed.data, compressed.len, &mut decompressed);
-        assert_eq!(result, AliceError::Success);
+            let mut decompressed = AliceBuffer::null();
+            let result = alice_lzma_decompress(compressed.data, compressed.len, &mut decompressed);
+            assert_eq!(result, AliceError::Success);
 
-        let output = unsafe { slice::from_raw_parts(decompressed.data, decompressed.len) };
-        assert_eq!(output, data);
+            let output = slice::from_raw_parts(decompressed.data, decompressed.len);
+            assert_eq!(output, data);
 
-        alice_free_buffer(&mut compressed);
-        alice_free_buffer(&mut decompressed);
+            alice_free_buffer(&mut compressed);
+            alice_free_buffer(&mut decompressed);
+        }
     }
 
     #[test]
     fn test_null_pointer_handling() {
-        let result = alice_perlin_2d(64, 64, 42, 10.0, 4, ptr::null_mut());
-        assert_eq!(result, AliceError::NullPointer);
+        unsafe {
+            let result = alice_perlin_2d(64, 64, 42, 10.0, 4, ptr::null_mut());
+            assert_eq!(result, AliceError::NullPointer);
+        }
     }
 }

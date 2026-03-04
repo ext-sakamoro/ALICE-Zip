@@ -135,7 +135,7 @@ impl ResidualCompressionMethod {
     /// Parse from the canonical string stored in JSON headers.
     ///
     /// Returns `None` for unrecognised strings.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "none" => Some(ResidualCompressionMethod::None),
             "lzma" => Some(ResidualCompressionMethod::Lzma),
@@ -324,8 +324,7 @@ impl ResidualData {
         let json_str = std::str::from_utf8(&data[2..v1_payload_start])
             .map_err(|e| ResidualError::InvalidHeader(format!("UTF-8 decode failed: {}", e)))?;
 
-        let parsed =
-            Self::parse_json_header(json_str).map_err(|e| ResidualError::InvalidHeader(e))?;
+        let parsed = Self::parse_json_header(json_str).map_err(ResidualError::InvalidHeader)?;
 
         let compressed = data[v1_payload_start..].to_vec();
         Self::from_header_map(parsed, compressed)
@@ -396,7 +395,7 @@ impl ResidualData {
             .get("method")
             .ok_or_else(|| ResidualError::MissingField("method".to_owned()))?;
 
-        let method = ResidualCompressionMethod::from_str(method_str)
+        let method = ResidualCompressionMethod::parse(method_str)
             .ok_or_else(|| ResidualError::UnknownMethod(method_str.clone()))?;
 
         // Required field: original_len

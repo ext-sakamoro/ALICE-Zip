@@ -67,7 +67,7 @@ pub struct FitResult {
     /// Flat coefficient vector whose meaning depends on `method`:
     /// - Sine:       [frequency, amplitude, phase, dc_offset]
     /// - Fourier:    [freq_idx_0, magnitude_0, phase_0, freq_idx_1, …] (triples)
-    ///               followed by dc_offset as the last element
+    ///   followed by dc_offset as the last element
     /// - Polynomial: coefficients highest-degree-first (Horner convention)
     /// - LzmaFallback: empty (payload lives in `CompressedPayload::residual`)
     pub coefficients: Vec<f64>,
@@ -385,7 +385,7 @@ pub fn analyze_data(data: &[f32]) -> FitResult {
         if let Some(c) = candidate {
             let replace = best
                 .as_ref()
-                .map_or(true, |b| c.compression_ratio > b.compression_ratio);
+                .is_none_or(|b| c.compression_ratio > b.compression_ratio);
             if replace {
                 best = Some(c);
             }
