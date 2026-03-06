@@ -7,7 +7,7 @@
 //! true lossless compression.
 //!
 //! Formula:
-//!   Data_original = Gen(Params) + Decompress(Residual_compressed)
+//!   `Data_original` = Gen(Params) + `Decompress(Residual_compressed)`
 //!
 //! # Binary format (v2)
 //!
@@ -26,7 +26,7 @@ use std::collections::HashMap;
 
 /// Maximum header size (10 MiB) — mirrors Python `MAX_HEADER_SIZE`.
 ///
-/// Prevents DoS via malformed `header_len` values.
+/// Prevents `DoS` via malformed `header_len` values.
 const MAX_HEADER_SIZE: usize = 10 * 1024 * 1024;
 
 // ============================================================================
@@ -56,36 +56,34 @@ pub enum ResidualError {
 impl std::fmt::Display for ResidualError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ResidualError::DataTooShort { got, expected } => {
+            Self::DataTooShort { got, expected } => {
                 write!(
                     f,
-                    "data too short: got {} bytes, expected at least {}",
-                    got, expected
+                    "data too short: got {got} bytes, expected at least {expected}"
                 )
             }
-            ResidualError::InvalidHeader(msg) => write!(f, "invalid header: {}", msg),
-            ResidualError::MissingField(field) => {
-                write!(f, "missing required header field: '{}'", field)
+            Self::InvalidHeader(msg) => write!(f, "invalid header: {msg}"),
+            Self::MissingField(field) => {
+                write!(f, "missing required header field: '{field}'")
             }
-            ResidualError::UnknownMethod(m) => {
-                write!(f, "unknown compression method: '{}'", m)
+            Self::UnknownMethod(m) => {
+                write!(f, "unknown compression method: '{m}'")
             }
-            ResidualError::HeaderTooLarge { size } => {
+            Self::HeaderTooLarge { size } => {
                 write!(
                     f,
-                    "header length {} exceeds maximum allowed {} bytes",
-                    size, MAX_HEADER_SIZE
+                    "header length {size} exceeds maximum allowed {MAX_HEADER_SIZE} bytes"
                 )
             }
-            ResidualError::Io(e) => write!(f, "I/O error: {}", e),
-            ResidualError::Corrupted(msg) => write!(f, "corrupted data: {}", msg),
+            Self::Io(e) => write!(f, "I/O error: {e}"),
+            Self::Corrupted(msg) => write!(f, "corrupted data: {msg}"),
         }
     }
 }
 
 impl std::error::Error for ResidualError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        if let ResidualError::Io(e) = self {
+        if let Self::Io(e) = self {
             Some(e)
         } else {
             None
@@ -95,7 +93,7 @@ impl std::error::Error for ResidualError {
 
 impl From<std::io::Error> for ResidualError {
     fn from(e: std::io::Error) -> Self {
-        ResidualError::Io(e)
+        Self::Io(e)
     }
 }
 
@@ -122,26 +120,28 @@ pub enum ResidualCompressionMethod {
 
 impl ResidualCompressionMethod {
     /// Convert to the canonical string used in JSON headers.
-    pub fn as_str(self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
         match self {
-            ResidualCompressionMethod::None => "none",
-            ResidualCompressionMethod::Lzma => "lzma",
-            ResidualCompressionMethod::Zlib => "zlib",
-            ResidualCompressionMethod::Delta => "delta",
-            ResidualCompressionMethod::Quantized => "quantized",
+            Self::None => "none",
+            Self::Lzma => "lzma",
+            Self::Zlib => "zlib",
+            Self::Delta => "delta",
+            Self::Quantized => "quantized",
         }
     }
 
     /// Parse from the canonical string stored in JSON headers.
     ///
     /// Returns `None` for unrecognised strings.
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "none" => Some(ResidualCompressionMethod::None),
-            "lzma" => Some(ResidualCompressionMethod::Lzma),
-            "zlib" => Some(ResidualCompressionMethod::Zlib),
-            "delta" => Some(ResidualCompressionMethod::Delta),
-            "quantized" => Some(ResidualCompressionMethod::Quantized),
+            "none" => Some(Self::None),
+            "lzma" => Some(Self::Lzma),
+            "zlib" => Some(Self::Zlib),
+            "delta" => Some(Self::Delta),
+            "quantized" => Some(Self::Quantized),
             _ => None,
         }
     }
@@ -172,7 +172,7 @@ pub struct ResidualMetadata {
 
 impl Default for ResidualMetadata {
     fn default() -> Self {
-        ResidualMetadata {
+        Self {
             min_val: 0.0,
             scale: 1.0,
             bits: 8,
@@ -217,6 +217,7 @@ impl ResidualData {
     /// - `"version"` — always `2` for this format
     /// - `"min_val"`, `"scale"`, `"bits"` — present for `Quantized`
     /// - `"base_value"` — present for `Delta`
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         // Build the JSON header using a plain HashMap to avoid pulling in a
         // heavyweight serialiser dependency (serde_json may not be available).
@@ -271,27 +272,23 @@ impl ResidualData {
         if header_len_v2 < MAX_HEADER_SIZE {
             let v2_end = 4 + header_len_v2;
             if v2_end <= data.len() {
-                match std::str::from_utf8(&data[4..v2_end]) {
-                    Ok(json_str) => match Self::parse_json_header(json_str) {
-                        Ok(parsed) => {
-                            if parsed
-                                .get("version")
-                                .and_then(|v| v.parse::<u32>().ok())
-                                .unwrap_or(1)
-                                >= 2
-                            {
-                                let compressed = data[v2_end..].to_vec();
-                                return Self::from_header_map(parsed, compressed);
-                            }
-                            // version < 2 — fall through to v1
+                if let Ok(json_str) = std::str::from_utf8(&data[4..v2_end]) {
+                    if let Ok(parsed) = Self::parse_json_header(json_str) {
+                        if parsed
+                            .get("version")
+                            .and_then(|v| v.parse::<u32>().ok())
+                            .unwrap_or(1)
+                            >= 2
+                        {
+                            let compressed = data[v2_end..].to_vec();
+                            return Self::from_header_map(&parsed, compressed);
                         }
-                        Err(_) => {
-                            // Not valid JSON — fall through to v1
-                        }
-                    },
-                    Err(_) => {
-                        // Not valid UTF-8 — fall through to v1
+                        // version < 2 — fall through to v1
+                    } else {
+                        // Not valid JSON — fall through to v1
                     }
+                } else {
+                    // Not valid UTF-8 — fall through to v1
                 }
             }
         }
@@ -322,12 +319,12 @@ impl ResidualData {
         }
 
         let json_str = std::str::from_utf8(&data[2..v1_payload_start])
-            .map_err(|e| ResidualError::InvalidHeader(format!("UTF-8 decode failed: {}", e)))?;
+            .map_err(|e| ResidualError::InvalidHeader(format!("UTF-8 decode failed: {e}")))?;
 
         let parsed = Self::parse_json_header(json_str).map_err(ResidualError::InvalidHeader)?;
 
         let compressed = data[v1_payload_start..].to_vec();
-        Self::from_header_map(parsed, compressed)
+        Self::from_header_map(&parsed, compressed)
     }
 
     // -------------------------------------------------------------------------
@@ -343,7 +340,7 @@ impl ResidualData {
     fn parse_json_header(json: &str) -> Result<HashMap<String, String>, String> {
         let json = json.trim();
         if !json.starts_with('{') || !json.ends_with('}') {
-            return Err(format!("JSON header must be a flat object, got: {}", json));
+            return Err(format!("JSON header must be a flat object, got: {json}"));
         }
 
         let inner = &json[1..json.len() - 1];
@@ -360,7 +357,7 @@ impl ResidualData {
             // Split on the first colon.
             let colon_pos = pair
                 .find(':')
-                .ok_or_else(|| format!("malformed key-value pair (no ':'): '{}'", pair))?;
+                .ok_or_else(|| format!("malformed key-value pair (no ':'): '{pair}'"))?;
 
             let key_raw = pair[..colon_pos].trim();
             let val_raw = pair[colon_pos + 1..].trim();
@@ -387,7 +384,7 @@ impl ResidualData {
 
     /// Construct `ResidualData` from a parsed header map and a compressed payload.
     fn from_header_map(
-        map: HashMap<String, String>,
+        map: &HashMap<String, String>,
         compressed: Vec<u8>,
     ) -> Result<Self, ResidualError> {
         // Required field: method
@@ -403,7 +400,7 @@ impl ResidualData {
             .get("original_len")
             .ok_or_else(|| ResidualError::MissingField("original_len".to_owned()))?
             .parse::<usize>()
-            .map_err(|e| ResidualError::InvalidHeader(format!("invalid original_len: {}", e)))?;
+            .map_err(|e| ResidualError::InvalidHeader(format!("invalid original_len: {e}")))?;
 
         // Optional / method-specific fields.
         let mut metadata = ResidualMetadata::default();
@@ -426,7 +423,7 @@ impl ResidualData {
             }
         }
 
-        Ok(ResidualData {
+        Ok(Self {
             method,
             compressed,
             original_len,
@@ -447,6 +444,7 @@ impl ResidualData {
 /// delta[i] = data[i] - data[i-1]   for i > 0
 /// ```
 /// Each element is stored as a little-endian `f32`.
+#[must_use]
 pub fn compress_residual_delta(data: &[f32]) -> ResidualData {
     let base_value = data.first().copied().unwrap_or(0.0);
 
@@ -477,6 +475,7 @@ pub fn compress_residual_delta(data: &[f32]) -> ResidualData {
 /// Decompress a delta-encoded `ResidualData` back to `Vec<f32>`.
 ///
 /// Panics if `rd.method` is not `Delta` (callers are responsible for routing).
+#[must_use]
 pub fn decompress_residual_delta(rd: &ResidualData) -> Vec<f32> {
     debug_assert_eq!(
         rd.method,
@@ -522,8 +521,8 @@ pub fn estimate_entropy(data: &[f32]) -> f32 {
     }
 
     // Find range.
-    let min_val = data.iter().cloned().fold(f32::INFINITY, f32::min);
-    let max_val = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let min_val = data.iter().copied().fold(f32::INFINITY, f32::min);
+    let max_val = data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
     let scale = max_val - min_val;
 
     // Build 256-bin histogram.
@@ -533,9 +532,9 @@ pub fn estimate_entropy(data: &[f32]) -> f32 {
         return 0.0;
     }
 
-    let rcp_scale = 255.0 / scale as f64;
+    let rcp_scale = 255.0 / f64::from(scale);
     for &v in data {
-        let bin = ((v as f64 - min_val as f64) * rcp_scale).clamp(0.0, 255.0) as usize;
+        let bin = ((f64::from(v) - f64::from(min_val)) * rcp_scale).clamp(0.0, 255.0) as usize;
         counts[bin] += 1;
     }
 
@@ -546,7 +545,7 @@ pub fn estimate_entropy(data: &[f32]) -> f32 {
     let mut entropy = 0.0f64;
     for &c in &counts {
         if c > 0 {
-            let p = c as f64 * rcp_total; // multiply, not divide
+            let p = f64::from(c) * rcp_total; // multiply, not divide
             entropy -= p * p.log2();
         }
     }
@@ -560,6 +559,7 @@ pub fn estimate_entropy(data: &[f32]) -> f32 {
 /// The methods tried are: `None`, `Lzma`, `Zlib`, `Delta`, `Quantized`.
 ///
 /// If `data` is empty, `ResidualCompressionMethod::None` is returned.
+#[must_use]
 pub fn analyze_residual(data: &[f32]) -> ResidualCompressionMethod {
     if data.is_empty() {
         return ResidualCompressionMethod::None;
@@ -599,8 +599,7 @@ pub fn analyze_residual(data: &[f32]) -> ResidualCompressionMethod {
     candidates
         .into_iter()
         .min_by_key(|&(_, size)| size)
-        .map(|(method, _)| method)
-        .unwrap_or(ResidualCompressionMethod::None)
+        .map_or(ResidualCompressionMethod::None, |(method, _)| method)
 }
 
 // ============================================================================
@@ -617,6 +616,7 @@ pub fn analyze_residual(data: &[f32]) -> ResidualCompressionMethod {
 /// 2. If the chosen method is `Quantized` and `allow_lossy` is `false`,
 ///    fall back to `Lzma`.
 /// 3. Compress using the selected method and return a [`ResidualData`].
+#[must_use]
 pub fn choose_compression(data: &[f32], allow_lossy: bool) -> ResidualData {
     if data.is_empty() {
         return ResidualData {
@@ -662,7 +662,8 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
         ResidualCompressionMethod::Zlib => {
             let compressed =
                 crate::compression::zlib_compress(&raw_bytes, 6).unwrap_or_else(|_| {
-                    crate::compression::lzma_compress(&raw_bytes, 6).unwrap_or(raw_bytes.clone())
+                    crate::compression::lzma_compress(&raw_bytes, 6)
+                        .unwrap_or_else(|_| raw_bytes.clone())
                 });
             ResidualData {
                 method,

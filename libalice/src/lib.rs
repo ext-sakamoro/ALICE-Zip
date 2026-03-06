@@ -1,7 +1,21 @@
+// 圧縮・手続き生成ライブラリ: 数値キャスト（usize→f32/f64等）は
+// 統計計算・信号処理で意図的に使用。
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_lossless,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::must_use_candidate,
+    clippy::many_single_char_names,
+    clippy::similar_names,
+    clippy::inline_always
+)]
 //! libalice - High-Performance Procedural Generation Library
 //!
 //! Native Rust implementation of ALICE-Zip generators for maximum performance.
-//! Provides Python bindings via PyO3 (optional).
+//! Provides Python bindings via `PyO3` (optional).
 //!
 //! # Features
 //! - Vectorized Perlin noise generation (parallel with Rayon)

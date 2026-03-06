@@ -43,6 +43,7 @@ pub struct PerlinNoise {
 
 impl PerlinNoise {
     /// Create a new Perlin noise generator with given seed
+    #[must_use]
     pub fn new(seed: u64) -> Self {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut perm = [0u8; 512];
@@ -69,24 +70,25 @@ impl PerlinNoise {
     /// Smooth interpolation (quintic)
     #[inline(always)]
     fn fade(t: f32) -> f32 {
-        t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+        t * t * t * t.mul_add(t.mul_add(6.0, -15.0), 10.0)
     }
 
     /// Linear interpolation
     #[inline(always)]
     fn lerp(a: f32, b: f32, t: f32) -> f32 {
-        a + t * (b - a)
+        t.mul_add(b - a, a)
     }
 
     /// Gradient function
     #[inline(always)]
-    fn grad(&self, hash: usize, x: f32, y: f32) -> f32 {
+    fn grad(hash: usize, x: f32, y: f32) -> f32 {
         let g = &GRAD2[hash & 7];
-        g[0] * x + g[1] * y
+        g[0].mul_add(x, g[1] * y)
     }
 
     /// Sample noise at a single point
     #[inline(always)]
+    #[must_use]
     pub fn noise2d(&self, x: f32, y: f32) -> f32 {
         // Grid cell coordinates
         let xi = x.floor() as i32;
@@ -107,10 +109,10 @@ impl PerlinNoise {
         let bb = self.perm[self.perm[xi + 1] as usize + yi + 1] as usize;
 
         // Gradient contributions
-        let g00 = self.grad(aa, xf, yf);
-        let g10 = self.grad(ba, xf - 1.0, yf);
-        let g01 = self.grad(ab, xf, yf - 1.0);
-        let g11 = self.grad(bb, xf - 1.0, yf - 1.0);
+        let g00 = Self::grad(aa, xf, yf);
+        let g10 = Self::grad(ba, xf - 1.0, yf);
+        let g01 = Self::grad(ab, xf, yf - 1.0);
+        let g11 = Self::grad(bb, xf - 1.0, yf - 1.0);
 
         // Interpolation weights
         let u = Self::fade(xf);
@@ -122,6 +124,7 @@ impl PerlinNoise {
 
     /// Generate fractal Brownian motion (fBm) noise
     #[inline(always)]
+    #[must_use]
     pub fn fbm(&self, x: f32, y: f32, octaves: u32, persistence: f32, lacunarity: f32) -> f32 {
         let mut total = 0.0f32;
         let mut amplitude = 1.0f32;
@@ -152,6 +155,7 @@ impl PerlinNoise {
 ///
 /// # Returns
 /// Flattened f32 array of size width * height, values in [0, 1]
+#[must_use]
 pub fn generate_perlin_2d(
     width: usize,
     height: usize,
@@ -185,6 +189,7 @@ pub fn generate_perlin_2d(
 }
 
 /// Generate a 2D noise texture with specified parameters (advanced)
+#[must_use]
 pub fn generate_perlin_advanced(
     width: usize,
     height: usize,

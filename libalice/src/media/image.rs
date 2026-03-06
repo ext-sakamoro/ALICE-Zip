@@ -1,6 +1,6 @@
 //! Image Generator
 //!
-//! Rust port of the Python ImageGenerator in media_generators.py.
+//! Rust port of the Python `ImageGenerator` in `media_generators.py`.
 //! Generates procedural images from parametric descriptions.
 //!
 //! License: MIT
@@ -12,7 +12,7 @@ use std::f32::consts::PI;
 // Enums
 // ============================================================================
 
-/// Detected / requested image patterns (mirrors Python ImagePattern enum)
+/// Detected / requested image patterns (mirrors Python `ImagePattern` enum)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImagePattern {
     Solid,
@@ -72,11 +72,13 @@ pub struct ImageGenerator;
 
 impl ImageGenerator {
     /// Create a new generator (stateless — always succeeds)
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self
     }
 
     /// Generate RGB pixel data (width * height * 3 bytes, row-major)
+    #[must_use]
     pub fn generate(&self, params: &ImageParams) -> Vec<u8> {
         let w = params.width;
         let h = params.height;
@@ -141,24 +143,28 @@ impl ImageGenerator {
         let ny = angle_rad.sin();
 
         // Pre-compute divisor reciprocal to avoid per-pixel division
-        let divisor = (w as f32) * nx.abs() + (h as f32) * ny.abs();
+        let divisor = (w as f32).mul_add(nx.abs(), (h as f32) * ny.abs());
         let rcp_divisor = if divisor > 1e-10 { 1.0 / divisor } else { 1.0 };
 
         // Convert start/end to f32 once
-        let s = [start[0] as f32, start[1] as f32, start[2] as f32];
-        let e = [end[0] as f32, end[1] as f32, end[2] as f32];
+        let s = [
+            f32::from(start[0]),
+            f32::from(start[1]),
+            f32::from(start[2]),
+        ];
+        let e = [f32::from(end[0]), f32::from(end[1]), f32::from(end[2])];
 
         let mut out = Vec::with_capacity(w * h * 3);
 
         for y in 0..h {
             for x in 0..w {
                 // t = interpolation factor in [0, 1]
-                let t = if angle_degrees == 0.0 {
+                let t = if angle_degrees.abs() < f32::EPSILON {
                     x as f32 * rcp_w
-                } else if angle_degrees == 90.0 {
+                } else if (angle_degrees - 90.0).abs() < f32::EPSILON {
                     y as f32 * rcp_h
                 } else {
-                    let raw = (x as f32 * nx + y as f32 * ny) * rcp_divisor;
+                    let raw = (x as f32).mul_add(nx, y as f32 * ny) * rcp_divisor;
                     // Branchless clamp: clamp(raw, 0, 1)
                     raw.clamp(0.0, 1.0)
                 };
@@ -166,7 +172,7 @@ impl ImageGenerator {
                 // Branchless lerp: start * (1 - t) + end * t
                 let one_minus_t = 1.0 - t;
                 for ch in 0..3 {
-                    let v = s[ch] * one_minus_t + e[ch] * t;
+                    let v = s[ch].mul_add(one_minus_t, e[ch] * t);
                     out.push(v.clamp(0.0, 255.0) as u8);
                 }
             }
@@ -183,15 +189,19 @@ impl ImageGenerator {
         // Maximum possible distance from centre (to a corner)
         let dx_max = cx.max(w as f32 - cx);
         let dy_max = cy.max(h as f32 - cy);
-        let max_dist = (dx_max * dx_max + dy_max * dy_max).sqrt();
+        let max_dist = dx_max.hypot(dy_max);
         let rcp_max = if max_dist > 1e-10 {
             1.0 / max_dist
         } else {
             1.0
         };
 
-        let s = [start[0] as f32, start[1] as f32, start[2] as f32];
-        let e = [end[0] as f32, end[1] as f32, end[2] as f32];
+        let s = [
+            f32::from(start[0]),
+            f32::from(start[1]),
+            f32::from(start[2]),
+        ];
+        let e = [f32::from(end[0]), f32::from(end[1]), f32::from(end[2])];
 
         let mut out = Vec::with_capacity(w * h * 3);
 
@@ -199,10 +209,10 @@ impl ImageGenerator {
             for x in 0..w {
                 let dx = x as f32 - cx;
                 let dy = y as f32 - cy;
-                let t = ((dx * dx + dy * dy).sqrt() * rcp_max).clamp(0.0, 1.0);
+                let t = (dx.hypot(dy) * rcp_max).clamp(0.0, 1.0);
                 let one_minus_t = 1.0 - t;
                 for ch in 0..3 {
-                    let v = s[ch] * one_minus_t + e[ch] * t;
+                    let v = s[ch].mul_add(one_minus_t, e[ch] * t);
                     out.push(v.clamp(0.0, 255.0) as u8);
                 }
             }

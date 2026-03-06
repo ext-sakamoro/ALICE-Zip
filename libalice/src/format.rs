@@ -38,7 +38,7 @@
 //! # Version Detection
 //!
 //! A header is v2 when `version_major > 1 || (version_major == 1 && version_minor >= 1)`.
-//! Readers must accept both v1 and v2; unknown payload_type values fall back to
+//! Readers must accept both v1 and v2; unknown `payload_type` values fall back to
 //! `AlicePayloadType::Procedural`.
 //!
 //! # Author
@@ -57,17 +57,17 @@ pub const ALICE_MAGIC: &[u8; 9] = b"ALICE_ZIP";
 pub const DEFAULT_VERSION_MAJOR: u8 = 1;
 pub const DEFAULT_VERSION_MINOR: u8 = 1; // v2 format (>= 1.1)
 
-/// Size of the v1 header (no payload_type field).
+/// Size of the v1 header (no `payload_type` field).
 pub const HEADER_V1_SIZE: usize = 65;
 
-/// Size of the v2 header (with payload_type field).
+/// Size of the v2 header (with `payload_type` field).
 pub const HEADER_V2_SIZE: usize = 66;
 
 // ============================================================================
 // Enums
 // ============================================================================
 
-/// File types supported by ALICE_Zip.
+/// File types supported by `ALICE_Zip`.
 ///
 /// Corresponds to `AliceFileType` in `alice_zip/core.py`.
 ///
@@ -86,20 +86,21 @@ pub enum AliceFileType {
 impl AliceFileType {
     /// Encode to the single byte stored in the header.
     #[inline]
-    pub fn to_u8(self) -> u8 {
+    #[must_use]
+    pub const fn to_u8(self) -> u8 {
         self as u8
     }
 
     /// Decode from the single byte stored in the header.
     ///
     /// Returns `Err(FormatError::InvalidFileType(v))` for unrecognised values.
-    pub fn from_u8(v: u8) -> Result<Self, FormatError> {
+    pub const fn from_u8(v: u8) -> Result<Self, FormatError> {
         match v {
-            0x01 => Ok(AliceFileType::NumpyArray),
-            0x02 => Ok(AliceFileType::Image),
-            0x03 => Ok(AliceFileType::Audio),
-            0x04 => Ok(AliceFileType::Text),
-            0x05 => Ok(AliceFileType::Binary),
+            0x01 => Ok(Self::NumpyArray),
+            0x02 => Ok(Self::Image),
+            0x03 => Ok(Self::Audio),
+            0x04 => Ok(Self::Text),
+            0x05 => Ok(Self::Binary),
             _ => Err(FormatError::InvalidFileType(v)),
         }
     }
@@ -108,11 +109,11 @@ impl AliceFileType {
 impl fmt::Display for AliceFileType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AliceFileType::NumpyArray => write!(f, "NumpyArray"),
-            AliceFileType::Image => write!(f, "Image"),
-            AliceFileType::Audio => write!(f, "Audio"),
-            AliceFileType::Text => write!(f, "Text"),
-            AliceFileType::Binary => write!(f, "Binary"),
+            Self::NumpyArray => write!(f, "NumpyArray"),
+            Self::Image => write!(f, "Image"),
+            Self::Audio => write!(f, "Audio"),
+            Self::Text => write!(f, "Text"),
+            Self::Binary => write!(f, "Binary"),
         }
     }
 }
@@ -126,15 +127,15 @@ impl fmt::Display for AliceFileType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum AlicePayloadType {
-    /// Procedural parameters (original ALICE_ZIP format).
+    /// Procedural parameters (original `ALICE_ZIP` format).
     Procedural = 0x00,
-    /// ALICE_IMG — JSON-based image payload.
+    /// `ALICE_IMG` — JSON-based image payload.
     MediaImage = 0x10,
-    /// ALICE_AUD — JSON-based audio payload.
+    /// `ALICE_AUD` — JSON-based audio payload.
     MediaAudio = 0x11,
-    /// ALICE_VID — JSON-based video payload.
+    /// `ALICE_VID` — JSON-based video payload.
     MediaVideo = 0x12,
-    /// ALICE_TEX — JSON-based texture payload.
+    /// `ALICE_TEX` — JSON-based texture payload.
     Texture = 0x20,
     /// LZMA-compressed fallback payload.
     LzmaFallback = 0x30,
@@ -143,7 +144,8 @@ pub enum AlicePayloadType {
 impl AlicePayloadType {
     /// Encode to the single byte stored in the v2 header.
     #[inline]
-    pub fn to_u8(self) -> u8 {
+    #[must_use]
+    pub const fn to_u8(self) -> u8 {
         self as u8
     }
 
@@ -151,27 +153,27 @@ impl AlicePayloadType {
     ///
     /// Per the Python spec, unknown values fall back to `Procedural` instead
     /// of returning an error, matching the graceful-degradation policy.
-    pub fn from_u8_lenient(v: u8) -> Self {
+    #[must_use]
+    pub const fn from_u8_lenient(v: u8) -> Self {
         match v {
-            0x00 => AlicePayloadType::Procedural,
-            0x10 => AlicePayloadType::MediaImage,
-            0x11 => AlicePayloadType::MediaAudio,
-            0x12 => AlicePayloadType::MediaVideo,
-            0x20 => AlicePayloadType::Texture,
-            0x30 => AlicePayloadType::LzmaFallback,
-            _ => AlicePayloadType::Procedural, // graceful fallback
+            0x10 => Self::MediaImage,
+            0x11 => Self::MediaAudio,
+            0x12 => Self::MediaVideo,
+            0x20 => Self::Texture,
+            0x30 => Self::LzmaFallback,
+            _ => Self::Procedural, // 0x00 + unknown → graceful fallback
         }
     }
 
     /// Strict decode — returns `Err` for unrecognised values.
-    pub fn from_u8_strict(v: u8) -> Result<Self, FormatError> {
+    pub const fn from_u8_strict(v: u8) -> Result<Self, FormatError> {
         match v {
-            0x00 => Ok(AlicePayloadType::Procedural),
-            0x10 => Ok(AlicePayloadType::MediaImage),
-            0x11 => Ok(AlicePayloadType::MediaAudio),
-            0x12 => Ok(AlicePayloadType::MediaVideo),
-            0x20 => Ok(AlicePayloadType::Texture),
-            0x30 => Ok(AlicePayloadType::LzmaFallback),
+            0x00 => Ok(Self::Procedural),
+            0x10 => Ok(Self::MediaImage),
+            0x11 => Ok(Self::MediaAudio),
+            0x12 => Ok(Self::MediaVideo),
+            0x20 => Ok(Self::Texture),
+            0x30 => Ok(Self::LzmaFallback),
             _ => Err(FormatError::InvalidPayloadType(v)),
         }
     }
@@ -180,12 +182,12 @@ impl AlicePayloadType {
 impl fmt::Display for AlicePayloadType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AlicePayloadType::Procedural => write!(f, "Procedural"),
-            AlicePayloadType::MediaImage => write!(f, "MediaImage"),
-            AlicePayloadType::MediaAudio => write!(f, "MediaAudio"),
-            AlicePayloadType::MediaVideo => write!(f, "MediaVideo"),
-            AlicePayloadType::Texture => write!(f, "Texture"),
-            AlicePayloadType::LzmaFallback => write!(f, "LzmaFallback"),
+            Self::Procedural => write!(f, "Procedural"),
+            Self::MediaImage => write!(f, "MediaImage"),
+            Self::MediaAudio => write!(f, "MediaAudio"),
+            Self::MediaVideo => write!(f, "MediaVideo"),
+            Self::Texture => write!(f, "Texture"),
+            Self::LzmaFallback => write!(f, "LzmaFallback"),
         }
     }
 }
@@ -210,17 +212,16 @@ pub enum FormatError {
 impl fmt::Display for FormatError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FormatError::InvalidMagic => write!(f, "invalid magic bytes (expected b\"ALICE_ZIP\")"),
-            FormatError::TooShort { expected, got } => write!(
+            Self::InvalidMagic => write!(f, "invalid magic bytes (expected b\"ALICE_ZIP\")"),
+            Self::TooShort { expected, got } => write!(
                 f,
-                "data too short: expected at least {} bytes, got {}",
-                expected, got
+                "data too short: expected at least {expected} bytes, got {got}"
             ),
-            FormatError::InvalidFileType(v) => {
-                write!(f, "invalid AliceFileType discriminant: 0x{:02X}", v)
+            Self::InvalidFileType(v) => {
+                write!(f, "invalid AliceFileType discriminant: 0x{v:02X}")
             }
-            FormatError::InvalidPayloadType(v) => {
-                write!(f, "invalid AlicePayloadType discriminant: 0x{:02X}", v)
+            Self::InvalidPayloadType(v) => {
+                write!(f, "invalid AlicePayloadType discriminant: 0x{v:02X}")
             }
         }
     }
@@ -254,7 +255,7 @@ impl std::error::Error for FormatError {}
 /// These fields supplement the binary header for in-memory use and are
 /// populated / defaulted to zero during `from_bytes`:
 /// - `param_count`: number of generator parameters in the payload
-/// - `original_dtype`: NumPy dtype code for the original array
+/// - `original_dtype`: `NumPy` dtype code for the original array
 /// - `shape_dims`: number of meaningful dimensions in `shape`
 /// - `shape`: up to 4-dimensional array shape
 ///
@@ -286,7 +287,7 @@ pub struct AliceFileHeader {
     // --- In-memory only supplemental fields (not serialised) ---
     /// Number of generator parameters packed after the header.
     pub param_count: u32,
-    /// NumPy dtype code (e.g. `0x17` for float32). 0 = unset.
+    /// `NumPy` dtype code (e.g. `0x17` for float32). 0 = unset.
     pub original_dtype: u8,
     /// Number of valid dimensions in `shape` (0–4).
     pub shape_dims: u8,
@@ -306,7 +307,8 @@ impl AliceFileHeader {
     /// Create a new header with sensible defaults.
     ///
     /// Writes `version 1.1` so that `to_bytes()` emits a 66-byte v2 header.
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         file_type: AliceFileType,
         payload_type: AlicePayloadType,
         original_size: u64,
@@ -350,6 +352,7 @@ impl AliceFileHeader {
     /// 30..62 original_hash   (32 bytes)
     /// 62..66 checksum        (u32 LE)
     /// ```
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(HEADER_V2_SIZE);
 
@@ -529,7 +532,8 @@ impl AliceFileHeader {
     ///
     /// - Returns `65` if the header was deserialised from a v1 file.
     /// - Returns `66` for all other cases (including freshly constructed headers).
-    pub fn header_size(&self) -> usize {
+    #[must_use]
+    pub const fn header_size(&self) -> usize {
         if self.header_version == 1 {
             HEADER_V1_SIZE
         } else {
@@ -539,12 +543,14 @@ impl AliceFileHeader {
 
     /// Return the header format version (1 or 2) recorded at parse time.
     #[inline]
-    pub fn header_version(&self) -> u8 {
+    #[must_use]
+    pub const fn header_version(&self) -> u8 {
         self.header_version
     }
 
     /// Return `true` if the magic bytes are exactly `b"ALICE_ZIP"`.
     #[inline]
+    #[must_use]
     pub fn has_valid_magic(&self) -> bool {
         &self.magic == ALICE_MAGIC
     }
