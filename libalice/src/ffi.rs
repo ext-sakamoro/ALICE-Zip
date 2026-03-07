@@ -51,7 +51,7 @@ pub extern "C" fn alice_get_last_error() -> *const c_char {
         if msg.is_empty() {
             ptr::null()
         } else {
-            msg.as_ptr() as *const c_char
+            msg.as_ptr().cast::<c_char>()
         }
     })
 }
@@ -74,15 +74,15 @@ impl AliceBuffer {
         let ptr = data.as_mut_ptr();
         let len = data.len();
         std::mem::forget(data);
-        AliceBuffer {
+        Self {
             data: ptr,
             len,
             capacity: len,
         }
     }
 
-    fn null() -> Self {
-        AliceBuffer {
+    const fn null() -> Self {
+        Self {
             data: ptr::null_mut(),
             len: 0,
             capacity: 0,
@@ -104,15 +104,15 @@ impl AliceFloatBuffer {
         let ptr = data.as_mut_ptr();
         let len = data.len();
         std::mem::forget(data);
-        AliceFloatBuffer {
+        Self {
             data: ptr,
             len,
             capacity: len,
         }
     }
 
-    fn null() -> Self {
-        AliceFloatBuffer {
+    const fn null() -> Self {
+        Self {
             data: ptr::null_mut(),
             len: 0,
             capacity: 0,
@@ -160,7 +160,7 @@ pub unsafe extern "C" fn alice_free_float_buffer(buffer: *mut AliceFloatBuffer) 
 #[no_mangle]
 pub extern "C" fn alice_version() -> *const c_char {
     static VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
-    VERSION.as_ptr() as *const c_char
+    VERSION.as_ptr().cast::<c_char>()
 }
 
 /// Get the library version as integers.
@@ -405,7 +405,7 @@ pub unsafe extern "C" fn alice_lzma_compress(
             AliceError::Success
         }
         Err(e) => {
-            set_last_error(&format!("LZMA compression failed: {}", e));
+            set_last_error(&format!("LZMA compression failed: {e}"));
             *out_buffer = AliceBuffer::null();
             AliceError::CompressionError
         }
@@ -444,7 +444,7 @@ pub unsafe extern "C" fn alice_lzma_decompress(
             AliceError::Success
         }
         Err(e) => {
-            set_last_error(&format!("LZMA decompression failed: {}", e));
+            set_last_error(&format!("LZMA decompression failed: {e}"));
             *out_buffer = AliceBuffer::null();
             AliceError::DecompressionError
         }
@@ -484,7 +484,7 @@ pub unsafe extern "C" fn alice_zlib_compress(
             AliceError::Success
         }
         Err(e) => {
-            set_last_error(&format!("zlib compression failed: {}", e));
+            set_last_error(&format!("zlib compression failed: {e}"));
             *out_buffer = AliceBuffer::null();
             AliceError::CompressionError
         }
@@ -523,7 +523,7 @@ pub unsafe extern "C" fn alice_zlib_decompress(
             AliceError::Success
         }
         Err(e) => {
-            set_last_error(&format!("zlib decompression failed: {}", e));
+            set_last_error(&format!("zlib decompression failed: {e}"));
             *out_buffer = AliceBuffer::null();
             AliceError::DecompressionError
         }
@@ -564,7 +564,7 @@ pub unsafe extern "C" fn alice_residual_compress(
             AliceError::Success
         }
         Err(e) => {
-            set_last_error(&format!("Residual compression failed: {}", e));
+            set_last_error(&format!("Residual compression failed: {e}"));
             *out_buffer = AliceBuffer::null();
             AliceError::CompressionError
         }
@@ -603,7 +603,7 @@ pub unsafe extern "C" fn alice_residual_decompress(
             AliceError::Success
         }
         Err(e) => {
-            set_last_error(&format!("Residual decompression failed: {}", e));
+            set_last_error(&format!("Residual decompression failed: {e}"));
             *out_buffer = AliceFloatBuffer::null();
             AliceError::DecompressionError
         }

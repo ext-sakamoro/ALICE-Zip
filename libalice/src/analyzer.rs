@@ -1,6 +1,6 @@
 //! Procedural Data Analyzer
 //!
-//! Ports the Python analyzers from alice_zip/analyzers.py to Rust.
+//! Ports the Python analyzers from `alice_zip/analyzers.py` to Rust.
 //! Tries sine, Fourier, and polynomial fitting in order, then falls back
 //! to LZMA if no procedural method achieves a good enough compression ratio.
 //!
@@ -47,13 +47,13 @@ const COMPRESSED_OVERHEAD: usize = 32;
 // ---------------------------------------------------------------------------
 
 /// Which fitting method produced this result
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FitMethod {
     /// Single-frequency sine wave: A·sin(2π·f·x + φ) + dc
     Sine,
     /// Multi-frequency Fourier series (sum of sine/cosine components)
     Fourier,
-    /// Polynomial of degree ≤ MAX_POLYNOMIAL_DEGREE
+    /// Polynomial of degree ≤ `MAX_POLYNOMIAL_DEGREE`
     Polynomial,
     /// LZMA byte-level compression (fallback for non-procedural data)
     LzmaFallback,
@@ -65,11 +65,11 @@ pub struct FitResult {
     /// Which method produced this result
     pub method: FitMethod,
     /// Flat coefficient vector whose meaning depends on `method`:
-    /// - Sine:       [frequency, amplitude, phase, dc_offset]
-    /// - Fourier:    [freq_idx_0, magnitude_0, phase_0, freq_idx_1, …] (triples)
-    ///   followed by dc_offset as the last element
+    /// - Sine:       [frequency, amplitude, phase, `dc_offset`]
+    /// - Fourier:    [`freq_idx_0`, `magnitude_0`, `phase_0`, `freq_idx_1`, …] (triples)
+    ///   followed by `dc_offset` as the last element
     /// - Polynomial: coefficients highest-degree-first (Horner convention)
-    /// - LzmaFallback: empty (payload lives in `CompressedPayload::residual`)
+    /// - `LzmaFallback`: empty (payload lives in `CompressedPayload::residual`)
     pub coefficients: Vec<f64>,
     /// Normalized mean-squared error relative to data variance (0 = perfect)
     pub error: f64,
@@ -83,7 +83,7 @@ pub struct CompressedPayload {
     /// Best fit result (determines how to reconstruct the signal)
     pub fit_result: FitResult,
     /// LZMA-compressed residual (present when the fit is lossy and we want
-    /// near-lossless reconstruction, or when method == LzmaFallback)
+    /// near-lossless reconstruction, or when method == `LzmaFallback`)
     pub residual: Option<Vec<u8>>,
     /// Number of samples in the original signal
     pub original_len: usize,
@@ -145,12 +145,12 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
 
     // --- DC offset & amplitude ---
     let inv_n = 1.0 / n as f64;
-    let dc_offset: f64 = data.iter().map(|&x| x as f64).sum::<f64>() * inv_n;
+    let dc_offset: f64 = data.iter().map(|&x| f64::from(x)).sum::<f64>() * inv_n;
 
-    let centered: Vec<f64> = data.iter().map(|&x| x as f64 - dc_offset).collect();
+    let centered: Vec<f64> = data.iter().map(|&x| f64::from(x) - dc_offset).collect();
 
-    let max_c = centered.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let min_c = centered.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max_c = centered.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let min_c = centered.iter().copied().fold(f64::INFINITY, f64::min);
     let amplitude = (max_c - min_c) * 0.5;
 
     if amplitude < 1e-10 {
@@ -171,10 +171,10 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
             .windows(2)
             .enumerate()
             .filter_map(|(i, w)| {
-                if (w[0] < 0.0) != (w[1] < 0.0) {
-                    Some(i)
-                } else {
+                if (w[0] < 0.0) == (w[1] < 0.0) {
                     None
+                } else {
+                    Some(i)
                 }
             })
             .collect();
@@ -210,7 +210,7 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
             .zip(data.iter())
             .map(|(&arg, &y)| {
                 let fitted = amplitude * (arg + phase).sin() + dc_offset;
-                let diff = y as f64 - fitted;
+                let diff = f64::from(y) - fitted;
                 diff * diff
             })
             .sum::<f64>()
@@ -228,7 +228,7 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
         .iter()
         .map(|&arg| amplitude * (arg + best_phase).sin() + dc_offset)
         .collect();
-    let data_f64: Vec<f64> = data.iter().map(|&x| x as f64).collect();
+    let data_f64: Vec<f64> = data.iter().map(|&x| f64::from(x)).collect();
     let norm_err = normalized_mse(&data_f64, &fitted_vals);
 
     if norm_err >= MAX_ACCEPTABLE_ERROR {
@@ -260,6 +260,7 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
 /// # Returns
 /// `Some(FitResult)` when the normalized error is below `MAX_ACCEPTABLE_ERROR`,
 /// `None` otherwise.
+#[must_use]
 pub fn try_fourier_fit(data: &[f32], max_coeffs: usize) -> Option<FitResult> {
     let n = data.len();
     if n < 8 {
@@ -279,8 +280,8 @@ pub fn try_fourier_fit(data: &[f32], max_coeffs: usize) -> Option<FitResult> {
     // Reconstruct signal to measure error
     let reconstructed = generate_from_coefficients(n, &coefficients, dc_offset);
 
-    let data_f64: Vec<f64> = data.iter().map(|&x| x as f64).collect();
-    let recon_f64: Vec<f64> = reconstructed.iter().map(|&x| x as f64).collect();
+    let data_f64: Vec<f64> = data.iter().map(|&x| f64::from(x)).collect();
+    let recon_f64: Vec<f64> = reconstructed.iter().map(|&x| f64::from(x)).collect();
     let norm_err = normalized_mse(&data_f64, &recon_f64);
 
     if norm_err >= MAX_ACCEPTABLE_ERROR {
@@ -294,10 +295,10 @@ pub fn try_fourier_fit(data: &[f32], max_coeffs: usize) -> Option<FitResult> {
     let mut flat: Vec<f64> = Vec::with_capacity(num_coeffs * 3 + 1);
     for (idx, mag, phase) in &coefficients {
         flat.push(*idx as f64);
-        flat.push(*mag as f64);
-        flat.push(*phase as f64);
+        flat.push(f64::from(*mag));
+        flat.push(f64::from(*phase));
     }
-    flat.push(dc_offset as f64);
+    flat.push(f64::from(dc_offset));
 
     // Compressed size estimate:
     // Each (freq_idx: 4 bytes, magnitude: 8 bytes, phase: 8 bytes) = 20 bytes per coeff
@@ -330,6 +331,7 @@ pub fn try_fourier_fit(data: &[f32], max_coeffs: usize) -> Option<FitResult> {
 /// # Returns
 /// `Some(FitResult)` when the fit succeeds and normalized error is below
 /// `MAX_ACCEPTABLE_ERROR`, `None` otherwise.
+#[must_use]
 pub fn try_polynomial_fit(data: &[f32], max_degree: usize) -> Option<FitResult> {
     let n = data.len();
     if n < 2 {
@@ -377,6 +379,7 @@ pub fn try_polynomial_fit(data: &[f32], max_degree: usize) -> Option<FitResult> 
 /// 4. Pick the candidate with the highest `compression_ratio`.
 /// 5. If the best ratio is below `MIN_PROCEDURAL_RATIO`, return an
 ///    `LzmaFallback` result instead.
+#[must_use]
 pub fn analyze_data(data: &[f32]) -> FitResult {
     let mut best: Option<FitResult> = None;
 
@@ -500,14 +503,16 @@ pub struct ProceduralCompressionDesigner {
 
 impl ProceduralCompressionDesigner {
     /// Create a designer with default settings.
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             max_error: MAX_ACCEPTABLE_ERROR,
         }
     }
 
     /// Create a designer with a custom error threshold.
-    pub fn with_max_error(max_error: f64) -> Self {
+    #[must_use]
+    pub const fn with_max_error(max_error: f64) -> Self {
         Self { max_error }
     }
 
@@ -523,87 +528,80 @@ impl ProceduralCompressionDesigner {
         let n = data.len();
         let fit_result = analyze_data(data);
 
-        match fit_result.method {
-            FitMethod::LzmaFallback => {
-                // Compress raw f32 bytes with LZMA
-                let raw_bytes: Vec<u8> = data.iter().flat_map(|&v| v.to_le_bytes()).collect();
-                let residual = lzma_compress(&raw_bytes, 6).ok();
-                CompressedPayload {
-                    fit_result,
-                    residual,
-                    original_len: n,
-                }
+        if fit_result.method == FitMethod::LzmaFallback {
+            // Compress raw f32 bytes with LZMA
+            let raw_bytes: Vec<u8> = data.iter().flat_map(|&v| v.to_le_bytes()).collect();
+            let residual = lzma_compress(&raw_bytes, 6).ok();
+            CompressedPayload {
+                fit_result,
+                residual,
+                original_len: n,
             }
+        } else {
+            // Reconstruct and compute residual for near-lossless storage
+            let reconstructed = reconstruct(&fit_result, n);
 
-            _ => {
-                // Reconstruct and compute residual for near-lossless storage
-                let reconstructed = reconstruct(&fit_result, n);
+            let residual_f32: Vec<f32> = data
+                .iter()
+                .zip(reconstructed.iter())
+                .map(|(&orig, &rec)| orig - rec)
+                .collect();
 
-                let residual_f32: Vec<f32> = data
-                    .iter()
-                    .zip(reconstructed.iter())
-                    .map(|(&orig, &rec)| orig - rec)
-                    .collect();
+            // Check whether residual is significant
+            let max_abs_residual = residual_f32
+                .iter()
+                .map(|&v| v.abs())
+                .fold(0.0_f32, f32::max);
 
-                // Check whether residual is significant
-                let max_abs_residual = residual_f32
-                    .iter()
-                    .map(|&v| v.abs())
-                    .fold(0.0_f32, f32::max);
+            let residual = if max_abs_residual > 1e-10 {
+                let residual_bytes: Vec<u8> =
+                    residual_f32.iter().flat_map(|&v| v.to_le_bytes()).collect();
+                lzma_compress(&residual_bytes, 6).ok()
+            } else {
+                None
+            };
 
-                let residual = if max_abs_residual > 1e-10 {
-                    let residual_bytes: Vec<u8> =
-                        residual_f32.iter().flat_map(|&v| v.to_le_bytes()).collect();
-                    lzma_compress(&residual_bytes, 6).ok()
-                } else {
-                    None
-                };
-
-                CompressedPayload {
-                    fit_result,
-                    residual,
-                    original_len: n,
-                }
+            CompressedPayload {
+                fit_result,
+                residual,
+                original_len: n,
             }
         }
     }
 
     /// Decompress a `CompressedPayload` back into the original signal.
+    #[must_use]
     pub fn decompress(&self, payload: &CompressedPayload) -> Vec<f32> {
         let n = payload.original_len;
 
-        match payload.fit_result.method {
-            FitMethod::LzmaFallback => {
-                // Decompress raw LZMA bytes back to f32
-                if let Some(ref compressed) = payload.residual {
-                    if let Ok(raw) = lzma_decompress(compressed) {
-                        return raw
-                            .chunks_exact(4)
-                            .map(|c| f32::from_le_bytes(c.try_into().unwrap_or([0; 4])))
-                            .collect();
+        if payload.fit_result.method == FitMethod::LzmaFallback {
+            // Decompress raw LZMA bytes back to f32
+            if let Some(ref compressed) = payload.residual {
+                if let Ok(raw) = lzma_decompress(compressed) {
+                    return raw
+                        .chunks_exact(4)
+                        .map(|c| f32::from_le_bytes(c.try_into().unwrap_or([0; 4])))
+                        .collect();
+                }
+            }
+            vec![0.0; n]
+        } else {
+            let mut signal = reconstruct(&payload.fit_result, n);
+
+            // Add residual if present
+            if let Some(ref compressed_residual) = payload.residual {
+                if let Ok(raw) = lzma_decompress(compressed_residual) {
+                    let residual: Vec<f32> = raw
+                        .chunks_exact(4)
+                        .map(|c| f32::from_le_bytes(c.try_into().unwrap_or([0; 4])))
+                        .collect();
+                    for (s, r) in signal.iter_mut().zip(residual.iter()) {
+                        *s += r;
                     }
                 }
-                vec![0.0; n]
             }
 
-            _ => {
-                let mut signal = reconstruct(&payload.fit_result, n);
-
-                // Add residual if present
-                if let Some(ref compressed_residual) = payload.residual {
-                    if let Ok(raw) = lzma_decompress(compressed_residual) {
-                        let residual: Vec<f32> = raw
-                            .chunks_exact(4)
-                            .map(|c| f32::from_le_bytes(c.try_into().unwrap_or([0; 4])))
-                            .collect();
-                        for (s, r) in signal.iter_mut().zip(residual.iter()) {
-                            *s += r;
-                        }
-                    }
-                }
-
-                signal
-            }
+            signal
         }
     }
 }

@@ -1,6 +1,6 @@
 //! Audio Generator
 //!
-//! Rust port of the Python AudioGenerator in media_generators.py.
+//! Rust port of the Python `AudioGenerator` in `media_generators.py`.
 //! Generates procedural PCM audio from parametric descriptions and can
 //! write the result directly to a 32-bit IEEE-float WAV file.
 //!
@@ -17,7 +17,7 @@ use std::io::{self, Write};
 // Enums
 // ============================================================================
 
-/// Detected / requested audio patterns (mirrors Python AudioPattern enum)
+/// Detected / requested audio patterns (mirrors Python `AudioPattern` enum)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioPattern {
     Silence,
@@ -45,7 +45,7 @@ pub struct AudioParams {
     pub frequency: f32,
     /// Peak amplitude for `Sine` and `WhiteNoise` (0.0–1.0 range)
     pub amplitude: f32,
-    /// Components for `MultiSine`: Vec of (frequency_hz, amplitude, phase_rad)
+    /// Components for `MultiSine`: Vec of (`frequency_hz`, amplitude, `phase_rad`)
     pub components: Vec<(f32, f32, f32)>,
     /// RNG seed for `WhiteNoise`
     pub seed: u64,
@@ -86,13 +86,15 @@ pub struct AudioGenerator;
 
 impl AudioGenerator {
     /// Create a new generator
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self
     }
 
     /// Generate a complete PCM f32 buffer for the given parameters.
     ///
     /// Returns normalised samples in the range [-1.0, 1.0].
+    #[must_use]
     pub fn generate(&self, params: &AudioParams) -> Vec<f32> {
         let n = (params.duration_secs * params.sample_rate as f32) as usize;
         let sr = params.sample_rate;
@@ -171,13 +173,13 @@ impl AudioGenerator {
             .map(|i| {
                 omegas
                     .iter()
-                    .map(|&(omega, amp, phase)| amp * (omega * i as f32 + phase).sin())
+                    .map(|&(omega, amp, phase)| amp * omega.mul_add(i as f32, phase).sin())
                     .sum::<f32>()
             })
             .collect()
     }
 
-    /// Generate white noise using ChaCha8 CSPRNG for reproducibility.
+    /// Generate white noise using `ChaCha8` CSPRNG for reproducibility.
     #[inline(always)]
     fn generate_white_noise(n: usize, amp: f32, seed: u64) -> Vec<f32> {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -236,14 +238,14 @@ impl AudioGenerator {
             } else if i < decay_end {
                 // Decay: 1 → sustain
                 let decay_pos = (i - attack_end) as f32;
-                1.0 - (1.0 - sustain) * decay_pos * rcp_decay
+                ((1.0 - sustain) * decay_pos).mul_add(-rcp_decay, 1.0)
             } else if i < release_start {
                 // Sustain: flat
                 sustain
             } else {
                 // Release: sustain → 0
                 let release_pos = (i - release_start) as f32;
-                sustain * (1.0 - release_pos * rcp_release)
+                sustain * release_pos.mul_add(-rcp_release, 1.0)
             };
             *s *= env;
         }
@@ -289,10 +291,10 @@ fn write_wav_f32<W: Write>(
     num_channels: u16,
 ) -> io::Result<()> {
     let num_samples = samples.len() as u32;
-    let data_size = num_samples * num_channels as u32 * 4; // f32 = 4 bytes
+    let data_size = num_samples * u32::from(num_channels) * 4; // f32 = 4 bytes
     let file_size = 36 + data_size; // everything after the initial 8-byte RIFF header
 
-    let byte_rate = sample_rate * num_channels as u32 * 4;
+    let byte_rate = sample_rate * u32::from(num_channels) * 4;
     let block_align = num_channels * 4;
 
     // RIFF chunk descriptor

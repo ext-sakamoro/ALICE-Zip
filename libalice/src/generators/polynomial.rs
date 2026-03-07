@@ -31,6 +31,7 @@ const CONSTANT_DATA_VARIANCE_THRESHOLD: f64 = 1e-15; // Threshold for detecting 
 ///
 /// # Returns
 /// `Vec<f32>` of generated signal
+#[must_use]
 pub fn generate_polynomial(n: usize, coefficients: &[f64]) -> Vec<f32> {
     if coefficients.is_empty() {
         return vec![0.0; n];
@@ -53,7 +54,7 @@ pub fn generate_polynomial(n: usize, coefficients: &[f64]) -> Vec<f32> {
 /// Coefficients are ordered from highest degree to lowest.
 #[inline(always)]
 fn horner_eval(x: f64, coefficients: &[f64]) -> f64 {
-    coefficients.iter().fold(0.0, |acc, &c| acc * x + c)
+    coefficients.iter().fold(0.0, |acc, &c| acc.mul_add(x, c))
 }
 
 /// Fit a polynomial to data using least squares
@@ -64,7 +65,8 @@ fn horner_eval(x: f64, coefficients: &[f64]) -> f64 {
 /// * `error_threshold` - Stop if relative error is below this
 ///
 /// # Returns
-/// Tuple of (coefficients, degree, relative_error)
+/// Tuple of (coefficients, degree, `relative_error`)
+#[must_use]
 pub fn fit_polynomial(
     data: &[f32],
     max_degree: usize,
@@ -79,7 +81,7 @@ pub fn fit_polynomial(
     // Pre-compute reciprocal to avoid per-element division inside the loop
     let rcp_n_minus_1 = 1.0 / (n - 1).max(1) as f64;
     let x_data: Vec<f64> = (0..n).map(|i| i as f64 * rcp_n_minus_1).collect();
-    let y_data: Vec<f64> = data.iter().map(|&y| y as f64).collect();
+    let y_data: Vec<f64> = data.iter().map(|&y| f64::from(y)).collect();
 
     let data_variance = variance(&y_data);
     if data_variance < CONSTANT_DATA_VARIANCE_THRESHOLD {

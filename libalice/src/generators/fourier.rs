@@ -28,11 +28,12 @@ pub struct FourierCoefficient {
 ///
 /// # Arguments
 /// * `n` - Number of samples to generate
-/// * `coefficients` - List of (freq_idx, magnitude, phase) tuples
+/// * `coefficients` - List of (`freq_idx`, magnitude, phase) tuples
 /// * `dc_offset` - DC component (mean value)
 ///
 /// # Returns
 /// `Vec<f32>` of generated signal
+#[must_use]
 pub fn generate_from_coefficients(
     n: usize,
     coefficients: &[(usize, f32, f32)],
@@ -62,7 +63,10 @@ pub fn generate_from_coefficients(
     // Extract real parts and add DC offset
     // Note: rustfft doesn't normalize, so we divide by n
     let inv_n = 1.0 / n as f32;
-    buffer.iter().map(|c| c.re * inv_n + dc_offset).collect()
+    buffer
+        .iter()
+        .map(|c| c.re.mul_add(inv_n, dc_offset))
+        .collect()
 }
 
 /// Generate a simple sine wave
@@ -76,6 +80,7 @@ pub fn generate_from_coefficients(
 ///
 /// # Returns
 /// `Vec<f32>` of sine wave samples
+#[must_use]
 pub fn generate_sine_wave(
     n: usize,
     frequency: f32,
@@ -87,7 +92,10 @@ pub fn generate_sine_wave(
     (0..n)
         .map(|i| {
             let t = i as f32;
-            dc_offset + amplitude * (2.0 * PI * frequency * t * inv_n + phase).sin()
+            amplitude.mul_add(
+                (2.0 * PI * frequency * t).mul_add(inv_n, phase).sin(),
+                dc_offset,
+            )
         })
         .collect()
 }
@@ -101,6 +109,7 @@ pub fn generate_sine_wave(
 ///
 /// # Returns
 /// `Vec<f32>` of generated signal
+#[must_use]
 pub fn generate_multi_sine(n: usize, components: &[(f32, f32, f32)], dc_offset: f32) -> Vec<f32> {
     let mut result = vec![dc_offset; n];
     let inv_n = 1.0 / n as f32;
@@ -108,7 +117,7 @@ pub fn generate_multi_sine(n: usize, components: &[(f32, f32, f32)], dc_offset: 
     for &(freq, amp, phase) in components {
         for (i, sample) in result.iter_mut().enumerate() {
             let t = i as f32;
-            *sample += amp * (2.0 * PI * freq * t * inv_n + phase).sin();
+            *sample += amp * (2.0 * PI * freq * t).mul_add(inv_n, phase).sin();
         }
     }
 
@@ -123,7 +132,8 @@ pub fn generate_multi_sine(n: usize, components: &[(f32, f32, f32)], dc_offset: 
 /// * `energy_threshold` - Capture this fraction of total energy (0.0-1.0)
 ///
 /// # Returns
-/// Tuple of (coefficients, dc_offset)
+/// Tuple of (coefficients, `dc_offset`)
+#[must_use]
 pub fn analyze_signal(
     signal: &[f32],
     max_coefficients: usize,

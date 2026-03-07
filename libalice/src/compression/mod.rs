@@ -28,7 +28,7 @@ use std::io::{Cursor, Read};
 pub fn lzma_compress(data: &[u8], _preset: u32) -> std::io::Result<Vec<u8>> {
     let mut output = Vec::new();
     lzma_rs::lzma_compress(&mut Cursor::new(data), &mut output)
-        .map_err(|e| std::io::Error::other(format!("LZMA compress error: {}", e)))?;
+        .map_err(|e| std::io::Error::other(format!("LZMA compress error: {e}")))?;
     Ok(output)
 }
 
@@ -44,7 +44,7 @@ pub fn lzma_decompress(data: &[u8]) -> std::io::Result<Vec<u8>> {
     lzma_rs::lzma_decompress(&mut Cursor::new(data), &mut output).map_err(|e| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("LZMA decompress error: {}", e),
+            format!("LZMA decompress error: {e}"),
         )
     })?;
     Ok(output)
@@ -85,7 +85,7 @@ pub fn zlib_decompress(data: &[u8]) -> std::io::Result<Vec<u8>> {
 /// * `data` - Input f32 array to quantize
 ///
 /// # Returns
-/// Tuple of (quantized_bytes, min_val, scale)
+/// Tuple of (`quantized_bytes`, `min_val`, scale)
 ///
 /// # Edge Cases
 /// - **Empty array**: Returns `(Vec::new(), 0.0, 1.0)`
@@ -96,8 +96,8 @@ pub fn quantize_8bit(data: &[f32]) -> (Vec<u8>, f64, f64) {
         return (Vec::new(), 0.0, 1.0);
     }
 
-    let min_val = data.iter().cloned().fold(f32::INFINITY, f32::min) as f64;
-    let max_val = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max) as f64;
+    let min_val = f64::from(data.iter().copied().fold(f32::INFINITY, f32::min));
+    let max_val = f64::from(data.iter().copied().fold(f32::NEG_INFINITY, f32::max));
     let scale = max_val - min_val;
 
     // If data is constant (scale ≈ 0), use scale = 1.0 to avoid division by zero.
@@ -107,7 +107,7 @@ pub fn quantize_8bit(data: &[f32]) -> (Vec<u8>, f64, f64) {
     let quantized: Vec<u8> = data
         .iter()
         .map(|&v| {
-            let normalized = ((v as f64 - min_val) / scale).clamp(0.0, 1.0);
+            let normalized = ((f64::from(v) - min_val) / scale).clamp(0.0, 1.0);
             (normalized * 255.0).round() as u8
         })
         .collect();
@@ -116,10 +116,11 @@ pub fn quantize_8bit(data: &[f32]) -> (Vec<u8>, f64, f64) {
 }
 
 /// Dequantize 8-bit to f32 array
+#[must_use]
 pub fn dequantize_8bit(data: &[u8], min_val: f64, scale: f64) -> Vec<f32> {
     data.iter()
         .map(|&v| {
-            let normalized = v as f64 / 255.0;
+            let normalized = f64::from(v) / 255.0;
             (normalized * scale + min_val) as f32
         })
         .collect()
@@ -131,7 +132,7 @@ pub fn dequantize_8bit(data: &[u8], min_val: f64, scale: f64) -> Vec<f32> {
 /// * `data` - Input f32 array to quantize
 ///
 /// # Returns
-/// Tuple of (quantized_bytes, min_val, scale)
+/// Tuple of (`quantized_bytes`, `min_val`, scale)
 /// - Bytes are stored in **little-endian** order (2 bytes per value)
 ///
 /// # Edge Cases
@@ -143,8 +144,8 @@ pub fn quantize_16bit(data: &[f32]) -> (Vec<u8>, f64, f64) {
         return (Vec::new(), 0.0, 1.0);
     }
 
-    let min_val = data.iter().cloned().fold(f32::INFINITY, f32::min) as f64;
-    let max_val = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max) as f64;
+    let min_val = f64::from(data.iter().copied().fold(f32::INFINITY, f32::min));
+    let max_val = f64::from(data.iter().copied().fold(f32::NEG_INFINITY, f32::max));
     let scale = max_val - min_val;
 
     // If data is constant (scale ≈ 0), use scale = 1.0 to avoid division by zero.
@@ -154,7 +155,7 @@ pub fn quantize_16bit(data: &[f32]) -> (Vec<u8>, f64, f64) {
     let quantized: Vec<u16> = data
         .iter()
         .map(|&v| {
-            let normalized = ((v as f64 - min_val) / scale).clamp(0.0, 1.0);
+            let normalized = ((f64::from(v) - min_val) / scale).clamp(0.0, 1.0);
             (normalized * 65535.0).round() as u16
         })
         .collect();
@@ -166,11 +167,12 @@ pub fn quantize_16bit(data: &[f32]) -> (Vec<u8>, f64, f64) {
 }
 
 /// Dequantize 16-bit to f32 array
+#[must_use]
 pub fn dequantize_16bit(data: &[u8], min_val: f64, scale: f64) -> Vec<f32> {
     data.chunks_exact(2)
         .map(|chunk| {
             let v = u16::from_le_bytes([chunk[0], chunk[1]]);
-            let normalized = v as f64 / 65535.0;
+            let normalized = f64::from(v) / 65535.0;
             (normalized * scale + min_val) as f32
         })
         .collect()
@@ -186,7 +188,7 @@ pub fn dequantize_16bit(data: &[u8], min_val: f64, scale: f64) -> Vec<f32> {
 /// * `lzma_preset` - LZMA preset (0-9)
 ///
 /// # Returns
-/// Compressed bytes including header (min_val, scale) or IO error
+/// Compressed bytes including header (`min_val`, scale) or IO error
 pub fn compress_residual_quantized(
     residual: &[f32],
     bits: u8,
@@ -216,7 +218,7 @@ pub fn compress_residual_quantized(
 /// Decompress quantized residual
 ///
 /// # Arguments
-/// * `data` - Compressed bytes from compress_residual_quantized
+/// * `data` - Compressed bytes from `compress_residual_quantized`
 ///
 /// # Returns
 /// Decompressed f32 residual or IO error

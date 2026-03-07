@@ -1,0 +1,6 @@
+[package]
+name = "alice-zip"
+version = "0.1.0"
+edition = "2021"
+description = "Compression algorithms (LZ77, Deflate-like, dictionary coding)"
+license = "MIT OR Apache-2.0"
