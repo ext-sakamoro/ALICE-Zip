@@ -2,7 +2,7 @@
 name = "alice-zip-enterprise"
 version = "1.0.0"
 edition = "2021"
-authors = ["Moroya Sakamoto <sakamoto@example.com>"]
+authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "ALICE-Zip Enterprise Edition - Commercial features for ALICE-Zip compression"
 license = "Proprietary"
 keywords = ["compression", "enterprise", "security", "license"]
