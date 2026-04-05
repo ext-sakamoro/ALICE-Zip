@@ -42,6 +42,9 @@ rand_chacha = "0.3"
 lzma-rs = "0.3"
 flate2 = "1.1"
 
+# Memory-mapped file I/O
+memmap2 = "0.9"
+
 # CLI
 clap = { version = "4.5", features = ["derive"] }
 

@@ -84,7 +84,8 @@ pub fn lz77_decode(tokens: &[LzToken]) -> Vec<u8> {
 
 #[derive(Debug, Clone)]
 pub struct Dictionary {
-    entries: Vec<Vec<u8>>,
+    arena: Vec<u8>,
+    offsets: Vec<u32>,
     max_entries: usize,
 }
 
@@ -92,35 +93,62 @@ impl Dictionary {
     #[must_use]
     pub const fn new(max_entries: usize) -> Self {
         Self {
-            entries: Vec::new(),
+            arena: Vec::new(),
+            offsets: Vec::new(),
             max_entries,
         }
     }
 
     #[allow(clippy::cast_possible_truncation)]
     pub fn add(&mut self, phrase: &[u8]) -> u32 {
-        if let Some(pos) = self.entries.iter().position(|e| e == phrase) {
+        if let Some(pos) = (0..self.offsets.len()).position(|i| self.get_entry(i) == phrase) {
             return pos as u32;
         }
-        if self.entries.len() >= self.max_entries {
-            self.entries.remove(0); // LRU evict
+        if self.offsets.len() >= self.max_entries {
+            let first_end = if self.offsets.len() > 1 {
+                self.offsets[1] as usize
+            } else {
+                self.arena.len()
+            };
+            self.arena.drain(..first_end);
+            self.offsets.remove(0);
+            for off in &mut self.offsets {
+                *off -= first_end as u32;
+            }
         }
-        self.entries.push(phrase.to_vec());
-        (self.entries.len() - 1) as u32
+        self.offsets.push(self.arena.len() as u32);
+        self.arena.extend_from_slice(phrase);
+        (self.offsets.len() - 1) as u32
     }
 
     #[must_use]
     pub fn lookup(&self, idx: u32) -> Option<&[u8]> {
-        self.entries.get(idx as usize).map(Vec::as_slice)
+        let i = idx as usize;
+        if i >= self.offsets.len() {
+            return None;
+        }
+        Some(self.get_entry(i))
+    }
+
+    #[inline]
+    fn get_entry(&self, i: usize) -> &[u8] {
+        let start = self.offsets[i] as usize;
+        let end = if i + 1 < self.offsets.len() {
+            self.offsets[i + 1] as usize
+        } else {
+            self.arena.len()
+        };
+        &self.arena[start..end]
     }
 
     #[must_use]
-    pub const fn len(&self) -> usize {
-        self.entries.len()
+    pub fn len(&self) -> usize {
+        self.offsets.len()
     }
+
     #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+    pub fn is_empty(&self) -> bool {
+        self.offsets.is_empty()
     }
 }
 

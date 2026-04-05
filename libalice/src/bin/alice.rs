@@ -9,8 +9,9 @@
 //!   alice benchmark <input>
 
 use clap::{Parser, Subcommand, ValueEnum};
+use memmap2::Mmap;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -216,9 +217,8 @@ fn cmd_compress(
     println!("===========================");
 
     // Read input file
-    let mut file = File::open(&input)?;
-    let mut data = Vec::new();
-    file.read_to_end(&mut data)?;
+    let file = File::open(&input)?;
+    let data = unsafe { Mmap::map(&file)? };
 
     let original_size = data.len();
     println!("Input: {} ({} bytes)", input.display(), original_size);
@@ -302,9 +302,8 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
     println!("=============================");
 
     // Read input file
-    let mut file = BufReader::new(File::open(&input)?);
-    let mut data = Vec::new();
-    file.read_to_end(&mut data)?;
+    let file = File::open(&input)?;
+    let data = unsafe { Mmap::map(&file)? };
 
     println!("Input: {} ({} bytes)", input.display(), data.len());
 
@@ -414,9 +413,8 @@ fn cmd_benchmark(
     println!("ALICE-Zip Benchmark v0.1.0");
     println!("==========================");
 
-    let mut file = File::open(&input)?;
-    let mut data = Vec::new();
-    file.read_to_end(&mut data)?;
+    let file = File::open(&input)?;
+    let data = unsafe { Mmap::map(&file)? };
 
     let original_size = data.len();
     println!("Input: {} ({} bytes)", input.display(), original_size);

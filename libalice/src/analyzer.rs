@@ -123,6 +123,38 @@ fn normalized_mse(data: &[f64], fitted: &[f64]) -> f64 {
     }
 }
 
+/// Compute normalized MSE from an iterator of (original, fitted) pairs
+#[inline]
+fn normalized_mse_f32_f64(data: &[f32], fitted_iter: impl Iterator<Item = f64>) -> f64 {
+    let mut n = 0u64;
+    let mut mse_sum = 0.0_f64;
+    let mut mean_sum = 0.0_f64;
+    let mut var_sum = 0.0_f64;
+
+    // First pass: compute MSE and mean simultaneously
+    for (&d, f) in data.iter().zip(fitted_iter) {
+        let d64 = f64::from(d);
+        mean_sum += d64;
+        let diff = d64 - f;
+        mse_sum += diff * diff;
+        n += 1;
+    }
+
+    if n < 2 { return mse_sum; }
+    let inv_n = 1.0 / n as f64;
+    let mean = mean_sum * inv_n;
+
+    // Second pass: variance
+    for &d in data.iter() {
+        let dev = f64::from(d) - mean;
+        var_sum += dev * dev;
+    }
+    let var = var_sum * inv_n;
+    let mse = mse_sum * inv_n;
+
+    if var > 1e-15 { mse / var } else { mse }
+}
+
 // ---------------------------------------------------------------------------
 // try_sine_fit
 // ---------------------------------------------------------------------------
@@ -143,45 +175,49 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
         return None;
     }
 
-    // --- DC offset & amplitude ---
     let inv_n = 1.0 / n as f64;
     let dc_offset: f64 = data.iter().map(|&x| f64::from(x)).sum::<f64>() * inv_n;
 
-    let centered: Vec<f64> = data.iter().map(|&x| f64::from(x) - dc_offset).collect();
-
-    let max_c = centered.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let min_c = centered.iter().copied().fold(f64::INFINITY, f64::min);
+    // max/min of centered data without materializing
+    let mut max_c = f64::NEG_INFINITY;
+    let mut min_c = f64::INFINITY;
+    for &x in data {
+        let c = f64::from(x) - dc_offset;
+        if c > max_c { max_c = c; }
+        if c < min_c { min_c = c; }
+    }
     let amplitude = (max_c - min_c) * 0.5;
 
     if amplitude < 1e-10 {
         return None;
     }
 
-    // --- Dominant frequency via FFT (reuse existing analyze_signal) ---
-    let f32_data: Vec<f32> = data.to_vec();
-    // Ask for 1 coefficient; the first (highest-magnitude) gives the dominant freq
-    let (coeffs, _dc) = analyze_signal(&f32_data, 1, 1.0);
+    // Dominant frequency via FFT (pass data directly, no clone)
+    let (coeffs, _dc) = analyze_signal(data, 1, 1.0);
 
     let frequency: f64 = if let Some(&(freq_idx, _mag, _phase)) = coeffs.first() {
-        // freq_idx is the FFT bin index; convert to cycles per n samples
         freq_idx as f64
     } else {
-        // Fallback: estimate from zero crossings
-        let crossings: Vec<usize> = centered
-            .windows(2)
-            .enumerate()
-            .filter_map(|(i, w)| {
-                if (w[0] < 0.0) == (w[1] < 0.0) {
-                    None
-                } else {
-                    Some(i)
-                }
-            })
-            .collect();
+        // Estimate from zero crossings without materializing Vec
+        let mut prev_centered = f64::from(data[0]) - dc_offset;
+        let mut crossing_count = 0u32;
+        let mut diff_sum = 0.0_f64;
+        let mut last_crossing: Option<usize> = None;
 
-        if crossings.len() >= 2 {
-            let diffs: Vec<f64> = crossings.windows(2).map(|w| (w[1] - w[0]) as f64).collect();
-            let avg_half_period = diffs.iter().sum::<f64>() / diffs.len() as f64;
+        for (i, &d) in data.iter().enumerate().skip(1) {
+            let curr = f64::from(d) - dc_offset;
+            if (prev_centered < 0.0) != (curr < 0.0) {
+                if let Some(last) = last_crossing {
+                    diff_sum += (i - last) as f64;
+                    crossing_count += 1;
+                }
+                last_crossing = Some(i);
+            }
+            prev_centered = curr;
+        }
+
+        if crossing_count >= 1 {
+            let avg_half_period = diff_sum / crossing_count as f64;
             if avg_half_period > 0.0 {
                 n as f64 / (2.0 * avg_half_period)
             } else {
@@ -192,23 +228,19 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
         }
     };
 
-    // --- Grid search over phase (360 steps, 1-degree resolution) ---
-    // Pre-compute angular step to avoid redundant multiplications inside loop
+    // Grid search over phase — compute args inline
     let two_pi_f_inv_n = 2.0 * PI * frequency * inv_n;
-
-    // Pre-compute sin argument base for each sample index: two_pi_f_inv_n * i
-    let args: Vec<f64> = (0..n).map(|i| two_pi_f_inv_n * i as f64).collect();
-
     let phase_step = 2.0 * PI / 360.0;
     let mut best_phase = 0.0_f64;
     let mut best_error = f64::INFINITY;
 
     for step in 0..360usize {
         let phase = step as f64 * phase_step;
-        let mse = args
+        let mse = data
             .iter()
-            .zip(data.iter())
-            .map(|(&arg, &y)| {
+            .enumerate()
+            .map(|(i, &y)| {
+                let arg = two_pi_f_inv_n * i as f64;
                 let fitted = amplitude * (arg + phase).sin() + dc_offset;
                 let diff = f64::from(y) - fitted;
                 diff * diff
@@ -216,26 +248,22 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
             .sum::<f64>()
             * inv_n;
 
-        // Branchless-style: update best using direct comparison
         if mse < best_error {
             best_error = mse;
             best_phase = phase;
         }
     }
 
-    // --- Normalized error ---
-    let fitted_vals: Vec<f64> = args
-        .iter()
-        .map(|&arg| amplitude * (arg + best_phase).sin() + dc_offset)
-        .collect();
-    let data_f64: Vec<f64> = data.iter().map(|&x| f64::from(x)).collect();
-    let norm_err = normalized_mse(&data_f64, &fitted_vals);
+    // Normalized error using iterator (no intermediate Vecs)
+    let norm_err = normalized_mse_f32_f64(data, (0..n).map(|i| {
+        let arg = two_pi_f_inv_n * i as f64;
+        amplitude * (arg + best_phase).sin() + dc_offset
+    }));
 
     if norm_err >= MAX_ACCEPTABLE_ERROR {
         return None;
     }
 
-    // Compressed size: 4 f64 coefficients + overhead = 64 bytes
     let original_bytes = (n * 4) as f32;
     let compression_ratio = original_bytes / SINE_COMPRESSED_SIZE as f32;
 
@@ -280,9 +308,7 @@ pub fn try_fourier_fit(data: &[f32], max_coeffs: usize) -> Option<FitResult> {
     // Reconstruct signal to measure error
     let reconstructed = generate_from_coefficients(n, &coefficients, dc_offset);
 
-    let data_f64: Vec<f64> = data.iter().map(|&x| f64::from(x)).collect();
-    let recon_f64: Vec<f64> = reconstructed.iter().map(|&x| f64::from(x)).collect();
-    let norm_err = normalized_mse(&data_f64, &recon_f64);
+    let norm_err = normalized_mse_f32_f64(data, reconstructed.iter().map(|&x| f64::from(x)));
 
     if norm_err >= MAX_ACCEPTABLE_ERROR {
         return None;
@@ -407,7 +433,10 @@ pub fn analyze_data(data: &[f32]) -> FitResult {
     }
 
     // Fallback: LZMA (ratio computed from actual compressed size)
-    let raw_bytes: Vec<u8> = data.iter().flat_map(|&v| v.to_le_bytes()).collect();
+    let mut raw_bytes = Vec::with_capacity(data.len() * 4);
+    for &v in data {
+        raw_bytes.extend_from_slice(&v.to_le_bytes());
+    }
     let original_bytes = raw_bytes.len() as f32;
 
     let compression_ratio = lzma_compress(&raw_bytes, 6)
@@ -530,7 +559,10 @@ impl ProceduralCompressionDesigner {
 
         if fit_result.method == FitMethod::LzmaFallback {
             // Compress raw f32 bytes with LZMA
-            let raw_bytes: Vec<u8> = data.iter().flat_map(|&v| v.to_le_bytes()).collect();
+            let mut raw_bytes = Vec::with_capacity(data.len() * 4);
+            for &v in data {
+                raw_bytes.extend_from_slice(&v.to_le_bytes());
+            }
             let residual = lzma_compress(&raw_bytes, 6).ok();
             CompressedPayload {
                 fit_result,
@@ -554,8 +586,10 @@ impl ProceduralCompressionDesigner {
                 .fold(0.0_f32, f32::max);
 
             let residual = if max_abs_residual > 1e-10 {
-                let residual_bytes: Vec<u8> =
-                    residual_f32.iter().flat_map(|&v| v.to_le_bytes()).collect();
+                let mut residual_bytes = Vec::with_capacity(residual_f32.len() * 4);
+                for &v in &residual_f32 {
+                    residual_bytes.extend_from_slice(&v.to_le_bytes());
+                }
                 lzma_compress(&residual_bytes, 6).ok()
             } else {
                 None
