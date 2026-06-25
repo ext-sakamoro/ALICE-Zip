@@ -94,6 +94,7 @@ pub struct CompressedPayload {
 // ---------------------------------------------------------------------------
 
 /// Compute variance of a slice (returns 0.0 for empty or single-element slice)
+#[allow(dead_code)]
 #[inline]
 fn variance_f64(data: &[f64]) -> f64 {
     let n = data.len();
@@ -106,6 +107,7 @@ fn variance_f64(data: &[f64]) -> f64 {
 }
 
 /// Compute normalized MSE: MSE / variance (returns MSE when variance ≈ 0)
+#[allow(dead_code)]
 #[inline]
 fn normalized_mse(data: &[f64], fitted: &[f64]) -> f64 {
     let n = data.len() as f64;
@@ -140,7 +142,9 @@ fn normalized_mse_f32_f64(data: &[f32], fitted_iter: impl Iterator<Item = f64>) 
         n += 1;
     }
 
-    if n < 2 { return mse_sum; }
+    if n < 2 {
+        return mse_sum;
+    }
     let inv_n = 1.0 / n as f64;
     let mean = mean_sum * inv_n;
 
@@ -152,7 +156,11 @@ fn normalized_mse_f32_f64(data: &[f32], fitted_iter: impl Iterator<Item = f64>) 
     let var = var_sum * inv_n;
     let mse = mse_sum * inv_n;
 
-    if var > 1e-15 { mse / var } else { mse }
+    if var > 1e-15 {
+        mse / var
+    } else {
+        mse
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -183,8 +191,12 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
     let mut min_c = f64::INFINITY;
     for &x in data {
         let c = f64::from(x) - dc_offset;
-        if c > max_c { max_c = c; }
-        if c < min_c { min_c = c; }
+        if c > max_c {
+            max_c = c;
+        }
+        if c < min_c {
+            min_c = c;
+        }
     }
     let amplitude = (max_c - min_c) * 0.5;
 
@@ -255,10 +267,13 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
     }
 
     // Normalized error using iterator (no intermediate Vecs)
-    let norm_err = normalized_mse_f32_f64(data, (0..n).map(|i| {
-        let arg = two_pi_f_inv_n * i as f64;
-        amplitude * (arg + best_phase).sin() + dc_offset
-    }));
+    let norm_err = normalized_mse_f32_f64(
+        data,
+        (0..n).map(|i| {
+            let arg = two_pi_f_inv_n * i as f64;
+            amplitude * (arg + best_phase).sin() + dc_offset
+        }),
+    );
 
     if norm_err >= MAX_ACCEPTABLE_ERROR {
         return None;
