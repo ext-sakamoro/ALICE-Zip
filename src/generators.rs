@@ -207,6 +207,93 @@ pub fn generate_sine_wave(
         .collect()
 }
 
+/// Emit `n` samples that are the sum of multiple sinusoids `(frequency,
+/// amplitude, phase)` plus a shared `dc_offset`.
+///
+/// Each sample `i` evaluates to
+/// `dc_offset + sum_j(amplitude_j * sin(2*pi*frequency_j*i/n + phase_j))`.
+#[must_use]
+pub fn generate_multi_sine(
+    n: usize,
+    components: &[(f32, f32, f32)],
+    dc_offset: f32,
+) -> Vec<f32> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let inv_n = 1.0 / n as f32;
+    (0..n)
+        .map(|i| {
+            let x = i as f32;
+            let sum: f32 = components
+                .iter()
+                .map(|&(freq, amp, phase)| {
+                    let theta = 2.0 * PI * freq * x * inv_n + phase;
+                    amp * theta.sin()
+                })
+                .sum();
+            sum + dc_offset
+        })
+        .collect()
+}
+
+/// 1D fractional-Brownian-motion Perlin-like value noise with configurable
+/// octaves, persistence and lacunarity — deterministic given `seed`.
+///
+/// The output range is roughly `[-1.0, 1.0]` before `octaves * persistence`
+/// amplification.
+///
+/// # Parameters
+///
+/// - `n`: number of samples.
+/// - `dimension`: currently accepts `1` (1D slice); values > 1 are treated as
+///   1D for forward-compatibility.
+/// - `seed`: deterministic PRNG seed for the gradient lattice.
+/// - `scale`: base spatial frequency (larger = finer detail).
+/// - `octaves`: number of octaves summed (`>= 1`).
+/// - `persistence`: amplitude multiplier between octaves (typically `0.5`).
+/// - `lacunarity`: frequency multiplier between octaves (typically `2.0`).
+#[must_use]
+pub fn generate_perlin_advanced(
+    n: usize,
+    _dimension: usize,
+    seed: u32,
+    scale: f32,
+    octaves: u8,
+    persistence: f32,
+    lacunarity: f32,
+) -> Vec<f32> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let octaves = octaves.max(1);
+    let inv_n = 1.0 / n as f32;
+
+    (0..n)
+        .map(|i| {
+            let mut sum = 0.0_f32;
+            let mut amplitude = 1.0_f32;
+            let mut frequency = scale.max(1e-6);
+            let mut max_amp = 0.0_f32;
+            let x = i as f32 * inv_n;
+
+            for _ in 0..octaves {
+                let px = x * frequency;
+                sum += amplitude * value_noise_1d(px, seed);
+                max_amp += amplitude;
+                amplitude *= persistence;
+                frequency *= lacunarity;
+            }
+
+            if max_amp > 0.0 {
+                sum / max_amp
+            } else {
+                sum
+            }
+        })
+        .collect()
+}
+
 // ---------- internals ----------
 
 fn variance_f32(values: &[f32]) -> f64 {
@@ -307,6 +394,31 @@ fn solve_polynomial_ls(n: usize, ys: &[f64], degree: usize) -> Option<Vec<f64>> 
     }
 
     Some(coeffs)
+}
+
+/// 1D value noise with cubic Hermite (smoothstep) interpolation between
+/// hashed integer lattice points. Deterministic given the seed.
+fn value_noise_1d(x: f32, seed: u32) -> f32 {
+    let x0 = x.floor();
+    let x1 = x0 + 1.0;
+    let t = x - x0;
+    // Smoothstep: 3t² - 2t³
+    let s = t * t * (3.0 - 2.0 * t);
+    let g0 = hash_to_unit(x0 as i32, seed);
+    let g1 = hash_to_unit(x1 as i32, seed);
+    g0 * (1.0 - s) + g1 * s
+}
+
+fn hash_to_unit(x: i32, seed: u32) -> f32 {
+    // Small mixed-word hash (Wang-style) mapped to `[-1.0, 1.0]`.
+    let mut h = (x as u32).wrapping_mul(0x9e37_79b9);
+    h ^= seed.wrapping_mul(0x85eb_ca6b);
+    h ^= h >> 13;
+    h = h.wrapping_mul(0xc2b2_ae35);
+    h ^= h >> 16;
+    // Convert to [-1, 1]
+    let f = (h & 0x00ff_ffff) as f32 / 8_388_608.0; // 2^23
+    f - 1.0
 }
 
 fn dft_bin(values: &[f32], k: usize) -> (f32, f32) {

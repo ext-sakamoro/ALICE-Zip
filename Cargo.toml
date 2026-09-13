@@ -1,6 +1,6 @@
 [package]
 name = "alice-zip"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "Compression algorithms (LZ77, Deflate-like, dictionary coding) + procedural signal generators (Fourier / polynomial regression) + zlib wrappers"
