@@ -257,9 +257,9 @@ pub fn generate_multi_sine(
 pub fn generate_perlin_advanced(
     n: usize,
     _dimension: usize,
-    seed: u32,
+    seed: u64,
     scale: f32,
-    octaves: u8,
+    octaves: u32,
     persistence: f32,
     lacunarity: f32,
 ) -> Vec<f32> {
@@ -398,7 +398,7 @@ fn solve_polynomial_ls(n: usize, ys: &[f64], degree: usize) -> Option<Vec<f64>> 
 
 /// 1D value noise with cubic Hermite (smoothstep) interpolation between
 /// hashed integer lattice points. Deterministic given the seed.
-fn value_noise_1d(x: f32, seed: u32) -> f32 {
+fn value_noise_1d(x: f32, seed: u64) -> f32 {
     let x0 = x.floor();
     let x1 = x0 + 1.0;
     let t = x - x0;
@@ -409,13 +409,13 @@ fn value_noise_1d(x: f32, seed: u32) -> f32 {
     g0 * (1.0 - s) + g1 * s
 }
 
-fn hash_to_unit(x: i32, seed: u32) -> f32 {
+fn hash_to_unit(x: i32, seed: u64) -> f32 {
     // Small mixed-word hash (Wang-style) mapped to `[-1.0, 1.0]`.
-    let mut h = (x as u32).wrapping_mul(0x9e37_79b9);
-    h ^= seed.wrapping_mul(0x85eb_ca6b);
-    h ^= h >> 13;
-    h = h.wrapping_mul(0xc2b2_ae35);
-    h ^= h >> 16;
+    let mut h = (x as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    h ^= seed.wrapping_mul(0x85eb_ca6b_c2b2_ae35);
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xc2b2_ae35_9e37_79b9);
+    h ^= h >> 33;
     // Convert to [-1, 1]
     let f = (h & 0x00ff_ffff) as f32 / 8_388_608.0; // 2^23
     f - 1.0
