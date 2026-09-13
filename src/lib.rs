@@ -20,13 +20,16 @@
 //! ルートから `pub use` で公開しているため、既存 downstream (bindings /
 //! libalice / examples) はそのまま動作する
 
-#![no_std]
+// v0.2.0 で compression / generators module 追加により flate2 std 依存 (I/O trait)
+// no_std 環境は既存 module (bpe / dictionary / entropy / lz77 / prelude) のみ利用可
 extern crate alloc;
 
 pub mod bpe;
+pub mod compression;
 pub mod dictionary;
 pub mod entropy;
 pub mod error;
+pub mod generators;
 pub mod lz77;
 pub mod prelude;
 

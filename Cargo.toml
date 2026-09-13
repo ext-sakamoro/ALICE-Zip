@@ -1,6 +1,16 @@
 [package]
 name = "alice-zip"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Compression algorithms (LZ77, Deflate-like, dictionary coding)"
+authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
+description = "Compression algorithms (LZ77, Deflate-like, dictionary coding) + procedural signal generators (Fourier / polynomial regression) + zlib wrappers"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/ext-sakamoro/ALICE-Zip"
+keywords = ["compression", "lz77", "fourier", "polynomial", "zlib"]
+categories = ["compression", "algorithms", "science"]
+exclude = ["/alice", "/assets", "/.github", "*.png"]
+
+[dependencies]
+flate2 = "1.0"
+
+[dev-dependencies]
