@@ -213,11 +213,7 @@ pub fn generate_sine_wave(
 /// Each sample `i` evaluates to
 /// `dc_offset + sum_j(amplitude_j * sin(2*pi*frequency_j*i/n + phase_j))`.
 #[must_use]
-pub fn generate_multi_sine(
-    n: usize,
-    components: &[(f32, f32, f32)],
-    dc_offset: f32,
-) -> Vec<f32> {
+pub fn generate_multi_sine(n: usize, components: &[(f32, f32, f32)], dc_offset: f32) -> Vec<f32> {
     if n == 0 {
         return Vec::new();
     }

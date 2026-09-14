@@ -1,11 +1,17 @@
 [package]
 name = "alice-zip"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "Compression algorithms (LZ77, Deflate-like, dictionary coding) + procedural signal generators (Fourier / polynomial regression) + zlib wrappers"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ext-sakamoro/ALICE-Zip"
+homepage = "https://github.com/ext-sakamoro/ALICE-Zip"
+documentation = "https://docs.rs/alice-zip"
+# `Dictionary::len` / `is_empty` are `const fn` over `Vec` (stabilised in 1.87).
+# Declared so MSRV-aware resolvers (downstream `rust-version` < 1.87) fall
+# back to an older release instead of failing to compile.
+rust-version = "1.87"
 keywords = ["compression", "lz77", "fourier", "polynomial", "zlib"]
 categories = ["compression", "algorithms", "science"]
 exclude = ["/alice", "/assets", "/.github", "*.png"]
