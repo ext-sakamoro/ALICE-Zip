@@ -640,3 +640,169 @@ fn zlib_roundtrip_is_invariant_under_level() {
     assert!(zlib_decompress(b"not zlib at all").is_err());
     assert!(zlib_decompress(&[]).is_err());
 }
+
+// ---------------------------------------------------------------- mutation-driven additions (2026-09-15)
+// cargo-mutants (oracle included) left these laws unmeasured: sine DC term, energy
+// threshold edge values, FFT empty-input guard, the fit error metric, and the
+// 1D value-noise lattice / octave composition + the exact hash law that
+// alice-db segments persist
+
+#[test]
+fn sine_wave_dc_offset_is_additive() {
+    let base = generate_sine_wave(16, 2.0, 1.5, 0.3, 0.0);
+    let shifted = generate_sine_wave(16, 2.0, 1.5, 0.3, 3.0);
+    for (a, b) in base.iter().zip(&shifted) {
+        assert!((b - a - 3.0).abs() < 1e-6, "{a} {b}");
+    }
+}
+
+#[test]
+fn energy_threshold_outside_unit_interval_disables_trimming() {
+    // Two tones, energies 16 : 9 → 0.5 keeps 1 bin; a threshold outside (0, 1)
+    // disables trimming, so all `max_coefficients` bins (the two tones plus
+    // f32 leakage bins) come back
+    let n = 64usize;
+    let s = generate_multi_sine(n, &[(3.0, 4.0, 0.0), (7.0, 3.0, 0.0)], 0.0);
+    for thr in [0.0f32, 1.0, 1.5, -0.5, f32::INFINITY] {
+        let (c, _) = analyze_signal(&s, 8, thr);
+        assert_eq!(c.len(), 8, "threshold {thr}: {c:?}");
+        assert_eq!((c[0].0, c[1].0), (3, 7));
+    }
+    let (c, _) = analyze_signal(&s, 8, 0.5);
+    assert_eq!(c.len(), 1);
+    // The cutoff is inclusive: exactly 16/25 of the energy is reached by bin 3
+    let (c, _) = analyze_signal(&s, 8, 16.0 / 25.0 - 1e-4);
+    assert_eq!(c.len(), 1);
+    let (c, _) = analyze_signal(&s, 8, 16.0 / 25.0 + 1e-3);
+    assert_eq!(c.len(), 2);
+}
+
+#[cfg(feature = "fft")]
+#[test]
+fn fft_guards_empty_input_and_zero_max_coefficients() {
+    use alice_zip::generators::analyze_signal_fft;
+    assert_eq!(analyze_signal_fft(&[], 3, 0.9), (vec![], 0.0));
+    assert_eq!(analyze_signal_fft(&[1.0, 2.0, 3.0], 0, 0.9), (vec![], 0.0));
+    let (c, dc) = analyze_signal_fft(&[5.0; 8], 3, 0.9);
+    assert!(c.is_empty());
+    assert!((dc - 5.0).abs() < 1e-6);
+}
+
+#[test]
+fn fit_error_is_normalised_mse_of_the_returned_fit() {
+    // err = mean((y - p(x))²) / var(y) with the coefficients the fit returns
+    let values: Vec<f32> = (0..24)
+        .map(|i| 1.0 + 2.0 * i as f32 + if i % 3 == 0 { 0.7 } else { -0.35 })
+        .collect();
+    for (fit, unit) in [
+        (fit_polynomial(&values, 1, 1.0), false),
+        (fit_polynomial_unit(&values, 1, 1.0), true),
+    ] {
+        let (coeffs, degree, err) = fit.expect("degree-1 fit always exists with threshold 1.0");
+        assert_eq!(degree, 1);
+        let regen = if unit {
+            generate_polynomial_unit(values.len(), &coeffs)
+        } else {
+            generate_polynomial(values.len(), &coeffs)
+        };
+        let n = values.len() as f64;
+        let mean = values.iter().map(|v| f64::from(*v)).sum::<f64>() / n;
+        let var = values
+            .iter()
+            .map(|v| (f64::from(*v) - mean).powi(2))
+            .sum::<f64>()
+            / n;
+        let mse = values
+            .iter()
+            .zip(&regen)
+            .map(|(y, p)| (f64::from(*y) - f64::from(*p)).powi(2))
+            .sum::<f64>()
+            / n;
+        let expected = mse / var;
+        assert!(expected > 1e-4, "noise must be visible: {expected}");
+        assert!(
+            (err - expected).abs() < 1e-6 * expected.max(1.0),
+            "{err} vs {expected}"
+        );
+    }
+}
+
+#[test]
+fn fbm_1d_lattice_and_octave_composition_laws() {
+    // Sample i is x = i/n; with scale = n every sample sits on a lattice point
+    // (the hash itself), with scale = n/2 the even samples are the lattice and
+    // the odd samples are the smoothstep midpoint = plain average
+    let n = 32usize;
+    let seed = 99u64;
+    let lattice = generate_fbm_1d(n, seed, n as f32, 1, 0.5, 2.0).unwrap();
+    let half = generate_fbm_1d(n, seed, n as f32 / 2.0, 1, 0.5, 2.0).unwrap();
+    assert!(
+        lattice.iter().any(|v| (v - lattice[0]).abs() > 1e-3),
+        "hash is not constant"
+    );
+    assert!(lattice.iter().all(|v| (-1.0..=1.0).contains(v)));
+    for j in 0..n / 2 {
+        assert!((half[2 * j] - lattice[j]).abs() < 1e-6, "lattice j={j}");
+        let mid = 0.5 * (lattice[j] + lattice[(j + 1) % n]);
+        if j + 1 < n {
+            assert!(
+                (half[2 * j + 1] - mid).abs() < 1e-6,
+                "midpoint j={j}: {} vs {mid}",
+                half[2 * j + 1]
+            );
+        }
+    }
+    // Octaves compose linearly: fbm(o=2, p, L) = (f1(s) + p·f1(s·L)) / (1 + p)
+    for (p, lac) in [(0.5f32, 2.0f32), (0.25, 3.0), (1.0, 1.5)] {
+        let s = 4.0f32;
+        let o1 = generate_fbm_1d(n, seed, s, 1, p, lac).unwrap();
+        let o1_hi = generate_fbm_1d(n, seed, s * lac, 1, p, lac).unwrap();
+        let o2 = generate_fbm_1d(n, seed, s, 2, p, lac).unwrap();
+        for i in 0..n {
+            let expected = (o1[i] + p * o1_hi[i]) / (1.0 + p);
+            assert!(
+                (o2[i] - expected).abs() < 1e-5,
+                "p={p} L={lac} i={i}: {} vs {expected}",
+                o2[i]
+            );
+        }
+    }
+    // Different seeds / different scales give different series
+    assert_ne!(
+        lattice,
+        generate_fbm_1d(n, seed + 1, n as f32, 1, 0.5, 2.0).unwrap()
+    );
+}
+
+#[test]
+fn fbm_1d_matches_alice_db_persisted_law() {
+    // alice-db segments store PerlinNoise models whose samples were produced by
+    // this exact hash / smoothstep (alice-zip 0.3.1 `generate_perlin_advanced(n, 1, …)`,
+    // bit-identical here); these values are the on-disk contract, not a snapshot
+    let a = generate_fbm_1d(8, 42, 8.0, 1, 0.5, 2.0).unwrap();
+    let expected_a = [
+        -0.174_916_98_f32,
+        -0.761_084_9,
+        0.311_300_16,
+        0.232_630_49,
+        0.932_899_5,
+        0.486_068_13,
+        0.849_653_5,
+        -0.802_351_5,
+    ];
+    for (x, e) in a.iter().zip(&expected_a) {
+        assert!((x - e).abs() < 2e-7, "{x} vs {e}");
+    }
+    let b = generate_fbm_1d(6, 7, 3.0, 3, 0.5, 2.0).unwrap();
+    let expected_b = [
+        -0.850_226_9_f32,
+        0.283_985_35,
+        0.573_793_1,
+        0.079_221_25,
+        0.089_124_52,
+        -0.206_400_75,
+    ];
+    for (x, e) in b.iter().zip(&expected_b) {
+        assert!((x - e).abs() < 2e-7, "{x} vs {e}");
+    }
+}

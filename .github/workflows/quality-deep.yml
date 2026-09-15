@@ -51,6 +51,11 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           git diff origin/${{ github.base_ref }}...HEAD > /tmp/pr.diff
+          # An infinite-loop mutant (e.g. `pos += … → pos *= …` in lz77_encode) fills
+          # RAM before the 300 s test timeout and the OOM kill takes the runner down
+          # ("runner has received a shutdown signal", 2026-09-15 shards 0/1 twice);
+          # cap the address space so the test aborts instead
+          ulimit -v 6291456
           set +e
           cargo mutants --in-diff /tmp/pr.diff --timeout 300 --build-timeout 240 -j 2 \
             --features std,fft,parallel --output mutants.out -- --lib --test analytic_oracle
@@ -60,6 +65,7 @@ jobs:
       - name: Mutants (weekly / manual = whole crate, shard ${{ matrix.shard }}/8, lib + oracle tests)
         if: github.event_name != 'pull_request'
         run: |
+          ulimit -v 6291456
           set +e
           cargo mutants --shard ${{ matrix.shard }}/8 -j 2 --timeout 300 --build-timeout 240 \
             --features std,fft,parallel --output mutants.out -- --lib --test analytic_oracle
