@@ -3,7 +3,9 @@
 # mutants : cargo-mutants (test が bug を検出できるかの逆検査) PR では --in-diff で差分のみ、
 #           週次 / 手動は crate 全体を 8 shard 並列 (910 mutant、1 mutant ≈ 15 s build + 5 s test on GH
 #           runner → 1 job だと 2.5 h、8 shard × -j 2 で ≈ 25 min; 初回 2026-09-15 の単一 job は 8 分で
-#           user cancel) `-- --lib` で integration test を外す (analytic_oracle は 5 s だが 910 回で 75 min)
+#           user cancel) test set は `--lib --test analytic_oracle` (doctest は外す): 解析解 oracle を外して
+#           lib unit test だけにすると generators の mutant が 136 / 684 missed に見える (2026-09-15 実測、
+#           oracle 22 本が pin している法則が測定から抜けるため) oracle は 5 s なので含める
 # miri は置かない: crate は #![forbid(unsafe_code)]、rayon は parallel feature のみ
 #
 # 罠 #22 (continue-on-error は compile error も green に潰す) に従い continue-on-error は使わない
@@ -51,16 +53,16 @@ jobs:
           git diff origin/${{ github.base_ref }}...HEAD > /tmp/pr.diff
           set +e
           cargo mutants --in-diff /tmp/pr.diff --timeout 300 --build-timeout 240 -j 2 \
-            --features std,fft,parallel --output mutants.out -- --lib
+            --features std,fft,parallel --output mutants.out -- --lib --test analytic_oracle
           rc=$?
           set -e
           case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
-      - name: Mutants (weekly / manual = whole crate, shard ${{ matrix.shard }}/8, lib tests)
+      - name: Mutants (weekly / manual = whole crate, shard ${{ matrix.shard }}/8, lib + oracle tests)
         if: github.event_name != 'pull_request'
         run: |
           set +e
           cargo mutants --shard ${{ matrix.shard }}/8 -j 2 --timeout 300 --build-timeout 240 \
-            --features std,fft,parallel --output mutants.out -- --lib
+            --features std,fft,parallel --output mutants.out -- --lib --test analytic_oracle
           rc=$?
           set -e
           case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
