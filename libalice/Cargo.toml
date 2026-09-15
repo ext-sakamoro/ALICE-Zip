@@ -1,6 +1,6 @@
 [package]
 name = "alice-zip-cli"
-version = "2.3.0"
+version = "2.4.0"
 edition = "2021"
 # Same MSRV as the core crate; verified by the CI `msrv` job (`cargo +1.87 check`).
 # Declared so clippy's MSRV-aware lints do not suggest newer std APIs.
@@ -34,15 +34,11 @@ numpy = { version = "0.29", optional = true }
 
 # Generator laws (polynomial / Fourier / Perlin) — single home, see
 # src/generators/mod.rs. `fft` = rustfft analysis, `parallel` = rayon rows.
-alice_zip = { package = "alice-zip", path = "..", version = "0.4", features = ["std", "fft", "parallel"] }
+alice_zip = { package = "alice-zip", path = "..", version = "0.5", features = ["std", "fft", "parallel", "lzma"] }
 
 # Seeded white noise for media::audio
 rand = "0.8"
 rand_chacha = "0.3"
-
-# Compression
-lzma-rs = "0.3"
-flate2 = "1.1"
 
 # Memory-mapped file I/O
 memmap2 = "0.9"

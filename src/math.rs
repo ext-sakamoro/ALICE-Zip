@@ -21,6 +21,7 @@ pub trait FloatExt: Sized {
     fn atan2(self, other: Self) -> Self;
     fn floor(self) -> Self;
     fn log2(self) -> Self;
+    fn round(self) -> Self;
 }
 
 #[cfg(not(feature = "std"))]
@@ -49,6 +50,10 @@ impl FloatExt for f32 {
     fn log2(self) -> Self {
         libm::log2f(self)
     }
+    #[inline]
+    fn round(self) -> Self {
+        libm::roundf(self)
+    }
 }
 
 #[cfg(not(feature = "std"))]
@@ -76,5 +81,9 @@ impl FloatExt for f64 {
     #[inline]
     fn log2(self) -> Self {
         libm::log2(self)
+    }
+    #[inline]
+    fn round(self) -> Self {
+        libm::round(self)
     }
 }

@@ -13,7 +13,7 @@ arbitrary = { version = "1", features = ["derive"] }
 
 [dependencies.alice-zip]
 path = ".."
-features = ["std", "fft", "parallel"]
+features = ["std", "fft", "parallel", "lzma"]
 
 # fuzz targets are binaries; machete cannot see the libfuzzer entry macro
 [package.metadata.cargo-machete]

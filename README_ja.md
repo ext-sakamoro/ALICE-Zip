@@ -37,8 +37,8 @@ ALICE-Zipは、データそのものではなく**「データの生成方法」
 
 | パス | 内容 | 配布先 |
 |------|------|--------|
-| `/` (`alice-zip`) | **Rust core crate** — 圧縮 primitive (LZ77 / 辞書 / BPE / エントロピー / zlib) + 全 generator 法則 (多項式 / Fourier / Perlin)、`no_std + alloc` | [crates.io](https://crates.io/crates/alice-zip) · [docs.rs](https://docs.rs/alice-zip) |
-| `libalice/` (`alice-zip-cli`) | CLI `alice`、C FFI (`cdylib`)、PyO3 native module core generators の thin re-export | C# / UE5 binding、pip `libalice` |
+| `/` (`alice-zip`) | **Rust core crate** — 圧縮 primitive (LZ77 / 辞書 / BPE / エントロピー / 量子化 / zlib・LZMA residual container) + 全 generator 法則 (多項式 / Fourier / Perlin)、`no_std + alloc` | [crates.io](https://crates.io/crates/alice-zip) · [docs.rs](https://docs.rs/alice-zip) |
+| `libalice/` (`alice-zip-cli`) | CLI `alice`、C FFI (`cdylib`)、PyO3 native module core generators / compression の thin re-export | C# / UE5 binding、pip `libalice` |
 | `alice_zip/` | Python package (`ALICEZip` analyzer + `.alice` container) | pip `alice-zip` |
 | `bindings/` | C++ / C# (Unity) / UE5 wrapper (`libalice/include/alice.h`) | |
 
@@ -50,7 +50,7 @@ pip install alice-zip
 
 # Rust
 cargo add alice-zip                       # std (default): zlib wrapper 付き
-cargo add alice-zip --features fft,parallel   # rustfft 解析、rayon texture
+cargo add alice-zip --features fft,parallel,lzma   # rustfft 解析、rayon texture、LZMA residual container
 cargo add alice-zip --no-default-features     # no_std + alloc (float は libm)
 ```
 
@@ -79,6 +79,7 @@ let regenerated = generate_from_coefficients(32, &bins, dc);
 | `std` | `compression` (flate2 zlib)、`ZipError` の `std::error::Error` | ✓ |
 | `fft` | `generators::analyze_signal_fft` (rustfft、naive DFT と同一契約) | |
 | `parallel` | `generate_perlin_2d` / `_advanced` の rayon 行並列 | |
+| `lzma` | `compression::{lzma_compress, lzma_decompress}` + `.alice` の量子化 / lossless residual container (lzma-rs) | |
 | *(なし)* | `no_std + alloc`、float は `libm`、CI が `thumbv7em-none-eabihf` で rlib build | |
 
 永続化されている係数 convention は 2 つあり、別名で共存する (別の法則なので暗黙に

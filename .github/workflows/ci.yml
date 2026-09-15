@@ -16,7 +16,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   # docs.rs feature set (Cargo.toml [package.metadata.docs.rs])
-  ALL_FEATURES: std,fft,parallel
+  ALL_FEATURES: std,fft,parallel,lzma
 
 jobs:
   test:

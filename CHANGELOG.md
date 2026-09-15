@@ -9,7 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-16
+
 ### Added
+- `quantize` module (`no_std`): `quantize_8bit` / `quantize_16bit` and their inverses —
+  the min / max quantisation law of the `.alice` residual payloads and `alice-edge`
+  coefficient batches, moved here from `libalice` (single home, like `generators`)
+- `lzma` feature (implies `std`, `lzma-rs`): `compression::{lzma_compress,
+  lzma_decompress}` and the `.alice` residual containers
+  `compress_residual_quantized` / `decompress_residual_quantized` /
+  `compress_residual_lossless` / `decompress_residual_lossless` (byte-identical layout
+  to `libalice` ≤ 2.3, documented on the module); `decompress_*` reject length overflow
+- `tests/analytic_oracle.rs`: quantisation error ≤ half a step with exact endpoints
+  (8 / 16 bit, n = 1..1000), residual container layout + round trip
 - `tests/analytic_oracle.rs`: 6 laws that mutation testing (cargo-mutants, 8 shards,
   93% score) found unmeasured — sine DC term, energy-threshold edge values / inclusive
   cutoff, FFT empty-input guards, fit error = normalised MSE of the returned fit, 1D
@@ -25,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 - CI `quality-deep.yml`: mutants run as 8 shards over `--lib --test analytic_oracle`,
   `ulimit -v 6 GiB` so an infinite-loop mutant aborts instead of OOM-killing the runner
+- docs.rs / CI feature set is now `std,fft,parallel,lzma`
 - `libalice/pyproject.toml`: distribution name `alice-zip` → `libalice` (the import
   name; the root `pyproject.toml` is the `alice-zip` Python package), SPDX license
   string, author e-mail placeholder replaced in both pyproject files
@@ -128,7 +141,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Initial crates.io release: `lz77`, `dictionary`, `entropy`, `bpe`, `error`,
   `prelude` (split from a single `lib.rs`, 102 tests)
 
-[Unreleased]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/ext-sakamoro/ALICE-Zip/compare/alice-zip-v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/alice-zip-v0.2.1...alice-zip-v0.3.0

@@ -2,6 +2,14 @@
 
 All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
+## [2.4.0] - 2026-09-16
+
+### Changed
+- `compression` is now a thin re-export of `alice_zip::compression` (`lzma` feature) and
+  `alice_zip::quantize`: LZMA / zlib wrappers, 8 / 16-bit quantisation and the residual
+  container codec live once in the core crate (byte-identical formats); the 17 contract
+  tests stay here Direct `lzma-rs` / `flate2` dependencies removed
+
 ## [2.3.0] - 2026-09-15
 
 ### Changed

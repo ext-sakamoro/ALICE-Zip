@@ -806,3 +806,91 @@ fn fbm_1d_matches_alice_db_persisted_law() {
         assert!((x - e).abs() < 2e-7, "{x} vs {e}");
     }
 }
+
+// ---------------------------------------------------------------- quantisation / residual containers
+
+#[test]
+fn quantisation_error_is_bounded_by_half_a_step_and_endpoints_are_exact() {
+    use alice_zip::quantize::{dequantize_16bit, dequantize_8bit, quantize_16bit, quantize_8bit};
+    let mut lcg = 7u64;
+    for n in [1usize, 2, 3, 17, 256, 1000] {
+        let data: Vec<f32> = (0..n)
+            .map(|_| {
+                lcg = lcg.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+                ((lcg >> 40) as f32 / 16_777_216.0) * 200.0 - 100.0
+            })
+            .collect();
+        let lo = data.iter().cloned().fold(f32::INFINITY, f32::min);
+        let hi = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        for bits in [8u32, 16] {
+            let (q, min, scale) = if bits == 8 {
+                quantize_8bit(&data)
+            } else {
+                quantize_16bit(&data)
+            };
+            let out = if bits == 8 {
+                dequantize_8bit(&q, min, scale)
+            } else {
+                dequantize_16bit(&q, min, scale)
+            };
+            assert_eq!(out.len(), n);
+            let levels = ((1u32 << bits) - 1) as f64;
+            let half_step = if n == 1 {
+                0.0
+            } else {
+                (f64::from(hi - lo)) / levels / 2.0
+            };
+            for (a, b) in out.iter().zip(&data) {
+                assert!(
+                    (f64::from(a - b)).abs() <= half_step + 1e-4,
+                    "n={n} bits={bits}: {a} vs {b} (half step {half_step})"
+                );
+            }
+            // min and max samples reconstruct exactly (up to f32 rounding)
+            let i_lo = data.iter().position(|v| *v == lo).unwrap();
+            let i_hi = data.iter().position(|v| *v == hi).unwrap();
+            assert!((out[i_lo] - lo).abs() <= 1e-5 * lo.abs().max(1.0));
+            assert!((out[i_hi] - hi).abs() <= 1e-5 * hi.abs().max(1.0));
+        }
+    }
+}
+
+#[cfg(feature = "lzma")]
+#[test]
+fn residual_containers_have_the_documented_layout_and_round_trip() {
+    use alice_zip::compression::{
+        compress_residual_lossless, compress_residual_quantized, decompress_residual_lossless,
+        decompress_residual_quantized, lzma_compress,
+    };
+    let residual: Vec<f32> = (0..500)
+        .map(|i| ((i as f32) * 0.05).cos() * 3.0 - 1.0)
+        .collect();
+    for bits in [8u8, 16] {
+        let c = compress_residual_quantized(&residual, bits, 6).unwrap();
+        // header: bits u8 | min f64 LE | scale f64 LE | len u32 LE
+        assert_eq!(c[0], bits);
+        let min = f64::from_le_bytes(c[1..9].try_into().unwrap());
+        let scale = f64::from_le_bytes(c[9..17].try_into().unwrap());
+        let len = u32::from_le_bytes(c[17..21].try_into().unwrap()) as usize;
+        assert!(
+            (min - f64::from(residual.iter().cloned().fold(f32::INFINITY, f32::min))).abs() < 1e-12
+        );
+        let lo = residual.iter().cloned().fold(f32::INFINITY, f32::min);
+        let hi = residual.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        assert!((scale - f64::from(hi - lo)).abs() < 1e-5, "{scale}");
+        assert_eq!(c.len(), 21 + len);
+        let out = decompress_residual_quantized(&c).unwrap();
+        let tol = scale / f64::from((1u32 << u32::from(bits)) - 1) / 2.0 + 1e-6;
+        for (a, b) in out.iter().zip(&residual) {
+            assert!((f64::from(a - b)).abs() <= tol, "bits={bits}: {a} vs {b}");
+        }
+    }
+    // lossless: 0xFF | len u32 LE | LZMA(f32 LE)
+    let c = compress_residual_lossless(&residual, 6).unwrap();
+    assert_eq!(c[0], 0xFF);
+    let len = u32::from_le_bytes(c[1..5].try_into().unwrap()) as usize;
+    assert_eq!(c.len(), 5 + len);
+    let raw: Vec<u8> = residual.iter().flat_map(|v| v.to_le_bytes()).collect();
+    assert_eq!(&c[5..], &lzma_compress(&raw, 6).unwrap()[..]);
+    assert_eq!(decompress_residual_lossless(&c).unwrap(), residual);
+}

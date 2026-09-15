@@ -19,10 +19,11 @@ dependencies = [
 
 [[package]]
 name = "alice-zip"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "flate2",
  "libm",
+ "lzma-rs",
  "rand",
  "rand_chacha",
  "rayon",
@@ -31,13 +32,11 @@ dependencies = [
 
 [[package]]
 name = "alice-zip-cli"
-version = "2.3.0"
+version = "2.4.0"
 dependencies = [
  "alice-codec",
  "alice-zip",
  "clap",
- "flate2",
- "lzma-rs",
  "memmap2",
  "numpy",
  "pyo3",

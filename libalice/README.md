@@ -8,7 +8,7 @@ Rust crate `alice-zip-cli` (this directory) builds three things from one source:
 | `libalice_core.{so,dylib,dll}` | C FFI (`include/alice.h`) used by the C++ / C# (Unity) / UE5 bindings in `../bindings/` | `cargo build --release` |
 | `libalice` Python module | PyO3 extension imported by the `alice-zip` Python package (`alice_zip/native_accelerator.py`) as an optional speed-up | `maturin develop --release` / `maturin build --release` |
 
-The generator laws (polynomial / Fourier / Perlin) are not implemented here: they
+The generator laws (polynomial / Fourier / Perlin) and the compression codecs are not implemented here: they
 are re-exported from the core crate at the repository root
 ([`alice-zip` on crates.io](https://crates.io/crates/alice-zip)), see
 `src/generators/mod.rs` for the conventions this crate pins (`.alice` container:
@@ -36,4 +36,4 @@ by the library are freed with `alice_free_buffer` / `alice_free_float_buffer`
 
 ## Versioning / license
 
-`2.3.0` — see [CHANGELOG.md](CHANGELOG.md). MIT (`../LICENSE-MIT`).
+`2.4.0` — see [CHANGELOG.md](CHANGELOG.md). MIT (`../LICENSE-MIT`).

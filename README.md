@@ -37,8 +37,8 @@ For everything else, it falls back to LZMA, ensuring it's **never worse** than s
 
 | Path | What | Where it ships |
 |------|------|----------------|
-| `/` (`alice-zip`) | **Rust core crate** — compression primitives (LZ77, dictionary, BPE, entropy, zlib) + every generator law (polynomial / Fourier / Perlin), `no_std + alloc` | [crates.io](https://crates.io/crates/alice-zip) · [docs.rs](https://docs.rs/alice-zip) |
-| `libalice/` (`alice-zip-cli`) | CLI `alice`, C FFI (`cdylib`), PyO3 native module; thin re-export of the core generators | C# / UE5 bindings, pip `libalice` |
+| `/` (`alice-zip`) | **Rust core crate** — compression primitives (LZ77, dictionary, BPE, entropy, quantisation, zlib / LZMA residual containers) + every generator law (polynomial / Fourier / Perlin), `no_std + alloc` | [crates.io](https://crates.io/crates/alice-zip) · [docs.rs](https://docs.rs/alice-zip) |
+| `libalice/` (`alice-zip-cli`) | CLI `alice`, C FFI (`cdylib`), PyO3 native module; thin re-export of the core generators and compression | C# / UE5 bindings, pip `libalice` |
 | `alice_zip/` | Python package (`ALICEZip` analyzer + `.alice` container) | pip `alice-zip` |
 | `bindings/` | C++ / C# (Unity) / UE5 wrappers over `libalice/include/alice.h` | |
 
@@ -50,7 +50,7 @@ pip install alice-zip
 
 # Rust
 cargo add alice-zip                       # std (default): + zlib wrappers
-cargo add alice-zip --features fft,parallel   # rustfft analysis, rayon textures
+cargo add alice-zip --features fft,parallel,lzma   # rustfft analysis, rayon textures, LZMA residual containers
 cargo add alice-zip --no-default-features     # no_std + alloc (libm float math)
 ```
 
@@ -79,6 +79,7 @@ let regenerated = generate_from_coefficients(32, &bins, dc);
 | `std` | `compression` (zlib via flate2), `std::error::Error` for `ZipError` | ✓ |
 | `fft` | `generators::analyze_signal_fft` (rustfft, same contract as the naive DFT) | |
 | `parallel` | rayon row parallelism for `generate_perlin_2d` / `_advanced` | |
+| `lzma` | `compression::{lzma_compress, lzma_decompress}` + the `.alice` quantised / lossless residual containers (lzma-rs) | |
 | *(none)* | `no_std + alloc`; float math via `libm`; CI builds the rlib for `thumbv7em-none-eabihf` | |
 
 Two persisted coefficient conventions coexist under explicit names (they are

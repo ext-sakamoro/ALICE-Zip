@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "libalice"
-version = "2.3.0"
+version = "2.4.0"
 description = "Native (Rust) accelerator for the alice-zip Python package: generators, LZMA / zlib, quantized residuals (import libalice)"
 authors = [
     { name = "Moroya Sakamoto", email = "sakamoro@alicelaw.net" }

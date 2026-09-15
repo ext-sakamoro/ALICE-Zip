@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 
 quick=0
 [[ "${1:-}" == "--quick" ]] && quick=1
-ALL_FEATURES='std,fft,parallel'
+ALL_FEATURES='std,fft,parallel,lzma'
 MSRV=1.87
 
 step() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }

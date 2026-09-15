@@ -60,7 +60,7 @@ jobs:
           ulimit -v 6291456
           set +e
           cargo mutants --in-diff /tmp/pr.diff --timeout 300 --build-timeout 240 -j 2 \
-            --features std,fft,parallel --output mutants.out -- --lib --test analytic_oracle
+            --features std,fft,parallel,lzma --output mutants.out -- --lib --test analytic_oracle
           rc=$?
           set -e
           case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
@@ -70,7 +70,7 @@ jobs:
           ulimit -v 6291456
           set +e
           cargo mutants --shard ${{ matrix.shard }}/8 -j 2 --timeout 300 --build-timeout 240 \
-            --features std,fft,parallel --output mutants.out -- --lib --test analytic_oracle
+            --features std,fft,parallel,lzma --output mutants.out -- --lib --test analytic_oracle
           rc=$?
           set -e
           case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac

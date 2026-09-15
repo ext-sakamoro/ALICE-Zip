@@ -1,13 +1,13 @@
 [package]
 name = "alice-zip"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 # MSRV-aware dependency resolution (cargo 1.84+): `cargo update` never picks a
 # dependency whose own `rust-version` exceeds ours, so the lockfile cannot
 # silently drift away from the declared MSRV (canonical template trap #35).
 resolver = "3"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
-description = "Compression primitives (LZ77, dictionary coding, BPE, entropy) + procedural signal generators (polynomial / Fourier / Perlin) + zlib wrappers, no_std + alloc"
+description = "Compression primitives (LZ77, dictionary coding, BPE, entropy, quantisation) + procedural signal generators (polynomial / Fourier / Perlin) + zlib / LZMA residual containers, no_std + alloc"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ext-sakamoro/ALICE-Zip"
 homepage = "https://github.com/ext-sakamoro/ALICE-Zip"
@@ -46,6 +46,9 @@ std = ["dep:flate2", "rand/std", "rand_chacha/std"]
 fft = ["std", "dep:rustfft"]
 # rayon-parallel row generation for the 2D Perlin textures; implies `std`.
 parallel = ["std", "dep:rayon"]
+# LZMA + the `.alice` residual containers (`compression::{lzma_*, *_residual_*}`);
+# implies `std`.
+lzma = ["std", "dep:lzma-rs"]
 
 [dependencies]
 flate2 = { version = "1.0", optional = true }
@@ -56,12 +59,13 @@ libm = "0.2"
 rand = { version = "0.8", default-features = false }
 rand_chacha = { version = "0.3", default-features = false }
 rustfft = { version = "6.2", optional = true }
+lzma-rs = { version = "0.3", optional = true }
 rayon = { version = "1.10", optional = true }
 
 [dev-dependencies]
 
 [package.metadata.docs.rs]
-features = ["std", "fft", "parallel"]
+features = ["std", "fft", "parallel", "lzma"]
 
 [package.metadata.cargo-machete]
 ignored = ["libm"]

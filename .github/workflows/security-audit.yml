@@ -120,7 +120,7 @@ jobs:
       - name: Run coverage (docs.rs feature set, unit + integration tests)
         run: |
           set -o pipefail
-          cargo llvm-cov --features std,fft,parallel --summary-only 2>&1 | tee coverage-summary.txt
+          cargo llvm-cov --features std,fft,parallel,lzma --summary-only 2>&1 | tee coverage-summary.txt
       - name: Upload coverage summary as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -146,7 +146,7 @@ jobs:
       - name: Run cargo semver-checks (core, docs.rs feature set)
         run: >
           cargo semver-checks check-release --package alice-zip
-          --only-explicit-features --features std,fft,parallel
+          --only-explicit-features --features std,fft,parallel,lzma
 
   stub-guard:
     name: Stub / mock / dbg guard (grep)
