@@ -8,7 +8,7 @@
 //! Callers must ensure proper memory management.
 //!
 //! # Panic isolation
-//! Every `extern "C"` entry point runs its body inside [`guarded`]
+//! Every `extern "C"` entry point runs its body inside `guarded`
 //! (`catch_unwind`). Since Rust 1.81 a panic that reaches an `extern "C"`
 //! boundary aborts the process, which would take the Unity / UE5 / Python host
 //! down with it; instead the panic message is stored for

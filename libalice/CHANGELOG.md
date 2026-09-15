@@ -5,6 +5,9 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 ## [2.3.0] - 2026-09-15
 
 ### Changed
+- Cargo package renamed `alice-zip` → `alice-zip-cli` (the crates.io `alice-zip` is the core
+  crate at the repository root; two packages with one name broke `cargo semver-checks`).
+  Library name `alice_core`, binary `alice` and the pip package `libalice` are unchanged
 - `generators` is now a thin re-export of `alice_zip::generators` (path dependency on the
   core crate, 0.4). The three local copies (`fourier.rs` / `perlin.rs` / `polynomial.rs`)
   are removed; every generator law lives once in `../src/generators/`

@@ -1,7 +1,11 @@
 [package]
-name = "alice-zip"
+name = "alice-zip-cli"
 version = "2.3.0"
 edition = "2021"
+# Same MSRV as the core crate; verified by the CI `msrv` job (`cargo +1.87 check`).
+# Declared so clippy's MSRV-aware lints do not suggest newer std APIs.
+rust-version = "1.87"
+resolver = "3"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "A next-generation procedural compression engine utilizing Kolmogorov complexity approximation."
 readme = "../README.md"
@@ -25,8 +29,8 @@ path = "src/bin/alice.rs"
 
 [dependencies]
 # Python bindings (optional for CLI)
-pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
-numpy = { version = "0.23", optional = true }
+pyo3 = { version = "0.29", features = ["extension-module"], optional = true }
+numpy = { version = "0.29", optional = true }
 
 # Generator laws (polynomial / Fourier / Perlin) — single home, see
 # src/generators/mod.rs. `fft` = rustfft analysis, `parallel` = rayon rows.
@@ -46,10 +50,6 @@ memmap2 = "0.9"
 # CLI
 clap = { version = "4.5", features = ["derive"] }
 
-# Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-bincode = "1.3"
 
 # ALICE-Codec wavelet bridge (optional)
 alice-codec = { path = "../../ALICE-Codec", optional = true }
