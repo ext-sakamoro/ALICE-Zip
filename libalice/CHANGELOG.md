@@ -5,6 +5,10 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 ## [2.3.0] - 2026-09-15
 
 ### Changed
+- `pyproject.toml`: distribution name `alice-zip` → `libalice` (matches `import libalice`;
+  neither name was ever published on PyPI), `readme` / `license` inside the crate
+  directory (maturin ≥ 1 refuses paths outside it), pyo3 / numpy 0.29
+- `README.md` added (crate / FFI / Python build notes)
 - Cargo package renamed `alice-zip` → `alice-zip-cli` (the crates.io `alice-zip` is the core
   crate at the repository root; two packages with one name broke `cargo semver-checks`).
   Library name `alice_core`, binary `alice` and the pip package `libalice` are unchanged

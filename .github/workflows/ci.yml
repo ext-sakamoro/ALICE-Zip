@@ -147,6 +147,42 @@ jobs:
       - name: Release build (cdylib + CLI)
         run: cargo build --manifest-path libalice/Cargo.toml --release
 
+  libalice-python:
+    name: libalice Python module (PyO3) + pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: libalice
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # extension-module: the .so links against the interpreter at import time,
+      # so `cargo test` cannot link — check / clippy the feature, then build the
+      # real wheel with maturin and run the Python test suite with the native
+      # accelerator enabled (the same suite runs pure-Python when it is absent)
+      - name: cargo check / clippy (python feature)
+        run: |
+          cargo check --manifest-path libalice/Cargo.toml --features python
+          cargo clippy --manifest-path libalice/Cargo.toml --features python --all-targets -- -D warnings
+      - name: Build + install libalice (maturin)
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin numpy pytest
+          cd libalice && maturin develop --release
+      - name: pytest (native accelerator enabled)
+        run: |
+          pip install -e .
+          python -c "import libalice, alice_zip.native_accelerator as n; assert n.is_available(), 'native accelerator not loaded'"
+          python -m pytest tests/ -q -p no:cacheprovider
+      - name: pytest (pure Python fallback)
+        run: |
+          pip uninstall -y libalice
+          python -c "import alice_zip.native_accelerator as n; assert not n.is_available()"
+          python -m pytest tests/ -q -p no:cacheprovider
+
   actionlint:
     name: actionlint (workflow YAML 検証)
     runs-on: ubuntu-latest

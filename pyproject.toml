@@ -9,7 +9,7 @@ description = "ALICE Procedural Generation Compression - Store algorithms, not d
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Moroya Sakamoto", email = "sakamoto@example.com"}
+    {name = "Moroya Sakamoto", email = "sakamoro@alicelaw.net"}
 ]
 keywords = [
     "compression",

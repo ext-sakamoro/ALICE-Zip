@@ -50,8 +50,10 @@ RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps
 RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps --features "$ALL_FEATURES"
 RUSTDOCFLAGS="-Dwarnings" cargo doc --manifest-path libalice/Cargo.toml --lib --no-deps
 
-step "libalice clippy -D warnings (codec feature)"
+step "libalice clippy -D warnings (codec feature / python feature)"
 cargo clippy --manifest-path libalice/Cargo.toml --all-targets --features codec -- -D warnings
+cargo check --manifest-path libalice/Cargo.toml --features python
+cargo clippy --manifest-path libalice/Cargo.toml --all-targets --features python -- -D warnings
 
 step "security: audit (3 lockfiles) / deny / machete / stub-guard / FFI guard"
 if have cargo-audit; then
@@ -91,6 +93,18 @@ cargo test --features "$ALL_FEATURES"
 cargo test --lib --no-default-features
 cargo test --manifest-path libalice/Cargo.toml
 cargo test --manifest-path libalice/Cargo.toml --features codec
+
+step "Python: maturin develop + pytest (native / pure), needs \$ALICE_ZIP_VENV or skips"
+if [[ -n "${ALICE_ZIP_VENV:-}" && -x "$ALICE_ZIP_VENV/bin/python" ]]; then
+  # shellcheck disable=SC1091
+  . "$ALICE_ZIP_VENV/bin/activate"
+  (cd libalice && maturin develop --release -q)
+  pip install -q -e . && python -m pytest tests/ -q -p no:cacheprovider
+  pip uninstall -q -y libalice && python -m pytest tests/ -q -p no:cacheprovider
+  deactivate
+else
+  echo "skip: set ALICE_ZIP_VENV=<venv with maturin numpy pytest> to run the Python suite" >&2
+fi
 
 step "libalice release build (cdylib + CLI)"
 cargo build --manifest-path libalice/Cargo.toml --release

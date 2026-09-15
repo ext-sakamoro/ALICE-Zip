@@ -16,9 +16,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   value-noise lattice / midpoint / octave-composition laws, and the alice-db persisted
   `generate_fbm_1d` values (bit-identical to 0.3.1)
 
+- CI `libalice-python` job: `cargo check` / clippy of the `python` feature, `maturin
+  develop`, and the Python test suite twice (native accelerator enabled / pure-Python
+  fallback)
+- `libalice/README.md` (the maturin / cargo `readme` used to point outside the crate,
+  which current maturin rejects)
+
 ### Changed
 - CI `quality-deep.yml`: mutants run as 8 shards over `--lib --test analytic_oracle`,
   `ulimit -v 6 GiB` so an infinite-loop mutant aborts instead of OOM-killing the runner
+- `libalice/pyproject.toml`: distribution name `alice-zip` → `libalice` (the import
+  name; the root `pyproject.toml` is the `alice-zip` Python package), SPDX license
+  string, author e-mail placeholder replaced in both pyproject files
+
+### Fixed
+- `alice_zip.native_accelerator`: `fourier_generate` / `multi_sine` /
+  `polynomial_generate` raised `TypeError` on the native path when coefficients came
+  as lists (as decoded from a `.alice` container) because PyO3 extracts tuples only;
+  they are now normalised before the call (pure-Python fallback was unaffected)
 
 ## [0.4.0] - 2026-09-15
 

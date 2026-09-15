@@ -136,7 +136,12 @@ def fourier_generate(
         1D numpy array of generated signal
     """
     if _HAS_LIBALICE and hasattr(_native, 'fourier_generate'):
-        return _native.fourier_generate(n, coefficients, dc_offset)
+        # The native binding extracts `Vec<(usize, f32, f32)>`, which PyO3 only
+        # accepts as tuples; coefficients decoded from a `.alice` container
+        # arrive as lists, so normalise here (the pure-Python path takes both)
+        return _native.fourier_generate(
+            n, [(int(k), float(m), float(p)) for k, m, p in coefficients], dc_offset
+        )
     else:
         _warn_fallback('fourier_generate')
         return _python_fourier_generate(n, coefficients, dc_offset)
@@ -186,7 +191,9 @@ def multi_sine(
         1D numpy array
     """
     if _HAS_LIBALICE and hasattr(_native, 'multi_sine'):
-        return _native.multi_sine(n, components, dc_offset)
+        return _native.multi_sine(
+            n, [(float(f), float(a), float(p)) for f, a, p in components], dc_offset
+        )
     else:
         _warn_fallback('multi_sine')
         return _python_multi_sine(n, components, dc_offset)
@@ -235,7 +242,7 @@ def polynomial_generate(n: int, coefficients: List[float]) -> np.ndarray:
         1D numpy array
     """
     if _HAS_LIBALICE and hasattr(_native, 'polynomial_generate'):
-        return _native.polynomial_generate(n, coefficients)
+        return _native.polynomial_generate(n, [float(c) for c in coefficients])
     else:
         _warn_fallback('polynomial_generate')
         return _python_polynomial_generate(n, coefficients)
