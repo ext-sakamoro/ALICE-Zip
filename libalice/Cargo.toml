@@ -1,6 +1,6 @@
 [package]
 name = "alice-zip"
-version = "2.2.0"
+version = "2.3.0"
 edition = "2021"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "A next-generation procedural compression engine utilizing Kolmogorov complexity approximation."
@@ -28,13 +28,11 @@ path = "src/bin/alice.rs"
 pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
 numpy = { version = "0.23", optional = true }
 
-# FFT for Fourier transforms
-rustfft = "6.2"
+# Generator laws (polynomial / Fourier / Perlin) — single home, see
+# src/generators/mod.rs. `fft` = rustfft analysis, `parallel` = rayon rows.
+alice_zip = { package = "alice-zip", path = "..", version = "0.4", features = ["std", "fft", "parallel"] }
 
-# Parallel processing
-rayon = "1.10"
-
-# Random number generation
+# Seeded white noise for media::audio
 rand = "0.8"
 rand_chacha = "0.3"
 
@@ -66,7 +64,10 @@ codec = ["dep:alice-codec"]
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-panic = "abort"
+# `panic = "unwind"` (default) on purpose: every `extern "C"` entry point wraps
+# its body in `catch_unwind` (ffi::guarded) so a Rust panic becomes an error
+# code instead of aborting the Unity / UE5 / Python host. `panic = "abort"`
+# would make that guard a no-op.
 strip = true
 
 [profile.bench]

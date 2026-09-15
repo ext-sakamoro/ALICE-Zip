@@ -460,16 +460,16 @@ mod tests {
     #[test]
     fn test_quantize_constant_array() {
         // All values are the same (edge case for scale calculation)
-        let data = vec![3.14f32; 100];
+        let data = vec![2.71f32; 100];
         let (quantized, min_val, scale) = quantize_8bit(&data);
         assert_eq!(quantized.len(), 100);
-        assert!((min_val - 3.14).abs() < 0.0001);
+        assert!((min_val - 2.71).abs() < 0.0001);
         // scale should be 1.0 when all values are identical
         assert_eq!(scale, 1.0);
 
         let restored = dequantize_8bit(&quantized, min_val, scale);
         for v in restored {
-            assert!((v - 3.14).abs() < 0.01);
+            assert!((v - 2.71).abs() < 0.01);
         }
     }
 

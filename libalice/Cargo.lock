@@ -17,9 +17,22 @@ dependencies = [
 
 [[package]]
 name = "alice-zip"
-version = "2.2.0"
+version = "0.4.0"
+dependencies = [
+ "flate2",
+ "libm",
+ "rand",
+ "rand_chacha",
+ "rayon",
+ "rustfft",
+]
+
+[[package]]
+name = "alice-zip"
+version = "2.3.0"
 dependencies = [
  "alice-codec",
+ "alice-zip 0.4.0",
  "bincode",
  "clap",
  "flate2",
@@ -29,8 +42,6 @@ dependencies = [
  "pyo3",
  "rand",
  "rand_chacha",
- "rayon",
- "rustfft",
  "serde",
  "serde_json",
 ]

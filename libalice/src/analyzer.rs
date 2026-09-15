@@ -5,8 +5,8 @@
 //! to LZMA if no procedural method achieves a good enough compression ratio.
 //!
 //! Reuses existing Rust generators:
-//! - `crate::generators::fourier::analyze_signal`
-//! - `crate::generators::polynomial::fit_polynomial`
+//! - `crate::generators::analyze_signal` (rustfft, core `analyze_signal_fft`)
+//! - `crate::generators::fit_polynomial` (core `fit_polynomial_unit`, `.alice` convention)
 //!
 //! License: MIT
 //! Author: Moroya Sakamoto
@@ -14,8 +14,10 @@
 use std::f64::consts::PI;
 
 use crate::compression::{lzma_compress, lzma_decompress};
-use crate::generators::fourier::{analyze_signal, generate_from_coefficients, generate_sine_wave};
-use crate::generators::polynomial::{fit_polynomial, generate_polynomial};
+use crate::generators::{
+    analyze_signal, fit_polynomial, generate_from_coefficients, generate_polynomial,
+    generate_sine_wave,
+};
 
 // ---------------------------------------------------------------------------
 // Constants (mirrors Python analyzer constants)
@@ -817,8 +819,7 @@ mod tests {
                 let v = (i as u64)
                     .wrapping_mul(6364136223846793005)
                     .wrapping_add(1442695040888963407);
-                let normalized = (v as f32 / u64::MAX as f32) * 2.0 - 1.0;
-                normalized
+                (v as f32 / u64::MAX as f32) * 2.0 - 1.0
             })
             .collect();
 

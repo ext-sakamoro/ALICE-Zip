@@ -31,7 +31,9 @@ namespace AliceZip
         CompressionError = 3,
         DecompressionError = 4,
         AllocationError = 5,
-        InvalidData = 6
+        InvalidData = 6,
+        /// <summary>Rust panic caught at the FFI boundary (libalice 2.3.0+); see GetLastError()</summary>
+        InternalPanic = 7
     }
 
     /// <summary>
@@ -192,6 +194,7 @@ namespace AliceZip
                 AliceError.DecompressionError => "Decompression operation failed",
                 AliceError.AllocationError => "Memory allocation failed",
                 AliceError.InvalidData => "Input data is invalid or corrupted",
+                AliceError.InternalPanic => "Internal error (Rust panic caught at the FFI boundary)",
                 _ => $"Unknown error: {error}"
             };
         }

@@ -18,10 +18,11 @@
 //! Provides Python bindings via `PyO3` (optional).
 //!
 //! # Features
-//! - Vectorized Perlin noise generation (parallel with Rayon)
-//! - FFT-based Fourier signal reconstruction
-//! - Polynomial evaluation with Horner's method
+//! - Perlin noise textures (rayon-parallel rows, law in the `alice-zip` core crate)
+//! - FFT-based Fourier analysis, direct-sum reconstruction
+//! - Polynomial fitting / evaluation (Householder QR, Horner)
 //! - LZMA/zlib compression with quantization
+//! - C FFI with panic isolation (`ffi::AliceError::InternalPanic`)
 //!
 //! # License
 //! MIT License
@@ -96,10 +97,9 @@ mod python {
             ));
         }
 
-        let data = py
-            .allow_threads(|| generators::generate_perlin_2d(width, height, seed, scale, octaves));
-        let array: Vec<Vec<f32>> = data.chunks(width).map(|row| row.to_vec()).collect();
-        let flat: Vec<f32> = array.into_iter().flatten().collect();
+        let flat = py
+            .allow_threads(|| generators::generate_perlin_2d(width, height, seed, scale, octaves))
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
 
         numpy::PyArray::from_vec(py, flat)
             .reshape([height, width])
@@ -140,17 +140,19 @@ mod python {
             ));
         }
 
-        let flat: Vec<f32> = py.allow_threads(|| {
-            generators::generate_perlin_advanced(
-                width,
-                height,
-                seed,
-                scale,
-                octaves,
-                persistence,
-                lacunarity,
-            )
-        });
+        let flat: Vec<f32> = py
+            .allow_threads(|| {
+                generators::generate_perlin_advanced(
+                    width,
+                    height,
+                    seed,
+                    scale,
+                    octaves,
+                    persistence,
+                    lacunarity,
+                )
+            })
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
 
         numpy::PyArray::from_vec(py, flat)
             .reshape([height, width])
@@ -327,7 +329,7 @@ mod tests {
     #[test]
     fn test_generators_module() {
         // Test Perlin noise
-        let noise = generators::generate_perlin_2d(64, 64, 42, 10.0, 4);
+        let noise = generators::generate_perlin_2d(64, 64, 42, 10.0, 4).unwrap();
         assert_eq!(noise.len(), 64 * 64);
 
         // Test sine wave

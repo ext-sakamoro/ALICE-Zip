@@ -941,7 +941,7 @@ mod tests {
     #[test]
     fn test_entropy_single_element() {
         // Single element → only one bin occupied → zero entropy.
-        let data = vec![3.14f32];
+        let data = vec![2.71f32];
         assert_eq!(estimate_entropy(&data), 0.0);
     }
 

@@ -58,6 +58,7 @@ private:
             case ALICE_ERROR_DECOMPRESSION: return "Decompression operation failed";
             case ALICE_ERROR_ALLOCATION: return "Memory allocation failed";
             case ALICE_ERROR_INVALID_DATA: return "Input data is invalid or corrupted";
+            case ALICE_ERROR_INTERNAL_PANIC: return "Internal error (Rust panic caught at the FFI boundary)";
             default: return "Unknown error";
         }
     }

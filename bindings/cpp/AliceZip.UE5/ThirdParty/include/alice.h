@@ -2,7 +2,7 @@
  * @file alice.h
  * @brief ALICE-Zip C API Header
  * @author Moroya Sakamoto
- * @version 2.2.0
+ * @version 2.3.0
  * @license MIT (Core) / Commercial (Pro features)
  *
  * This header provides C bindings for the libalice library.
@@ -50,7 +50,8 @@ typedef enum AliceError {
     ALICE_ERROR_COMPRESSION = 3, /**< Compression operation failed */
     ALICE_ERROR_DECOMPRESSION = 4,/**< Decompression operation failed */
     ALICE_ERROR_ALLOCATION = 5,  /**< Memory allocation failed */
-    ALICE_ERROR_INVALID_DATA = 6 /**< Input data is invalid or corrupted */
+    ALICE_ERROR_INVALID_DATA = 6,/**< Input data is invalid or corrupted */
+    ALICE_ERROR_INTERNAL_PANIC = 7/**< Rust panic caught at the FFI boundary (2.3.0+); see alice_get_last_error() */
 } AliceError;
 
 /* ============================================================================
@@ -110,7 +111,7 @@ ALICE_API void alice_free_float_buffer(AliceFloatBuffer* buffer);
 
 /**
  * @brief Get the library version string
- * @return Null-terminated version string (e.g., "2.2.0")
+ * @return Null-terminated version string (e.g., "2.3.0")
  */
 ALICE_API const char* alice_version(void);
 

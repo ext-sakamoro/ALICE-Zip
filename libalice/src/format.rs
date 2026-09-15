@@ -586,6 +586,7 @@ mod tests {
 
     /// Build a minimal v2 byte buffer by hand, matching the Python struct
     /// format `'<9sBBBBB Q Q 32s I'` (66 bytes total).
+    #[allow(clippy::too_many_arguments)] // mirrors the on-disk header field order
     fn build_v2_bytes(
         version_major: u8,
         version_minor: u8,
@@ -613,6 +614,7 @@ mod tests {
     }
 
     /// Build a minimal v1 byte buffer (65 bytes, no payload_type byte).
+    #[allow(clippy::too_many_arguments)] // mirrors the on-disk header field order
     fn build_v1_bytes(
         version_major: u8,
         version_minor: u8,
