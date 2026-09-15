@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `tests/analytic_oracle.rs`: 6 laws that mutation testing (cargo-mutants, 8 shards,
+  93% score) found unmeasured — sine DC term, energy-threshold edge values / inclusive
+  cutoff, FFT empty-input guards, fit error = normalised MSE of the returned fit, 1D
+  value-noise lattice / midpoint / octave-composition laws, and the alice-db persisted
+  `generate_fbm_1d` values (bit-identical to 0.3.1)
+
+### Changed
+- CI `quality-deep.yml`: mutants run as 8 shards over `--lib --test analytic_oracle`,
+  `ulimit -v 6 GiB` so an infinite-loop mutant aborts instead of OOM-killing the runner
+
 ## [0.4.0] - 2026-09-15
 
 ### Added
