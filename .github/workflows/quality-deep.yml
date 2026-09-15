@@ -1,7 +1,9 @@
 # quality-deep — 週次 / 手動 / PR 差分の深い品質検査 (karikari-review §13、2026-09-15 制定)
 #
 # mutants : cargo-mutants (test が bug を検出できるかの逆検査) PR では --in-diff で差分のみ、
-#           週次は crate 全体 (≈ 2,000 行、全 mutant でも数十分)
+#           週次 / 手動は crate 全体を 8 shard 並列 (910 mutant、1 mutant ≈ 15 s build + 5 s test on GH
+#           runner → 1 job だと 2.5 h、8 shard × -j 2 で ≈ 25 min; 初回 2026-09-15 の単一 job は 8 分で
+#           user cancel) `-- --lib` で integration test を外す (analytic_oracle は 5 s だが 910 回で 75 min)
 # miri は置かない: crate は #![forbid(unsafe_code)]、rayon は parallel feature のみ
 #
 # 罠 #22 (continue-on-error は compile error も green に潰す) に従い continue-on-error は使わない
@@ -28,9 +30,13 @@ env:
 
 jobs:
   mutants:
-    name: Mutation testing (cargo-mutants${{ github.event_name == 'pull_request' && ', in-diff' || ', whole crate' }})
+    name: Mutation testing (cargo-mutants${{ github.event_name == 'pull_request' && ', in-diff' || format(', shard {0}/8', matrix.shard) }})
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ github.event_name == 'pull_request' && fromJSON('[0]') || fromJSON('[0,1,2,3,4,5,6,7]') }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -45,16 +51,16 @@ jobs:
           git diff origin/${{ github.base_ref }}...HEAD > /tmp/pr.diff
           set +e
           cargo mutants --in-diff /tmp/pr.diff --timeout 300 --build-timeout 240 -j 2 \
-            --features std,fft,parallel --output mutants.out
+            --features std,fft,parallel --output mutants.out -- --lib
           rc=$?
           set -e
           case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
-      - name: Mutants (weekly / manual = whole crate)
+      - name: Mutants (weekly / manual = whole crate, shard ${{ matrix.shard }}/8, lib tests)
         if: github.event_name != 'pull_request'
         run: |
           set +e
-          cargo mutants -j 2 --timeout 300 --build-timeout 240 \
-            --features std,fft,parallel --output mutants.out
+          cargo mutants --shard ${{ matrix.shard }}/8 -j 2 --timeout 300 --build-timeout 240 \
+            --features std,fft,parallel --output mutants.out -- --lib
           rc=$?
           set -e
           case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
@@ -62,7 +68,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "## cargo-mutants"
+            echo "## cargo-mutants (${{ github.event_name == 'pull_request' && 'in-diff' || format('shard {0}/8', matrix.shard) }})"
             if [ -f mutants.out/outcomes.json ]; then
               python3 - <<'PY'
           import json
@@ -81,6 +87,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mutants-out
+          name: mutants-out-${{ matrix.shard }}
           path: mutants.out
           if-no-files-found: ignore
