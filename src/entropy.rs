@@ -2,8 +2,21 @@
 //!
 //! Bits-per-byte entropy computed from the empirical byte distribution,
 //! plus a lower-bound estimate of the compressed size (`bits / 8`, rounded up).
+//!
+//! Law: `H = -Σ p_i · log2(p_i)` over the 256 byte values with `p_i > 0`
+//! `log2` is exact (`f64::log2` / `libm::log2`), so `k` equiprobable symbols
+//! give `H = log2(k)` to within a few ulp (uniform 256 → exactly `8.0`)
+//! Versions ≤ 0.3 used a 20-term series that saturated at `≈ 6.74` for the
+//! uniform case; `tests/analytic_oracle.rs` pins the exact values
+
+// (test builds link std, whose inherent methods shadow the trait → allow)
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::math::FloatExt;
 
 /// シャノンエントロピー (bits per byte)
+///
+/// `data` が空なら `0.0` 出力は常に `0.0 ..= 8.0`
 #[must_use]
 #[allow(clippy::cast_precision_loss)]
 pub fn shannon_entropy(data: &[u8]) -> f64 {
@@ -19,29 +32,13 @@ pub fn shannon_entropy(data: &[u8]) -> f64 {
     for &f in &freq {
         if f > 0 {
             let p = f as f64 / n;
-            entropy -= p * log2_approx(p);
+            entropy -= p * p.log2();
         }
     }
     entropy
 }
 
-#[allow(clippy::cast_precision_loss)]
-fn log2_approx(x: f64) -> f64 {
-    if x <= 0.0 {
-        return -100.0;
-    }
-    let y = (x - 1.0) / (x + 1.0);
-    let y2 = y * y;
-    let mut sum = y;
-    let mut term = y;
-    for k in 1..20 {
-        term *= y2;
-        sum += term / f64::from(2 * k + 1);
-    }
-    2.0 * sum / core::f64::consts::LN_2
-}
-
-/// 理論最小圧縮サイズ (bytes)
+/// 理論最小圧縮サイズ (bytes) = `ceil(H · len / 8)`
 #[must_use]
 #[allow(
     clippy::cast_possible_truncation,
@@ -74,109 +71,86 @@ mod tests {
     use super::*;
     use alloc::vec::Vec;
 
-    #[test]
-    fn entropy_uniform() {
-        let data: Vec<u8> = (0..=255).collect();
+    /// k 値等確率の entropy は log2(k) に一致する (解析解)
+    fn assert_equiprobable(k: u32, repeats: usize) {
+        let mut data = Vec::with_capacity(k as usize * repeats);
+        for _ in 0..repeats {
+            for v in 0..k {
+                data.push(v as u8);
+            }
+        }
         let e = shannon_entropy(&data);
-        assert!(e > 5.0); // 一様分布 → 高エントロピー
+        let expected = f64::from(k).log2();
+        assert!(
+            (e - expected).abs() < 1e-9,
+            "{k} 値等確率: {e} vs log2({k}) = {expected}"
+        );
+    }
+
+    #[test]
+    fn entropy_uniform_256_is_exactly_8() {
+        let data: Vec<u8> = (0..=255).collect();
+        assert!((shannon_entropy(&data) - 8.0).abs() < 1e-12);
     }
 
     #[test]
     fn entropy_single() {
         let data = alloc::vec![42u8; 1000];
-        let e = shannon_entropy(&data);
-        assert!(e < 0.01);
+        assert_eq!(shannon_entropy(&data), 0.0);
     }
-
-    // =========================================================================
-    // Entropy — 追加テスト
-    // =========================================================================
 
     /// 空データのエントロピーは0
     #[test]
     fn entropy_empty() {
-        assert!((shannon_entropy(b"") - 0.0).abs() < f64::EPSILON);
+        assert_eq!(shannon_entropy(b""), 0.0);
     }
 
     /// 1バイトデータのエントロピーは0
     #[test]
     fn entropy_one_byte() {
-        assert!((shannon_entropy(&[77]) - 0.0).abs() < f64::EPSILON);
+        assert_eq!(shannon_entropy(&[77]), 0.0);
     }
 
-    /// 2値データ（等確率）のエントロピーは約1.0
     #[test]
-    fn entropy_two_values_equal() {
-        let mut data = alloc::vec![];
-        for _ in 0..500 {
-            data.push(0u8);
-            data.push(1u8);
+    fn entropy_equiprobable_matches_log2_k() {
+        for k in [2u32, 3, 4, 8, 16, 100, 256] {
+            assert_equiprobable(k, 7);
         }
-        let e = shannon_entropy(&data);
-        assert!(
-            (e - 1.0).abs() < 0.01,
-            "2値等確率のエントロピーは1.0付近: {e}"
-        );
     }
 
-    /// 2値データ（不等確率）のエントロピーが1未満
+    /// 2値データ（不等確率 0.9 / 0.1）= 0.469 bit (解析解)
     #[test]
     fn entropy_two_values_unequal() {
         let mut data = alloc::vec![0u8; 900];
         data.extend_from_slice(&alloc::vec![1u8; 100]);
         let e = shannon_entropy(&data);
-        assert!(e > 0.0 && e < 1.0, "不等確率のエントロピーは0<e<1: {e}");
+        let expected = -(0.9_f64 * 0.9_f64.log2() + 0.1_f64 * 0.1_f64.log2());
+        assert!((e - expected).abs() < 1e-9, "{e} vs {expected}");
     }
 
-    /// 256種全て1回ずつ → 最大エントロピー（log2_approxの精度に依存）
+    /// 追加：エントロピーは非負かつ ≤ 8
     #[test]
-    fn entropy_max_value() {
-        let data: Vec<u8> = (0..=255).collect();
-        let e = shannon_entropy(&data);
-        // log2_approxは近似のため正確に8.0にはならない。実測値は約6.74
-        assert!(e > 5.0, "最大エントロピーは十分高い: {e}");
-    }
-
-    /// 3値等確率のエントロピーは約log2(3)≈1.585
-    #[test]
-    fn entropy_three_values() {
-        let mut data = alloc::vec![];
-        for _ in 0..300 {
-            data.push(10u8);
-            data.push(20u8);
-            data.push(30u8);
-        }
-        let e = shannon_entropy(&data);
-        let expected = core::f64::consts::LN_2.recip() * 3.0_f64.ln(); // log2(3)
-        assert!(
-            (e - expected).abs() < 0.1,
-            "3値等確率のエントロピー: {e} vs {expected}"
-        );
-    }
-
-    /// 追加：エントロピーは非負
-    #[test]
-    fn entropy_non_negative() {
+    fn entropy_bounds() {
         for v in 0..=255u8 {
             let data = alloc::vec![v; 100];
             assert!(shannon_entropy(&data) >= 0.0);
         }
-    }
-
-    /// 大量データでのエントロピー計算
-    #[test]
-    fn entropy_large_data() {
+        // 39 full cycles of 0..=255 → exactly uniform → exactly 8 bit
+        let data: Vec<u8> = (0..256 * 39).map(|i| (i % 256) as u8).collect();
+        let e = shannon_entropy(&data);
+        assert!((e - 8.0).abs() < 1e-12, "9984 sample uniform: {e}");
+        // 10000 samples: 16 symbols occur 40×, 240 occur 39× → strictly < 8
         let data: Vec<u8> = (0..10000).map(|i| (i % 256) as u8).collect();
         let e = shannon_entropy(&data);
-        // log2_approxの近似精度により実測値は約6.74
-        assert!(e > 5.0, "大量一様データのエントロピーは高い: {e}");
+        assert!(e < 8.0 && e > 7.999, "near-uniform: {e}");
     }
+
     #[test]
     fn theoretical_min() {
         let data = alloc::vec![42u8; 1000];
-        let min = theoretical_min_size(&data);
-        assert!(min < 10); // 高圧縮可能
+        assert_eq!(theoretical_min_size(&data), 0);
     }
+
     /// 空データの理論最小サイズは0
     #[test]
     fn theoretical_min_empty() {
@@ -189,16 +163,14 @@ mod tests {
         assert_eq!(theoretical_min_size(&[99]), 0);
     }
 
-    /// 一様分布データの理論最小サイズは元サイズに近い
+    /// 一様分布 256 byte → 8 bit × 256 / 8 = 256 byte ちょうど
     #[test]
     fn theoretical_min_uniform() {
         let data: Vec<u8> = (0..=255).collect();
-        let min = theoretical_min_size(&data);
-        // 256バイト、エントロピー≈8 → 理論最小≈256
-        assert!(min > 200, "一様分布の最小サイズは元に近い: {min}");
+        assert_eq!(theoretical_min_size(&data), 256);
     }
 
-    /// 2値等確率の理論最小サイズはデータの約1/8
+    /// 2値等確率 8000 byte → 1 bit × 8000 / 8 = 1000 byte ちょうど
     #[test]
     fn theoretical_min_two_values() {
         let mut data = alloc::vec![];
@@ -206,58 +178,12 @@ mod tests {
             data.push(0u8);
             data.push(1u8);
         }
-        let min = theoretical_min_size(&data);
-        // 8000バイト、エントロピー≈1.0 → 理論最小≈1000
-        assert!(min > 800 && min < 1200, "2値のmin: {min}");
+        assert_eq!(theoretical_min_size(&data), 1000);
     }
 
-    /// 単一バイト繰り返しの理論最小サイズは極小
+    /// 端数は切り上げ: 3 値等確率 3 byte → log2(3) × 3 / 8 = 0.594 → 1
     #[test]
-    fn theoretical_min_constant() {
-        let data = alloc::vec![0u8; 10000];
-        let min = theoretical_min_size(&data);
-        assert!(min < 10, "定数データのmin: {min}");
-    }
-    /// log2近似が妥当な値を返すことの検証（4値等確率→エントロピー≈2.0）
-    #[test]
-    fn entropy_four_values() {
-        let mut data = alloc::vec![];
-        for _ in 0..1000 {
-            data.push(0u8);
-            data.push(1u8);
-            data.push(2u8);
-            data.push(3u8);
-        }
-        let e = shannon_entropy(&data);
-        assert!((e - 2.0).abs() < 0.1, "4値等確率のエントロピーは約2.0: {e}");
-    }
-
-    /// 8値等確率→エントロピー≈3.0
-    #[test]
-    fn entropy_eight_values() {
-        let mut data = alloc::vec![];
-        for _ in 0..1000 {
-            for v in 0..8u8 {
-                data.push(v);
-            }
-        }
-        let e = shannon_entropy(&data);
-        assert!((e - 3.0).abs() < 0.1, "8値等確率のエントロピーは約3.0: {e}");
-    }
-
-    /// 16値等確率→エントロピー≈4.0
-    #[test]
-    fn entropy_sixteen_values() {
-        let mut data = alloc::vec![];
-        for _ in 0..500 {
-            for v in 0..16u8 {
-                data.push(v);
-            }
-        }
-        let e = shannon_entropy(&data);
-        assert!(
-            (e - 4.0).abs() < 0.1,
-            "16値等確率のエントロピーは約4.0: {e}"
-        );
+    fn theoretical_min_rounds_up() {
+        assert_eq!(theoretical_min_size(&[1, 2, 3]), 1);
     }
 }

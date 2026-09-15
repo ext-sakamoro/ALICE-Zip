@@ -1,22 +1,67 @@
 [package]
 name = "alice-zip"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
+# MSRV-aware dependency resolution (cargo 1.84+): `cargo update` never picks a
+# dependency whose own `rust-version` exceeds ours, so the lockfile cannot
+# silently drift away from the declared MSRV (canonical template trap #35).
+resolver = "3"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
-description = "Compression algorithms (LZ77, Deflate-like, dictionary coding) + procedural signal generators (Fourier / polynomial regression) + zlib wrappers"
+description = "Compression primitives (LZ77, dictionary coding, BPE, entropy) + procedural signal generators (polynomial / Fourier / Perlin) + zlib wrappers, no_std + alloc"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ext-sakamoro/ALICE-Zip"
 homepage = "https://github.com/ext-sakamoro/ALICE-Zip"
 documentation = "https://docs.rs/alice-zip"
 # `Dictionary::len` / `is_empty` are `const fn` over `Vec` (stabilised in 1.87).
-# Declared so MSRV-aware resolvers (downstream `rust-version` < 1.87) fall
-# back to an older release instead of failing to compile.
+# Verified by the `msrv` CI job (`cargo +1.87 check`); bump both together.
 rust-version = "1.87"
-keywords = ["compression", "lz77", "fourier", "polynomial", "zlib"]
-categories = ["compression", "algorithms", "science"]
-exclude = ["/alice", "/assets", "/.github", "*.png"]
+keywords = ["compression", "lz77", "fourier", "polynomial", "no-std"]
+categories = ["compression", "algorithms", "no-std", "science"]
+exclude = [
+    "/alice",
+    "/alice_zip",
+    "/assets",
+    "/benchmarks",
+    "/bindings",
+    "/fuzz",
+    "/libalice",
+    "/libalice-enterprise",
+    "/scripts",
+    "/test_images",
+    "/tests/*.py",
+    "/tests/test_images",
+    "/.github",
+    "*.png",
+    "pyproject.toml",
+]
+
+[features]
+default = ["std"]
+# Host std: enables the `compression` module (zlib via flate2) and
+# `std::error::Error` for `ZipError`. Without it the crate is `no_std + alloc`
+# and float math goes through `libm`.
+std = ["dep:flate2", "rand/std", "rand_chacha/std"]
+# rustfft-backed `generators::analyze_signal_fft` (same contract as the naive
+# DFT `analyze_signal`, O(n log n)); implies `std`.
+fft = ["std", "dep:rustfft"]
+# rayon-parallel row generation for the 2D Perlin textures; implies `std`.
+parallel = ["std", "dep:rayon"]
 
 [dependencies]
-flate2 = "1.0"
+flate2 = { version = "1.0", optional = true }
+# Pure-Rust float transcendentals for the `no_std` build (the `FloatExt` shim in
+# `src/math.rs`). Unused under `std`, hence the cargo-machete ignore below.
+libm = "0.2"
+# Seeded permutation table for `generators::PerlinNoise` (no_std capable).
+rand = { version = "0.8", default-features = false }
+rand_chacha = { version = "0.3", default-features = false }
+rustfft = { version = "6.2", optional = true }
+rayon = { version = "1.10", optional = true }
 
 [dev-dependencies]
+
+[package.metadata.docs.rs]
+features = ["std", "fft", "parallel"]
+
+[package.metadata.cargo-machete]
+ignored = ["libm"]

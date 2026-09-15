@@ -1,36 +1,51 @@
-//! ALICE-Zip — Compression engine
+//! ALICE-Zip — Compression primitives + procedural signal generators
 //!
-//! LZ77 スライディングウィンドウ / 辞書符号化 / エントロピー推定 / Byte-pair encoding
-//! を提供する `no_std + alloc` の圧縮 primitives crate
+//! LZ77 sliding window / dictionary coding / Shannon entropy / byte-pair
+//! encoding, plus the generator laws (polynomial / Fourier / Perlin) that let
+//! downstream crates store *how to regenerate* a signal instead of its samples
+//! ("send the law, not the data").
+//!
+//! The crate is `no_std + alloc` by default-features-off; the `std` feature
+//! (on by default) adds the zlib wrappers and `std::error::Error`.
 //!
 //! # Module 構成
 //!
-//! | Module | 内容 |
-//! |--------|------|
-//! | [`lz77`] | LZ77 sliding-window encode / decode + [`lz77::LzToken`] |
-//! | [`dictionary`] | phrase → index 辞書 [`dictionary::Dictionary`] (LRU 風 eviction) |
-//! | [`entropy`] | Shannon entropy + 理論最小サイズ |
-//! | [`bpe`] | Byte-pair encoding (最頻ペア検出 + 置換) |
-//! | [`error`] | 共通 [`error::ZipError`] |
-//! | [`prelude`] | 主要 API 一括 re-export |
+//! | Module | 内容 | feature |
+//! |--------|------|---------|
+//! | [`lz77`] | LZ77 sliding-window encode / decode + [`lz77::LzToken`] | — |
+//! | [`dictionary`] | phrase → index 辞書 [`dictionary::Dictionary`] (FIFO eviction) | — |
+//! | [`entropy`] | Shannon entropy + 理論最小サイズ | — |
+//! | [`bpe`] | Byte-pair encoding (最頻ペア検出 + 置換) | — |
+//! | [`generators`] | polynomial / Fourier / Perlin generator laws | `fft` / `parallel` で加速 path 追加 |
+//! | [`compression`] | zlib wrappers ([`flate2`]) | `std` |
+//! | [`error`] | 共通 [`error::ZipError`] | — |
+//! | [`prelude`] | 主要 API 一括 re-export | — |
+//!
+//! # no_std
+//!
+//! `--no-default-features` で `core + alloc` のみに依存する float の超越関数は
+//! [`libm`] に委譲するため、`std` build と最終 ulp が異なることがある (法則は同一)
+//! 64-bit atomics 等の前提は無く、`thumbv7em-none-eabihf` で CI が rlib build を検証する
 //!
 //! # backward compatibility
 //!
 //! v0.1.0 まで crate ルート直下に定義していた項目は module 移動後も
-//! ルートから `pub use` で公開しているため、既存 downstream (bindings /
-//! libalice / examples) はそのまま動作する
+//! ルートから `pub use` で公開している
 
-// v0.2.0 で compression / generators module 追加により flate2 std 依存 (I/O trait)
-// no_std 環境は既存 module (bpe / dictionary / entropy / lz77 / prelude) のみ利用可
+#![cfg_attr(not(feature = "std"), no_std)]
+#![forbid(unsafe_code)]
+
 extern crate alloc;
 
 pub mod bpe;
+#[cfg(feature = "std")]
 pub mod compression;
 pub mod dictionary;
 pub mod entropy;
 pub mod error;
 pub mod generators;
 pub mod lz77;
+pub(crate) mod math;
 pub mod prelude;
 
 #[cfg(test)]

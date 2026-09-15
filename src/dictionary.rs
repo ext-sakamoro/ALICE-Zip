@@ -1,10 +1,17 @@
-//! Dictionary coding (= phrase → index mapping with LRU-style eviction)
+//! Dictionary coding (= phrase → index mapping with FIFO eviction)
 //!
 //! A simple string-table style dictionary that assigns u32 indices to
 //! variable-length byte phrases. When the entry limit is hit, the oldest
-//! phrase is evicted (= arena drain + offsets shift).
+//! phrase is evicted (= arena drain + offsets shift), so indices of the
+//! remaining phrases shift down by one.
+//!
+//! Law (pinned by `tests/analytic_oracle.rs`): after `k` distinct `add`s into
+//! a dictionary of capacity `c`, `len() == min(k, c)` and `lookup(i)` returns
+//! the `(k - min(k, c) + i)`-th phrase added
 
 use alloc::vec::Vec;
+
+use crate::error::ZipError;
 
 #[derive(Debug, Clone)]
 pub struct Dictionary {
@@ -14,6 +21,9 @@ pub struct Dictionary {
 }
 
 impl Dictionary {
+    /// Create an empty dictionary holding at most `max_entries` phrases
+    /// A capacity of `0` is allowed but every [`add`](Self::add) then fails
+    /// with [`ZipError::DictionaryFull`]
     #[must_use]
     pub const fn new(max_entries: usize) -> Self {
         Self {
@@ -23,10 +33,20 @@ impl Dictionary {
         }
     }
 
+    /// Insert `phrase` (or return the index of an identical existing phrase)
+    /// Evicts the oldest phrase when the dictionary is at capacity
+    ///
+    /// # Errors
+    ///
+    /// [`ZipError::DictionaryFull`] when the capacity is `0`, or when the
+    /// arena would exceed the `u32` offset range (4 GiB)
     #[allow(clippy::cast_possible_truncation)]
-    pub fn add(&mut self, phrase: &[u8]) -> u32 {
+    pub fn add(&mut self, phrase: &[u8]) -> Result<u32, ZipError> {
         if let Some(pos) = (0..self.offsets.len()).position(|i| self.get_entry(i) == phrase) {
-            return pos as u32;
+            return Ok(pos as u32);
+        }
+        if self.max_entries == 0 {
+            return Err(ZipError::DictionaryFull);
         }
         if self.offsets.len() >= self.max_entries {
             let first_end = if self.offsets.len() > 1 {
@@ -40,9 +60,12 @@ impl Dictionary {
                 *off -= first_end as u32;
             }
         }
+        if self.arena.len().saturating_add(phrase.len()) > u32::MAX as usize {
+            return Err(ZipError::DictionaryFull);
+        }
         self.offsets.push(self.arena.len() as u32);
         self.arena.extend_from_slice(phrase);
-        (self.offsets.len() - 1) as u32
+        Ok((self.offsets.len() - 1) as u32)
     }
 
     #[must_use]
@@ -92,8 +115,8 @@ mod tests {
     #[test]
     fn dictionary_basic() {
         let mut dict = Dictionary::new(100);
-        let idx1 = dict.add(b"hello");
-        let idx2 = dict.add(b"world");
+        let idx1 = dict.add(b"hello").unwrap();
+        let idx2 = dict.add(b"world").unwrap();
         assert_eq!(dict.lookup(idx1), Some(b"hello".as_slice()));
         assert_eq!(dict.lookup(idx2), Some(b"world".as_slice()));
     }
@@ -101,8 +124,8 @@ mod tests {
     #[test]
     fn dictionary_dedup() {
         let mut dict = Dictionary::new(100);
-        let idx1 = dict.add(b"hello");
-        let idx2 = dict.add(b"hello");
+        let idx1 = dict.add(b"hello").unwrap();
+        let idx2 = dict.add(b"hello").unwrap();
         assert_eq!(idx1, idx2);
         assert_eq!(dict.len(), 1);
     }
@@ -110,10 +133,10 @@ mod tests {
     #[test]
     fn dictionary_eviction() {
         let mut dict = Dictionary::new(3);
-        dict.add(b"a");
-        dict.add(b"b");
-        dict.add(b"c");
-        dict.add(b"d");
+        dict.add(b"a").unwrap();
+        dict.add(b"b").unwrap();
+        dict.add(b"c").unwrap();
+        dict.add(b"d").unwrap();
         assert_eq!(dict.len(), 3);
     }
 
@@ -133,7 +156,7 @@ mod tests {
     #[test]
     fn dictionary_not_empty_after_add() {
         let mut dict = Dictionary::new(10);
-        dict.add(b"abc");
+        dict.add(b"abc").unwrap();
         assert!(!dict.is_empty());
         assert_eq!(dict.len(), 1);
     }
@@ -151,7 +174,7 @@ mod tests {
     #[test]
     fn dictionary_add_empty_phrase() {
         let mut dict = Dictionary::new(10);
-        let idx = dict.add(b"");
+        let idx = dict.add(b"").unwrap();
         assert_eq!(dict.lookup(idx), Some(b"".as_slice()));
     }
 
@@ -159,9 +182,9 @@ mod tests {
     #[test]
     fn dictionary_max_one() {
         let mut dict = Dictionary::new(1);
-        dict.add(b"first");
+        dict.add(b"first").unwrap();
         assert_eq!(dict.len(), 1);
-        dict.add(b"second");
+        dict.add(b"second").unwrap();
         // evictionで最初のエントリが消え、secondのみ残る
         assert_eq!(dict.len(), 1);
         assert_eq!(dict.lookup(0), Some(b"second".as_slice()));
@@ -171,12 +194,12 @@ mod tests {
     #[test]
     fn dictionary_re_add_after_eviction() {
         let mut dict = Dictionary::new(2);
-        dict.add(b"A");
-        dict.add(b"B");
+        dict.add(b"A").unwrap();
+        dict.add(b"B").unwrap();
         // "C"を追加 → "A"がevictされる
-        dict.add(b"C");
+        dict.add(b"C").unwrap();
         // "A"はもう存在しないので新規追加
-        let idx = dict.add(b"A");
+        let idx = dict.add(b"A").unwrap();
         assert_eq!(dict.lookup(idx), Some(b"A".as_slice()));
     }
 
@@ -184,13 +207,13 @@ mod tests {
     #[test]
     fn dictionary_dedup_after_eviction() {
         let mut dict = Dictionary::new(3);
-        dict.add(b"x");
-        dict.add(b"y");
-        dict.add(b"z");
+        dict.add(b"x").unwrap();
+        dict.add(b"y").unwrap();
+        dict.add(b"z").unwrap();
         // "w"を追加 → "x"がevictされる
-        dict.add(b"w");
+        dict.add(b"w").unwrap();
         // "y"はまだ存在するので重複インデックスが返る
-        let idx = dict.add(b"y");
+        let idx = dict.add(b"y").unwrap();
         assert_eq!(dict.lookup(idx), Some(b"y".as_slice()));
         assert_eq!(dict.len(), 3);
     }
@@ -201,7 +224,7 @@ mod tests {
         let mut dict = Dictionary::new(1000);
         for i in 0u32..500 {
             let phrase = alloc::format!("entry_{i}");
-            dict.add(phrase.as_bytes());
+            dict.add(phrase.as_bytes()).unwrap();
         }
         assert_eq!(dict.len(), 500);
     }
@@ -210,7 +233,7 @@ mod tests {
     #[test]
     fn dictionary_clone() {
         let mut dict = Dictionary::new(10);
-        dict.add(b"test");
+        dict.add(b"test").unwrap();
         let dict2 = dict.clone();
         assert_eq!(dict2.len(), 1);
         assert_eq!(dict2.lookup(0), Some(b"test".as_slice()));
@@ -229,7 +252,7 @@ mod tests {
     fn dictionary_binary_phrase() {
         let mut dict = Dictionary::new(10);
         let binary = &[0x00, 0xFF, 0x80, 0x7F];
-        let idx = dict.add(binary);
+        let idx = dict.add(binary).unwrap();
         assert_eq!(dict.lookup(idx), Some(binary.as_slice()));
     }
 
@@ -238,7 +261,7 @@ mod tests {
     fn dictionary_dedup_multiple_times() {
         let mut dict = Dictionary::new(100);
         for _ in 0..10 {
-            dict.add(b"same");
+            dict.add(b"same").unwrap();
         }
         assert_eq!(dict.len(), 1);
     }
@@ -247,10 +270,10 @@ mod tests {
     #[test]
     fn dictionary_eviction_removes_first() {
         let mut dict = Dictionary::new(2);
-        dict.add(b"alpha");
-        dict.add(b"beta");
+        dict.add(b"alpha").unwrap();
+        dict.add(b"beta").unwrap();
         // 満杯状態で"gamma"追加 → "alpha"が削除される
-        dict.add(b"gamma");
+        dict.add(b"gamma").unwrap();
         assert_eq!(dict.len(), 2);
         // "alpha"のlookupは見つからないか位置がずれている
         // "beta"はインデックス0、"gamma"はインデックス1に移動

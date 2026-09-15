@@ -70,8 +70,8 @@ fn lz77_single_char_repeat_roundtrip() {
     for ch in [0u8, 127, 255] {
         let data = alloc::vec![ch; 30];
         let tokens = lz77_encode(&data, 256, 32);
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 }
 
@@ -80,8 +80,8 @@ fn lz77_single_char_repeat_roundtrip() {
 fn lz77_ascending_bytes() {
     let data: Vec<u8> = (0u8..=127).collect();
     let tokens = lz77_encode(&data, 256, 32);
-    let decoded = lz77_decode(&tokens);
-    assert_eq!(&decoded[..data.len()], &data[..]);
+    let decoded = lz77_decode(&tokens).unwrap();
+    assert_eq!(decoded, data);
 }
 
 /// LZ77: 降順バイト列のラウンドトリップ
@@ -89,8 +89,8 @@ fn lz77_ascending_bytes() {
 fn lz77_descending_bytes() {
     let data: Vec<u8> = (0u8..=127).rev().collect();
     let tokens = lz77_encode(&data, 256, 32);
-    let decoded = lz77_decode(&tokens);
-    assert_eq!(&decoded[..data.len()], &data[..]);
+    let decoded = lz77_decode(&tokens).unwrap();
+    assert_eq!(decoded, data);
 }
 
 /// Dictionary: max_entries=0の場合（常にeviction）
@@ -159,8 +159,8 @@ fn lz77_self_referencing_pattern() {
     // "abcabc" → 後半の"abc"は前半を参照可能
     let data = b"abcabc";
     let tokens = lz77_encode(data, 256, 32);
-    let decoded = lz77_decode(&tokens);
-    assert_eq!(&decoded[..data.len()], &data[..]);
+    let decoded = lz77_decode(&tokens).unwrap();
+    assert_eq!(decoded, data);
     // 圧縮で3バイト以上のマッチが見つかるはず
     assert!(tokens.len() < data.len());
 }
@@ -171,8 +171,8 @@ fn lz77_repeat_with_different_tail() {
     let mut data = alloc::vec![b'a'; 50];
     data.push(b'z');
     let tokens = lz77_encode(&data, 256, 32);
-    let decoded = lz77_decode(&tokens);
-    assert_eq!(&decoded[..data.len()], &data[..]);
+    let decoded = lz77_decode(&tokens).unwrap();
+    assert_eq!(decoded, data);
 }
 
 /// Dictionary: 長いフレーズの追加とlookup
@@ -180,7 +180,7 @@ fn lz77_repeat_with_different_tail() {
 fn dictionary_long_phrase() {
     let mut dict = Dictionary::new(10);
     let long = alloc::vec![b'A'; 1000];
-    let idx = dict.add(&long);
+    let idx = dict.add(&long).unwrap();
     let result = dict.lookup(idx).unwrap();
     assert_eq!(result.len(), 1000);
     assert!(result.iter().all(|&b| b == b'A'));
@@ -195,8 +195,8 @@ fn lz77_then_bpe_pipeline() {
     assert_eq!(bpe_result.len(), 9);
     // LZ77で更に圧縮
     let tokens = lz77_encode(&bpe_result, 256, 32);
-    let decoded = lz77_decode(&tokens);
-    assert_eq!(&decoded[..bpe_result.len()], &bpe_result[..]);
+    let decoded = lz77_decode(&tokens).unwrap();
+    assert_eq!(decoded, bpe_result);
 }
 
 /// entropy: 単一バイト値が異なる複数パターン

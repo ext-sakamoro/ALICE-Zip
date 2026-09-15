@@ -1,10 +1,20 @@
 //! Error type for ALICE-Zip
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Errors returned by the `no_std` primitives (`lz77` / `dictionary`)
+/// The zlib wrappers in [`crate::compression`] return `std::io::Error`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ZipError {
+    /// A token stream references bytes that do not exist yet
     InvalidData,
+    /// Generic decompression failure
     DecompressFailed,
+    /// [`crate::Dictionary`] cannot accept another phrase (capacity `0` or
+    /// `u32` arena offset range exhausted)
     DictionaryFull,
+    /// A generator was given a parameter outside its domain (non-positive
+    /// `scale`, `octaves == 0`, texture size overflow)
+    InvalidParameter,
 }
 
 impl core::fmt::Display for ZipError {
@@ -13,9 +23,13 @@ impl core::fmt::Display for ZipError {
             Self::InvalidData => write!(f, "invalid data"),
             Self::DecompressFailed => write!(f, "decompress failed"),
             Self::DictionaryFull => write!(f, "dictionary full"),
+            Self::InvalidParameter => write!(f, "invalid generator parameter"),
         }
     }
 }
+
+#[cfg(feature = "std")]
+impl std::error::Error for ZipError {}
 
 #[cfg(test)]
 #[allow(
@@ -52,12 +66,16 @@ mod tests {
         assert_eq!(s, "dictionary full");
     }
 
-    /// Clone
+    /// Copy
     #[test]
-    fn zip_error_clone() {
+    fn zip_error_copy() {
         let e = ZipError::InvalidData;
-        let e2 = e.clone();
+        let e2 = e;
         assert_eq!(e, e2);
+        assert_eq!(
+            alloc::format!("{}", ZipError::InvalidParameter),
+            "invalid generator parameter"
+        );
     }
 
     /// PartialEq

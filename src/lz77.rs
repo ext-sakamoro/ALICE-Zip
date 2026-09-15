@@ -2,9 +2,18 @@
 //!
 //! Classic LZ77 style token stream (offset / length / literal) with a
 //! sliding window over previously-seen bytes.
+//!
+//! Law: `lz77_decode(&lz77_encode(data, w, l)) == Ok(data)` for every `data`,
+//! every `w` and every `l` (the window / lookahead sizes only change the
+//! token count, never the decoded bytes) — pinned by
+//! `tests/analytic_oracle.rs` and the `lz77_roundtrip` fuzz target
 
 use alloc::vec::Vec;
 
+use crate::error::ZipError;
+
+/// One LZ77 token: copy `length` bytes from `offset` bytes back, then emit
+/// `literal` `offset == 0 && length == 0` is a pure literal
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LzToken {
     pub offset: u16,
@@ -12,10 +21,20 @@ pub struct LzToken {
     pub literal: u8,
 }
 
+/// Largest window / lookahead the `u16` token fields can express
+/// `lz77_encode` clamps larger requests to this value instead of truncating
+pub const MAX_WINDOW: usize = u16::MAX as usize;
+
 /// LZ77圧縮 (スライディングウィンドウ)
+///
+/// `window_size` / `lookahead_size` は [`MAX_WINDOW`] (65535) に clamp される
+/// (token の `offset` / `length` が `u16` のため) `lookahead_size == 0` は
+/// 全 byte を literal として出力する
 #[must_use]
 #[allow(clippy::cast_possible_truncation)]
 pub fn lz77_encode(data: &[u8], window_size: usize, lookahead_size: usize) -> Vec<LzToken> {
+    let window_size = window_size.min(MAX_WINDOW);
+    let lookahead_size = lookahead_size.min(MAX_WINDOW);
     let mut tokens = Vec::new();
     let mut pos = 0;
 
@@ -39,12 +58,14 @@ pub fn lz77_encode(data: &[u8], window_size: usize, lookahead_size: usize) -> Ve
             }
         }
 
-        let literal_pos = pos + best_length as usize;
-        let literal = if literal_pos < data.len() {
-            data[literal_pos]
-        } else {
-            0
-        };
+        // Every token carries a literal. When the match would swallow the
+        // last byte, shorten it by one so that byte becomes the literal
+        // (versions ≤ 0.3 emitted a phantom `0` literal here, so the decoded
+        // stream was one byte longer than the input)
+        if pos + best_length as usize >= data.len() {
+            best_length -= 1;
+        }
+        let literal = data[pos + best_length as usize];
 
         tokens.push(LzToken {
             offset: best_offset,
@@ -57,12 +78,23 @@ pub fn lz77_encode(data: &[u8], window_size: usize, lookahead_size: usize) -> Ve
 }
 
 /// LZ77復元
-#[must_use]
-pub fn lz77_decode(tokens: &[LzToken]) -> Vec<u8> {
+///
+/// # Errors
+///
+/// [`ZipError::InvalidData`] when a token references bytes before the start
+/// of the output (`offset > decoded.len()`), or has `length > 0` with
+/// `offset == 0` Streams produced by [`lz77_encode`] never fail
+pub fn lz77_decode(tokens: &[LzToken]) -> Result<Vec<u8>, ZipError> {
     let mut result = Vec::new();
     for token in tokens {
         if token.length > 0 {
-            let start = result.len() - token.offset as usize;
+            let offset = token.offset as usize;
+            if offset == 0 || offset > result.len() {
+                return Err(ZipError::InvalidData);
+            }
+            let start = result.len() - offset;
+            // The copy may overlap its own output (run-length style), so it
+            // has to be byte-by-byte from the growing buffer
             for i in 0..token.length as usize {
                 let byte = result[start + i];
                 result.push(byte);
@@ -70,7 +102,7 @@ pub fn lz77_decode(tokens: &[LzToken]) -> Vec<u8> {
         }
         result.push(token.literal);
     }
-    result
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -90,16 +122,16 @@ mod tests {
     fn lz77_roundtrip() {
         let data = b"abcabcabcabc";
         let tokens = lz77_encode(data, 256, 32);
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     #[test]
     fn lz77_no_repetition() {
         let data = b"abcdefgh";
         let tokens = lz77_encode(data, 256, 32);
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     #[test]
@@ -107,8 +139,8 @@ mod tests {
         let data = alloc::vec![b'a'; 100];
         let tokens = lz77_encode(&data, 256, 32);
         assert!(tokens.len() < data.len()); // 圧縮されている
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     #[test]
@@ -130,8 +162,8 @@ mod tests {
         assert_eq!(tokens[0].offset, 0);
         assert_eq!(tokens[0].length, 0);
         assert_eq!(tokens[0].literal, b'x');
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// 2バイトで繰り返しなし
@@ -139,8 +171,8 @@ mod tests {
     fn lz77_two_bytes_no_match() {
         let data = b"ab";
         let tokens = lz77_encode(data, 256, 32);
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// 2バイト同一文字
@@ -148,8 +180,8 @@ mod tests {
     fn lz77_two_bytes_same() {
         let data = b"aa";
         let tokens = lz77_encode(data, 256, 32);
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// ウィンドウサイズ1で動作確認
@@ -157,8 +189,8 @@ mod tests {
     fn lz77_window_size_one() {
         let data = b"aabbaabb";
         let tokens = lz77_encode(data, 1, 32);
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// lookahead_size=1で動作確認
@@ -166,8 +198,8 @@ mod tests {
     fn lz77_lookahead_one() {
         let data = b"abcabcabc";
         let tokens = lz77_encode(data, 256, 1);
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// 全ゼロバイト列のラウンドトリップ
@@ -176,8 +208,8 @@ mod tests {
         let data = alloc::vec![0u8; 200];
         let tokens = lz77_encode(&data, 256, 32);
         assert!(tokens.len() < data.len());
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// 全0xFFバイトのラウンドトリップ
@@ -185,8 +217,8 @@ mod tests {
     fn lz77_all_0xff() {
         let data = alloc::vec![0xFFu8; 50];
         let tokens = lz77_encode(&data, 256, 32);
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// 繰り返しパターン「ABAB...」のラウンドトリップ
@@ -199,8 +231,8 @@ mod tests {
         }
         let tokens = lz77_encode(&data, 256, 32);
         assert!(tokens.len() < data.len());
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// 長い繰り返し文字列のラウンドトリップ
@@ -208,8 +240,8 @@ mod tests {
     fn lz77_long_repeat() {
         let data = alloc::vec![b'z'; 500];
         let tokens = lz77_encode(&data, 256, 32);
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// ウィンドウが小さいと圧縮率が低下する
@@ -227,8 +259,8 @@ mod tests {
     fn lz77_three_byte_pattern() {
         let data = b"xyzxyzxyzxyz";
         let tokens = lz77_encode(data, 256, 32);
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// バイナリデータ（0x00〜0x0F）のラウンドトリップ
@@ -236,8 +268,8 @@ mod tests {
     fn lz77_binary_data() {
         let data: Vec<u8> = (0..16).collect();
         let tokens = lz77_encode(&data, 256, 32);
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// 大きなウィンドウとlookahead
@@ -245,8 +277,8 @@ mod tests {
     fn lz77_large_window() {
         let data = b"hellohellohello";
         let tokens = lz77_encode(data, 1024, 1024);
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// 完全ランダム的データ（圧縮率が低い）のラウンドトリップ
@@ -260,8 +292,8 @@ mod tests {
             *b = (v >> 16) as u8;
         }
         let tokens = lz77_encode(&data, 256, 32);
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// 同一バイトデータに対するトークンのオフセット・長さ検証
@@ -290,7 +322,7 @@ mod tests {
                 literal: b'i'
             },
         ];
-        let decoded = lz77_decode(&tokens);
+        let decoded = lz77_decode(&tokens).unwrap();
         assert_eq!(decoded, b"Hi");
     }
 
@@ -315,7 +347,7 @@ mod tests {
                 literal: b'c'
             },
         ];
-        let decoded = lz77_decode(&tokens);
+        let decoded = lz77_decode(&tokens).unwrap();
         assert_eq!(decoded, b"ababc");
     }
 
@@ -323,7 +355,7 @@ mod tests {
     #[test]
     fn lz77_decode_empty() {
         let tokens: Vec<LzToken> = alloc::vec![];
-        let decoded = lz77_decode(&tokens);
+        let decoded = lz77_decode(&tokens).unwrap();
         assert!(decoded.is_empty());
     }
 
@@ -336,8 +368,8 @@ mod tests {
         for t in &tokens {
             assert_eq!(t.length, 0);
         }
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// ウィンドウサイズ=0のエッジケース（参照なし）
@@ -348,8 +380,8 @@ mod tests {
         for t in &tokens {
             assert_eq!(t.length, 0);
         }
-        let decoded = lz77_decode(&tokens);
-        assert_eq!(&decoded[..data.len()], &data[..]);
+        let decoded = lz77_decode(&tokens).unwrap();
+        assert_eq!(decoded, data);
     }
 
     /// 長いパターン繰り返しの圧縮効率確認
