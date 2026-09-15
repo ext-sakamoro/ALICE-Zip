@@ -167,11 +167,13 @@ jobs:
         run: |
           cargo check --manifest-path libalice/Cargo.toml --features python
           cargo clippy --manifest-path libalice/Cargo.toml --features python --all-targets -- -D warnings
+      # `maturin develop` needs a virtualenv; build the wheel and pip-install it
       - name: Build + install libalice (maturin)
         run: |
           python -m pip install --upgrade pip
           pip install maturin numpy pytest
-          cd libalice && maturin develop --release
+          (cd libalice && maturin build --release --out ../target/wheels)
+          pip install target/wheels/libalice-*.whl
       - name: pytest (native accelerator enabled)
         run: |
           pip install -e .
