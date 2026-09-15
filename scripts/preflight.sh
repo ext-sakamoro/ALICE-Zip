@@ -50,8 +50,8 @@ RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps
 RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps --features "$ALL_FEATURES"
 RUSTDOCFLAGS="-Dwarnings" cargo doc --manifest-path libalice/Cargo.toml --lib --no-deps
 
-step "libalice clippy -D warnings"
-cargo clippy --manifest-path libalice/Cargo.toml --all-targets -- -D warnings
+step "libalice clippy -D warnings (codec feature)"
+cargo clippy --manifest-path libalice/Cargo.toml --all-targets --features codec -- -D warnings
 
 step "security: audit (3 lockfiles) / deny / machete / stub-guard / FFI guard"
 if have cargo-audit; then
@@ -61,7 +61,7 @@ if have cargo-audit; then
 else echo "skip: cargo-audit not installed" >&2; fi
 if have cargo-deny; then
   cargo deny --all-features check all
-  cargo deny --manifest-path libalice/Cargo.toml --config deny.toml check all
+  cargo deny --manifest-path libalice/Cargo.toml --config deny.toml --features codec check all
   cargo deny --manifest-path libalice-enterprise/Cargo.toml --config deny.toml check all
 else echo "skip: cargo-deny not installed" >&2; fi
 if have cargo-machete; then cargo machete; else echo "skip: cargo-machete not installed" >&2; fi
@@ -90,6 +90,7 @@ cargo test
 cargo test --features "$ALL_FEATURES"
 cargo test --lib --no-default-features
 cargo test --manifest-path libalice/Cargo.toml
+cargo test --manifest-path libalice/Cargo.toml --features codec
 
 step "libalice release build (cdylib + CLI)"
 cargo build --manifest-path libalice/Cargo.toml --release

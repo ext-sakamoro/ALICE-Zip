@@ -84,9 +84,9 @@ jobs:
         run: cargo install --locked cargo-deny
       - name: cargo deny (core, all features)
         run: cargo deny --all-features check all
-      # libalice: default features (`codec` は sibling checkout が必要、`python` は pyo3 build)
+      # libalice: `codec` (alice-codec, AGPL exception in deny.toml) 込み、`python` は pyo3 build のため除外
       - name: cargo deny (libalice)
-        run: cargo deny --manifest-path libalice/Cargo.toml --config deny.toml check all
+        run: cargo deny --manifest-path libalice/Cargo.toml --config deny.toml --features codec check all
       - name: cargo deny (libalice-enterprise)
         run: cargo deny --manifest-path libalice-enterprise/Cargo.toml --config deny.toml check all
 

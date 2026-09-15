@@ -133,12 +133,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: libalice
-      # default features only: `python` needs a PyO3 build, `codec` a sibling
-      # checkout (../../ALICE-Codec); both are out of scope for this gate
-      - name: Test
+      # `python` (PyO3 build against the runner's interpreter) is out of scope
+      # for this gate; `codec` is a crates.io dep (alice-codec) and is tested
+      - name: Test (default)
         run: cargo test --manifest-path libalice/Cargo.toml
-      - name: Clippy (-D warnings, all targets)
-        run: cargo clippy --manifest-path libalice/Cargo.toml --all-targets -- -D warnings
+      - name: Test (codec bridge)
+        run: cargo test --manifest-path libalice/Cargo.toml --features codec
+      - name: Clippy (-D warnings, all targets, codec)
+        run: cargo clippy --manifest-path libalice/Cargo.toml --all-targets --features codec -- -D warnings
       - name: Doc (-D warnings)
         run: RUSTDOCFLAGS="-Dwarnings" cargo doc --manifest-path libalice/Cargo.toml --lib --no-deps
       # cdylib + bin release build = what the C# / UE5 / Python bindings load

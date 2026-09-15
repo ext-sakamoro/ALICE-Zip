@@ -51,8 +51,8 @@ allow = [
     "OpenSSL",           # ring 等
 ]
 
-# alice-codec (ALICE sibling crate, libalice `codec` feature, default OFF, path
-# dep ../../ALICE-Codec) is AGPL-3.0; the exception is limited to that crate
+# alice-codec (ALICE sibling crate on crates.io, libalice `codec` feature,
+# default OFF) is AGPL-3.0; the exception is limited to that crate
 [[licenses.exceptions]]
 name = "alice-codec"
 allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]

@@ -50,9 +50,7 @@ fn select_preset(subband: SubBand3D) -> u32 {
 /// Higher frequency sub-bands use 8-bit since quantization loss is
 /// less perceptually significant.
 fn select_bits(subband: SubBand3D) -> u8 {
-    if subband.is_dc() {
-        16
-    } else if subband.quant_strength() <= 2 {
+    if subband.is_dc() || subband.quant_strength() <= 2 {
         16
     } else {
         8
