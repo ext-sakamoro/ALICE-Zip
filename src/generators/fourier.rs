@@ -10,7 +10,7 @@
 //!   `k == 0` or `k == n/2` (self-conjugate bins) Versions ≤ 0.3 used
 //!   `w = 2` for the Nyquist bin, doubling it; `tests/analytic_oracle.rs`
 //!   pins the exact reconstruction of every bin including `k = n/2`
-//! - [`analyze_signal_fft`] (`fft` feature) computes the same bins with
+//! - `analyze_signal_fft` (`fft` feature) computes the same bins with
 //!   rustfft in O(n log n); the coefficient selection is shared code and the
 //!   oracle test pins naive-vs-FFT parity
 //!
@@ -99,7 +99,7 @@ pub fn analyze_signal_fft(
 }
 
 /// Reconstruct a signal of length `n` from the Fourier coefficients produced
-/// by [`analyze_signal`] / [`analyze_signal_fft`] plus the DC offset.
+/// by [`analyze_signal`] / `analyze_signal_fft` plus the DC offset.
 ///
 /// Each coefficient `(k, magnitude, phase)` with `k < n` contributes
 /// `w_k · magnitude / n · cos(2π k i / n + phase)` to sample `i`, where

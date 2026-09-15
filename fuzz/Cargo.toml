@@ -1,0 +1,69 @@
+[package]
+name = "alice-zip-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.alice-zip]
+path = ".."
+features = ["std", "fft", "parallel"]
+
+# fuzz targets are binaries; machete cannot see the libfuzzer entry macro
+[package.metadata.cargo-machete]
+ignored = ["libfuzzer-sys"]
+
+[[bin]]
+name = "fuzz_lz77_roundtrip"
+path = "fuzz_targets/fuzz_lz77_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_lz77_decode"
+path = "fuzz_targets/fuzz_lz77_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_dictionary"
+path = "fuzz_targets/fuzz_dictionary.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_bpe"
+path = "fuzz_targets/fuzz_bpe.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_zlib_roundtrip"
+path = "fuzz_targets/fuzz_zlib_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_generators"
+path = "fuzz_targets/fuzz_generators.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_fourier_parity"
+path = "fuzz_targets/fuzz_fourier_parity.rs"
+test = false
+doc = false
+bench = false

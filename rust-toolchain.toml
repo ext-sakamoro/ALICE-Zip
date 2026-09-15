@@ -1,6 +1,9 @@
 # Rust toolchain pin (feedback_clippy_rust_version_drift 準拠)
+# `targets`: the bare-metal target the CI `no_std` job builds the rlib for; listed
+# here (not in the workflow) so rustup installs it for the pinned toolchain that
+# cargo actually uses (dtolnay/rust-toolchain@stable would add it to stable only)
 [toolchain]
-channel = "1.92.0"
+channel = "1.98.1"
 components = ["rustfmt", "clippy"]
+targets = ["thumbv7em-none-eabihf"]
 profile = "minimal"
-

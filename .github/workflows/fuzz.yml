@@ -1,0 +1,135 @@
+name: Fuzz
+
+# 目的:
+# - lz77 roundtrip / decode, dictionary, bpe + entropy, zlib roundtrip, generators,
+#   fourier parity (naive DFT vs rustfft = 2 evaluation paths of one law) の 7 target を
+#   time-boxed fuzz
+# - PR / push 毎に短時間 (60s/target)、毎日 03:00 UTC に safety net
+#
+# 罠 catalog:
+# - cargo-fuzz は nightly toolchain 必須 (rust-toolchain.toml pin を上書き)
+# - fuzz/ 配下は cargo workspace の一部ではない (別 Cargo.toml)
+# - job-level continue-on-error は compile error も green に潰す (罠 #22): build は blocking、
+#   time-boxed run のみ step-level continue-on-error、committed seeds の replay は blocking
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'fuzz/**'
+      - '.github/workflows/fuzz.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'fuzz/**'
+      - '.github/workflows/fuzz.yml'
+  schedule:
+    # 毎日 03:00 UTC = 12:00 JST (idle 時間帯)
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      duration_seconds:
+        description: 'Per-target fuzz duration (seconds)'
+        required: false
+        default: '60'
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: Fuzz — ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - fuzz_lz77_roundtrip
+          - fuzz_lz77_decode
+          - fuzz_dictionary
+          - fuzz_bpe
+          - fuzz_zlib_roundtrip
+          - fuzz_generators
+          - fuzz_fourier_parity
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      # build は blocking: compile error を continue-on-error で隠さない (罠 #22)
+      - name: Build fuzz target
+        run: |
+          cd fuzz
+          cargo +nightly fuzz build "${{ matrix.target }}"
+
+      - name: Set fuzz duration
+        id: dur
+        run: |
+          DURATION="${{ github.event.inputs.duration_seconds }}"
+          if [ -z "$DURATION" ]; then
+            DURATION=60
+          fi
+          echo "seconds=$DURATION" >> "$GITHUB_OUTPUT"
+
+      # Every crash a target ever found is committed under fuzz/seeds/<target>/;
+      # replaying those single inputs is a hard gate (a regression of a known
+      # finding fails the job). libFuzzer runs file arguments once and exits.
+      - name: Replay committed seeds (blocking)
+        run: |
+          cd fuzz
+          seeds="seeds/${{ matrix.target }}"
+          if [ -d "$seeds" ] && [ -n "$(ls -A "$seeds")" ]; then
+            for f in "$seeds"/*; do
+              echo "replay: $f"
+              cargo +nightly fuzz run "${{ matrix.target }}" "$f"
+            done
+          else
+            echo "no committed seeds for ${{ matrix.target }}"
+          fi
+
+      # The time-boxed exploration run is informational by design (not a test
+      # gate): a *new* crash uploads its input as an artifact for triage and,
+      # once committed to fuzz/seeds/, becomes part of the blocking replay above.
+      - name: Run fuzz target (time-boxed)
+        id: run
+        continue-on-error: true
+        run: |
+          cd fuzz
+          seeds="seeds/${{ matrix.target }}"
+          if [ -d "$seeds" ]; then
+            cargo +nightly fuzz run "${{ matrix.target }}" "corpus/${{ matrix.target }}" "$seeds" -- \
+              -max_total_time=${{ steps.dur.outputs.seconds }}
+          else
+            cargo +nightly fuzz run "${{ matrix.target }}" -- \
+              -max_total_time=${{ steps.dur.outputs.seconds }}
+          fi
+
+      - name: Upload crash artifacts (if any)
+        if: steps.run.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Report crash (informational)
+        if: steps.run.outcome == 'failure'
+        run: echo "::warning::fuzz target ${{ matrix.target }} found a crash — see fuzz-crash-${{ matrix.target }} artifact"

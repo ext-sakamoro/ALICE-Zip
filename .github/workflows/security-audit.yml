@@ -1,0 +1,220 @@
+name: Security & Hygiene
+
+# 目的:
+# - RustSec advisory (CVE) の週次検知 (core / libalice / libalice-enterprise の 3 lockfile)
+# - dep license 逸脱 (GPL 侵入等) の block
+# - 未使用依存の炙り出し
+# - 仮実装 (todo! / unimplemented! / panic!(STUB) / dbg!) の CI gate
+# - crates.io 公開版との API 互換 (semver) 検査
+#
+# main-CI (ci.yml) は build / test / clippy / doc に集中させ、本 workflow は
+# セキュリティと衛生に特化 push + PR + 週次 cron の 3 trigger
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/**'
+      - 'deny.toml'
+      - 'libalice/Cargo.toml'
+      - 'libalice/Cargo.lock'
+      - 'libalice/src/**'
+      - 'libalice-enterprise/Cargo.toml'
+      - 'libalice-enterprise/Cargo.lock'
+      - 'fuzz/Cargo.toml'
+      - '.github/workflows/security-audit.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/**'
+      - 'deny.toml'
+      - 'libalice/Cargo.toml'
+      - 'libalice/Cargo.lock'
+      - 'libalice/src/**'
+      - 'libalice-enterprise/Cargo.toml'
+      - 'libalice-enterprise/Cargo.lock'
+      - 'fuzz/Cargo.toml'
+      - '.github/workflows/security-audit.yml'
+  schedule:
+    # 毎週月曜 09:00 UTC = 18:00 JST
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: "5"
+  CARGO_HTTP_MULTIPLEXING: "false"
+
+jobs:
+  audit:
+    name: cargo audit (RustSec CVE scan, 3 lockfiles)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      # yanked crate は deny (--deny yanked)、unmaintained は個別 ignore で管理 (現在 0 件)
+      - name: cargo audit (core)
+        run: cargo audit --deny yanked
+      - name: cargo audit (libalice)
+        run: cargo audit --deny yanked --file libalice/Cargo.lock
+      - name: cargo audit (libalice-enterprise)
+        run: cargo audit --deny yanked --file libalice-enterprise/Cargo.lock
+
+  deny:
+    name: cargo-deny (license + advisories + bans + sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # EmbarkStudios/cargo-deny-action@v2 は Docker container 内で稼働し path dep が
+      # 見えないため直接 install (canonical 罠 #1)
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny
+      - name: cargo deny (core, all features)
+        run: cargo deny --all-features check all
+      # libalice: default features (`codec` は sibling checkout が必要、`python` は pyo3 build)
+      - name: cargo deny (libalice)
+        run: cargo deny --manifest-path libalice/Cargo.toml --config deny.toml check all
+      - name: cargo deny (libalice-enterprise)
+        run: cargo deny --manifest-path libalice-enterprise/Cargo.toml --config deny.toml check all
+
+  unused-deps:
+    name: cargo-machete (unused dependencies)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      # 全 Cargo.toml (core / libalice / libalice-enterprise / fuzz) を静的解析
+      # false-positive は各 Cargo.toml の [package.metadata.cargo-machete] ignored で除外
+      # (core: libm は no_std build のみ、enterprise: alice-zip は lib 名 alice_core で使用)
+      - uses: bnjbvr/cargo-machete@main
+
+  coverage:
+    name: Coverage (cargo-llvm-cov、informational)
+    runs-on: ubuntu-latest
+    # Informational by design (not a test gate): coverage is a number to
+    # watch, no threshold is enforced. `alice-strict-eval` 16 counts only
+    # test / build steps.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      # set -o pipefail: `| tee` が cargo の exit code を mask しないように (罠 #22)
+      - name: Run coverage (docs.rs feature set, unit + integration tests)
+        run: |
+          set -o pipefail
+          cargo llvm-cov --features std,fft,parallel --summary-only 2>&1 | tee coverage-summary.txt
+      - name: Upload coverage summary as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-summary
+          path: coverage-summary.txt
+          retention-days: 30
+
+  semver-checks:
+    name: cargo-semver-checks (API compat vs crates.io)
+    runs-on: ubuntu-latest
+    # Hard gate: a breaking change must come with the matching version bump
+    # (0.x: minor). The tool reads `version` in Cargo.toml and fails only when
+    # the bump is insufficient for the detected API change.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # version 明示 pin: `@latest` は rustc MSRV を追いかけるので toolchain と一緒に bump
+      - name: Install cargo-semver-checks
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks@0.50.0
+      - name: Run cargo semver-checks (core, docs.rs feature set)
+        run: >
+          cargo semver-checks check-release --package alice-zip
+          --only-explicit-features --features std,fft,parallel
+
+  stub-guard:
+    name: Stub / mock / dbg guard (grep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # CLAUDE.md「仮実装完了偽装の禁止ルール」準拠 core src/ + libalice/src/ の
+      # production path に todo! / unimplemented! / panic!(STUB) が混入していないか grep で
+      # block libalice/src/bin/ は CLI 意図的 panic 許容のため除外
+      - name: Detect todo! / unimplemented! / panic!(STUB)
+        run: |
+          set -eo pipefail
+          hits=$(grep -rnE 'todo!\(|unimplemented!\(|panic!\([^)]*STUB' \
+            src/ libalice/src/ --include="*.rs" \
+            --exclude-dir=bin \
+            || true)
+          if [ -n "$hits" ]; then
+            echo "❌ Stub / unimplemented / STUB panic detected (production path):"
+            echo "$hits"
+            echo ""
+            echo "Fix: use ? operator, Result<T, E>, or remove the stub."
+            echo "  See CLAUDE.md § 仮実装完了偽装の禁止ルール"
+            exit 1
+          fi
+          echo "✓ No todo! / unimplemented! / panic!(STUB) in src/ or libalice/src/"
+
+      - name: Detect dbg!() residual
+        run: |
+          set -eo pipefail
+          hits=$(grep -rn 'dbg!(' src/ libalice/src/ --include="*.rs" || true)
+          if [ -n "$hits" ]; then
+            echo "❌ dbg!() macro left in production code:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "✓ No dbg!()"
+
+      # A raw `extern "C" fn` (body not wrapped in the catch_unwind guard) is a
+      # host-abort path since Rust 1.81 — every FFI entry point must start with
+      # `guarded(` / `guarded_or(` (libalice/src/ffi.rs). Same check as
+      # alice-strict-eval 3b.
+      - name: FFI panic isolation (every extern "C" fn is guarded)
+        run: |
+          set -eo pipefail
+          python3 - <<'PY'
+          import re, sys, pathlib
+          bad = []
+          for f in pathlib.Path("libalice/src").rglob("*.rs"):
+              s = f.read_text()
+              for m in re.finditer(r'extern "C" fn (\w+)\([^{]*\{\n(.*?)\n', s, re.S):
+                  first = m.group(2).strip()
+                  if not (first.startswith("guarded(") or first.startswith("guarded_or(") or first.startswith("static ")):
+                      bad.append(f"{f}: {m.group(1)}: {first}")
+          if bad:
+              print("❌ extern \"C\" fn without catch_unwind guard:")
+              print("\n".join(bad))
+              sys.exit(1)
+          print("✓ every extern \"C\" fn is guarded")
+          PY
+
+      # TODO/FIXME/XXX/HACK は informational (block しない)
+      - name: Detect TODO / FIXME / XXX / HACK (informational)
+        run: |
+          set -eo pipefail
+          hits=$(grep -rnE 'TODO|FIXME|XXX|HACK' src/ libalice/src/ --include="*.rs" || true)
+          if [ -n "$hits" ]; then
+            echo "::warning::TODO/FIXME/XXX/HACK found (informational, not blocking):"
+            echo "$hits" | head -50
+          else
+            echo "✓ No TODO/FIXME/XXX/HACK"
+          fi

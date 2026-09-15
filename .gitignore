@@ -144,3 +144,9 @@ test_output/
 # OS
 .DS_Store
 Thumbs.db
+
+# cargo-fuzz build output (root /target/ pattern does not cover it)
+fuzz/target/
+fuzz/artifacts/
+fuzz/corpus/
+mutants.out/

@@ -186,7 +186,16 @@ fn bpe_replace_length_law() {
             }
         }
         assert_eq!(out.len(), data.len() - matches);
-        assert!(matches >= 2, "most frequent pair occurs at least twice");
+        // The pair count is over adjacent positions (overlaps included), so the
+        // most frequent pair occurs ≥ 2 times overlapping but may be replaced once
+        let overlapping = data
+            .windows(2)
+            .filter(|w| w[0] == pair.0 && w[1] == pair.1)
+            .count();
+        assert!(
+            overlapping >= 2 && matches >= 1,
+            "{pair:?}: {overlapping} / {matches}"
+        );
         if !data.contains(&replacement) {
             let restored: Vec<u8> = out
                 .iter()
