@@ -5,8 +5,12 @@
 <h1 align="center">ALICE-Zip</h1>
 
 <p align="center">
-  <a href="https://github.com/ext-sakamoro/ALICE-Zip"><img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
+  <a href="https://crates.io/crates/alice-zip"><img src="https://img.shields.io/crates/v/alice-zip.svg" alt="crates.io"></a>
+  <a href="https://docs.rs/alice-zip"><img src="https://docs.rs/alice-zip/badge.svg" alt="docs.rs"></a>
+  <a href="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/ci.yml"><img src="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/security-audit.yml"><img src="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/security-audit.yml/badge.svg" alt="Security"></a>
+  <a href="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/fuzz.yml"><img src="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/fuzz.yml/badge.svg" alt="Fuzz"></a>
+  <a href="#ライセンス"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-green.svg" alt="License"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.9+-yellow.svg" alt="Python"></a>
 </p>
 
@@ -29,11 +33,60 @@ ALICE-Zipは、データそのものではなく**「データの生成方法」
 - **ロスレス:** ビット完全な復元
 - **クロスプラットフォーム:** Python, Rust, C#/Unity, C++/UE5
 
+## リポジトリ構成
+
+| パス | 内容 | 配布先 |
+|------|------|--------|
+| `/` (`alice-zip`) | **Rust core crate** — 圧縮 primitive (LZ77 / 辞書 / BPE / エントロピー / zlib) + 全 generator 法則 (多項式 / Fourier / Perlin)、`no_std + alloc` | [crates.io](https://crates.io/crates/alice-zip) · [docs.rs](https://docs.rs/alice-zip) |
+| `libalice/` (`alice-zip-cli`) | CLI `alice`、C FFI (`cdylib`)、PyO3 native module core generators の thin re-export | C# / UE5 binding、pip `libalice` |
+| `alice_zip/` | Python package (`ALICEZip` analyzer + `.alice` container) | pip `alice-zip` |
+| `bindings/` | C++ / C# (Unity) / UE5 wrapper (`libalice/include/alice.h`) | |
+
 ## インストール
 
 ```bash
+# Python
 pip install alice-zip
+
+# Rust
+cargo add alice-zip                       # std (default): zlib wrapper 付き
+cargo add alice-zip --features fft,parallel   # rustfft 解析、rayon texture
+cargo add alice-zip --no-default-features     # no_std + alloc (float は libm)
 ```
+
+### Rust crate
+
+```rust
+use alice_zip::prelude::*;
+
+// 圧縮 primitive (no_std)
+let tokens = lz77_encode(b"abcabcabcabc", 256, 32);
+assert_eq!(lz77_decode(&tokens)?, b"abcabcabcabc");
+assert_eq!(shannon_entropy(&(0..=255u8).collect::<Vec<_>>()), 8.0);
+
+// generator 法則: 系列を fit → 係数だけ保持 → 再生成
+let series: Vec<f32> = (0..64).map(|i| 3.0 + 2.0 * i as f32).collect();
+let (coeffs, degree, err) = fit_polynomial(&series, 4, 1e-6).unwrap();
+assert_eq!((degree, generate_polynomial(64, &coeffs) == series), (1, true));
+
+let (bins, dc) = analyze_signal(&generate_sine_wave(32, 1.0, 2.0, 0.0, 0.5), 4, 0.99);
+let regenerated = generate_from_coefficients(32, &bins, dc);
+# Ok::<(), alice_zip::ZipError>(())
+```
+
+| feature | 追加されるもの | default |
+|---------|----------------|---------|
+| `std` | `compression` (flate2 zlib)、`ZipError` の `std::error::Error` | ✓ |
+| `fft` | `generators::analyze_signal_fft` (rustfft、naive DFT と同一契約) | |
+| `parallel` | `generate_perlin_2d` / `_advanced` の rayon 行並列 | |
+| *(なし)* | `no_std + alloc`、float は `libm`、CI が `thumbv7em-none-eabihf` で rlib build | |
+
+永続化されている係数 convention は 2 つあり、別名で共存する (別の法則なので暗黙に
+混用できない): `fit_polynomial` / `generate_polynomial` (`x = 0..n-1`、昇順 —
+`alice-db` segment) と `fit_polynomial_unit` / `generate_polynomial_unit`
+(`x ∈ [0, 1]`、降順 — `.alice` container) 全法則は閉形式解との突合
+([`tests/analytic_oracle.rs`](tests/analytic_oracle.rs)) と fuzz (7 target、
+naive DFT ↔ FFT parity 含む) で検証 MSRV 1.87
 
 ## クイックスタート
 
@@ -119,16 +172,6 @@ restored = zipper.decompress(compressed)
 | ランダム/暗号化データ | パターンがない |
 | 小さなファイル (<1KB) | ヘッダーのオーバーヘッド |
 
-## ゲーム業界特別条項
-
-**ゲーム開発は無料！** クレジットに以下を追加するだけ：
-
-```
-Powered by ALICE-Zip (https://github.com/ext-sakamoro/ALICE-Zip)
-```
-
-詳細は[LICENSE](LICENSE)を参照。
-
 ## ソースからビルド
 
 ```bash
@@ -140,17 +183,19 @@ pip install -e .
 
 # テスト実行
 pytest tests/ -v
+
+# Rust core crate — CI の全 gate を local で再現 (scripts/preflight.sh --quick ≈ 3 分)
+scripts/preflight.sh
+
+# CLI / FFI crate
+cargo build --manifest-path libalice/Cargo.toml --release
 ```
 
 ## ライセンス
 
-**Open Core License**
-
-- **個人・教育利用**: MITライセンスで無料
-- **ゲーム開発**: クレジット表記のみで無料（ゲーム機本体への組み込み等は除く）
-- **商用利用**: CoreはMIT無料、高度な機能はPro/Enterpriseが必要
-
-詳細は[LICENSE](LICENSE)を参照。
+- Rust core crate `alice-zip` (`/`): [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE) (選択可)
+- CLI / FFI crate (`libalice/`)、Python package (`alice_zip/`)、bindings: [MIT](LICENSE-MIT)
+- `libalice-enterprise/`: 別建ての非公開 proprietary crate (同 dir の [LICENSE](libalice-enterprise/LICENSE) 参照)
 
 ## 作者
 

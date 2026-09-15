@@ -8,6 +8,27 @@
 //! The crate is `no_std + alloc` by default-features-off; the `std` feature
 //! (on by default) adds the zlib wrappers and `std::error::Error`.
 //!
+//! # Quick start
+//!
+//! ```
+//! use alice_zip::prelude::*;
+//!
+//! // Compression primitives (no_std)
+//! let tokens = lz77_encode(b"abcabcabcabc", 256, 32);
+//! assert_eq!(lz77_decode(&tokens)?, b"abcabcabcabc");
+//! assert_eq!(shannon_entropy(&(0..=255u8).collect::<Vec<_>>()), 8.0);
+//!
+//! // Generator laws: fit a series, keep the coefficients, regenerate
+//! let series: Vec<f32> = (0..64).map(|i| 3.0 + 2.0 * i as f32).collect();
+//! let (coeffs, degree, err) = fit_polynomial(&series, 4, 1e-6).unwrap();
+//! assert_eq!((degree, generate_polynomial(64, &coeffs) == series), (1, true));
+//!
+//! let (bins, dc) = analyze_signal(&generate_sine_wave(32, 1.0, 2.0, 0.0, 0.5), 4, 0.99);
+//! let regenerated = generate_from_coefficients(32, &bins, dc);
+//! # assert_eq!(regenerated.len(), 32);
+//! # Ok::<(), alice_zip::ZipError>(())
+//! ```
+//!
 //! # Module 構成
 //!
 //! | Module | 内容 | feature |
