@@ -1,0 +1,9 @@
+# cargo-mutants configuration (quality-deep.yml)
+#
+# Excluded because no host test can observe them (documented, not hidden):
+# - `math::FloatExt` — the `libm` shim only exists under `not(feature = "std")`;
+#   test binaries link std, whose inherent methods shadow the trait, so the shim
+#   body is never executed by tests (its correctness is the bare-metal rlib build
+#   + the identical law in the std path)
+# - `PerlinNoise`'s `Debug` impl — a truncated debug view, no behavioural contract
+exclude_re = ["FloatExt", "impl core::fmt::Debug for PerlinNoise"]
