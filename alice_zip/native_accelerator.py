@@ -17,21 +17,28 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Try to import native library (try both module names for compatibility)
+# Try to import the native extension. `import libalice` alone is not proof:
+# the repository root contains a `libalice/` directory (the Rust crate), which
+# Python happily imports as an empty namespace package, and until 2.3.0 a
+# second fallback imported the pure-Python `alice_zip` package itself as
+# "native". Require the extension's entry points to exist.
+_NATIVE_REQUIRED = ("sine_wave", "fourier_generate", "polynomial_generate", "perlin_2d")
 _HAS_LIBALICE = False
 _native = None
 try:
-    import libalice as _native
-    _HAS_LIBALICE = True
-    logger.info("libalice native acceleration enabled")
-except ImportError:
-    # Fallback: try alice_zip module name (older builds)
-    try:
-        import alice_zip as _native
+    import libalice as _candidate
+
+    if all(callable(getattr(_candidate, name, None)) for name in _NATIVE_REQUIRED):
+        _native = _candidate
         _HAS_LIBALICE = True
-        logger.info("alice_zip native acceleration enabled (legacy module name)")
-    except ImportError:
-        logger.debug("Native accelerator not available, using pure Python fallback")
+        logger.info("libalice native acceleration enabled")
+    else:
+        logger.debug(
+            "`libalice` importable but is not the native extension "
+            "(namespace package or stale build); using pure Python fallback"
+        )
+except ImportError:
+    logger.debug("Native accelerator not available, using pure Python fallback")
 
 
 def is_available() -> bool:

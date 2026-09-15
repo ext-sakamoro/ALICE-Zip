@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `polynomial_generate` raised `TypeError` on the native path when coefficients came
   as lists (as decoded from a `.alice` container) because PyO3 extracts tuples only;
   they are now normalised before the call (pure-Python fallback was unaffected)
+- `alice_zip.native_accelerator.is_available()` reported `True` without the extension:
+  the repository's `libalice/` directory imports as an empty namespace package and a
+  legacy fallback imported the pure-Python `alice_zip` package itself as "native";
+  availability now requires the extension entry points to exist
 
 ## [0.4.0] - 2026-09-15
 
