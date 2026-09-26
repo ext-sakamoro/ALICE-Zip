@@ -156,7 +156,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: libalice
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       # extension-module: the .so links against the interpreter at import time,
