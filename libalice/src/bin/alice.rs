@@ -22,7 +22,7 @@ use alice_core::compression::{dequantize_8bit, quantize_8bit, zlib_compress, zli
 #[derive(Parser)]
 #[command(name = "alice")]
 #[command(author = "Moroya Sakamoto")]
-#[command(version = "0.1.0")]
+#[command(version)] // 値を書かない = CARGO_PKG_VERSION が入る (literal は bump で drift)
 #[command(about = "High-performance procedural compression for scientific data", long_about = None)]
 struct Cli {
     #[command(subcommand)]
