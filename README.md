@@ -195,12 +195,17 @@ cargo build --manifest-path libalice/Cargo.toml --release
 
 ## Related Projects
 
-| Project | Description |
-|---------|-------------|
-| [ALICE-DB](https://github.com/ext-sakamoro/ALICE-DB) | Model-based time-series database |
-| [ALICE-Edge](https://github.com/ext-sakamoro/ALICE-Edge) | Embedded/IoT model generator (no_std) |
-| [ALICE-Streaming-Protocol](https://github.com/ext-sakamoro/ALICE-Streaming-Protocol) | Ultra-low bandwidth video streaming |
-| [ALICE-Eco-System](https://github.com/ext-sakamoro/ALICE-Eco-System) | Complete Edge-to-Cloud pipeline demo |
+The same idea applied to other domains — this crate stores the recipe for a
+*signal*; these store the recipe for a shape, a physical state, or a frame.
+
+| Project | Description | Links |
+|---------|-------------|-------|
+| **ALICE-SDF** | 3D geometry as laws instead of polygons — GLSL / WGSL / HLSL transpile, SVO, marching cubes, cross-platform bit-exact evaluation | [crates.io](https://crates.io/crates/alice-sdf) · [docs.rs](https://docs.rs/alice-sdf) · [GitHub](https://github.com/ext-sakamoro/ALICE-SDF) |
+| **ALICE-DetMath** | The bit-exact transcendental layer (`sin` / `exp` / `atan2` / …) that this crate's Fourier / Perlin generators and ALICE-SDF both evaluate, so the same law yields the same bits on every platform | [crates.io](https://crates.io/crates/alice-det-math) · [docs.rs](https://docs.rs/alice-det-math) · [GitHub](https://github.com/ext-sakamoro/ALICE-DetMath) |
+| ALICE-DB | Model-based time-series database | [crates.io](https://crates.io/crates/alice-db) · [GitHub](https://github.com/ext-sakamoro/ALICE-DB) |
+| ALICE-Edge | Embedded / IoT model generator (`no_std`) | [crates.io](https://crates.io/crates/alice-edge) · [GitHub](https://github.com/ext-sakamoro/ALICE-Edge) |
+| ALICE-Streaming-Protocol | Ultra-low bandwidth video streaming | [crates.io](https://crates.io/crates/libasp) · [GitHub](https://github.com/ext-sakamoro/ALICE-Streaming-Protocol) |
+| ALICE-Eco-System | Complete Edge-to-Cloud pipeline demo | [GitHub](https://github.com/ext-sakamoro/ALICE-Eco-System) |
 
 All projects share the core philosophy: **encode the generation process, not the data itself**.
 
