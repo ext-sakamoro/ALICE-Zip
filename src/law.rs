@@ -53,6 +53,39 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::generators::polynomial::{horner_ascending, least_squares_fit};
+use sha2::{Digest, Sha256};
+
+/// Domain separation for [`SignalLaw::law_id`]
+///
+/// Published so that an independent implementation can reproduce an
+/// identifier byte for byte.
+pub const LAW_ID_DOMAIN: &[u8] = b"alice-zip/law-id/v1";
+
+/// Identifies the shape of law that [`SignalLaw::law_id`] hashes
+///
+/// A change to the encoding needs a new tag: it invalidates every identifier
+/// published under the old one, and silently reusing the tag would make two
+/// incompatible encodings indistinguishable.
+pub const SIGNAL_LAW_KIND: &[u8] = b"signal-law/polynomial/v1";
+
+/// Length prefix, so that concatenating two fields cannot be confused with a
+/// single longer one (`"ab" + "c"` and `"a" + "bc"` must not collide).
+fn update_length_prefixed(h: &mut Sha256, bytes: &[u8]) {
+    h.update(u64_len(bytes.len()).to_be_bytes());
+    h.update(bytes);
+}
+
+/// `usize` as the `u64` the encoding specifies
+///
+/// Widening on every target Rust supports; the cast is written out so the
+/// encoding does not depend on the host pointer width.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "usize is at most 64 bits on every supported target"
+)]
+const fn u64_len(n: usize) -> u64 {
+    n as u64
+}
 
 // (test builds link std, whose inherent methods shadow the trait → allow)
 #[cfg(not(feature = "std"))]
@@ -430,6 +463,73 @@ impl SignalLaw {
         horner_ascending(&self.coeffs, u)
     }
 
+    /// Content identifier of this law under a given numeric semantics
+    ///
+    /// Two laws share an identifier only if [`Self::evaluate`] returns the
+    /// same bits for every `x`, so an identifier can be used to say "this
+    /// result came from that law" across machines, implementations and years.
+    ///
+    /// # What goes in
+    ///
+    /// Exactly the inputs `evaluate` reads — [`Self::domain`] and the
+    /// coefficients — plus `semantics_id`, which identifies the arithmetic
+    /// used to evaluate the law. [`Self::evidence`], [`Self::residual`],
+    /// [`Self::provenance`] and [`Self::oracles`] are *not* included: they
+    /// describe how the law was obtained and justified, not what it computes,
+    /// so the same law fitted from different measurements shares one
+    /// identifier.
+    ///
+    /// `semantics_id` matters because a law whose evaluation calls a
+    /// transcendental is only reproducible if the implementation of that
+    /// transcendental is pinned too. Mixing it in means a change in the
+    /// arithmetic cannot silently reuse an identifier.
+    ///
+    /// # Encoding
+    ///
+    /// SHA-256 over, in order, each variable-length field prefixed with its
+    /// length as a big-endian `u64`:
+    ///
+    /// ```text
+    /// len(LAW_ID_DOMAIN)       LAW_ID_DOMAIN
+    /// len(SIGNAL_LAW_KIND)     SIGNAL_LAW_KIND
+    ///                          semantics_id                   (32 bytes)
+    ///                          domain.lo as big-endian bits   (8 bytes)
+    ///                          domain.hi as big-endian bits   (8 bytes)
+    /// len(coefficients)        each coefficient, big-endian bits
+    /// ```
+    ///
+    /// The length prefixes make the concatenation unambiguous, the tags keep
+    /// the digest from colliding with another protocol's, and the explicit
+    /// byte order keeps it independent of the host. Floats go in as raw bits:
+    /// `-0.0` is *not* folded into `+0.0`, because the sign of a zero
+    /// coefficient is observable in `evaluate` and folding the two would give
+    /// one identifier to laws that compute different bits.
+    ///
+    /// # Guarantee, and its limit
+    ///
+    /// Equal identifier implies bit-identical evaluation. **The converse does
+    /// not hold:** laws that evaluate identically may still differ here, the
+    /// simplest case being a trailing zero coefficient. Reducing a law to a
+    /// normal form first is a separate problem, so this identifier is not a
+    /// deduplication key.
+    ///
+    /// Non-finite coefficients and degenerate domains cannot reach this
+    /// method: [`Self::from_parts`] and [`Self::fit_polynomial`] reject them.
+    #[must_use]
+    pub fn law_id(&self, semantics_id: &[u8; 32]) -> [u8; 32] {
+        let mut h = Sha256::new();
+        update_length_prefixed(&mut h, LAW_ID_DOMAIN);
+        update_length_prefixed(&mut h, SIGNAL_LAW_KIND);
+        h.update(semantics_id);
+        h.update(self.domain.lo.to_bits().to_be_bytes());
+        h.update(self.domain.hi.to_bits().to_be_bytes());
+        h.update(u64_len(self.coeffs.len()).to_be_bytes());
+        for c in &self.coeffs {
+            h.update(c.to_bits().to_be_bytes());
+        }
+        h.finalize().into()
+    }
+
     /// `y - f(x)` over `points`, all of which must lie in the valid range
     fn residual_over(&self, points: &[(f64, f64)]) -> ResidualStats {
         let mut sum_sq = 0.0_f64;
@@ -508,5 +608,57 @@ impl SignalLaw {
         } else {
             Verdict::Breaks { rms }
         }
+    }
+}
+
+#[cfg(test)]
+mod law_id_encoding {
+    use super::{update_length_prefixed, Digest, Sha256};
+
+    /// The length prefix is what keeps one field from being read as part of
+    /// the next. Without it, `"ab" + "c"` and `"a" + "bc"` hash the same, so
+    /// two different laws could share an identifier once a second
+    /// variable-length field is added to the encoding.
+    #[test]
+    fn length_prefix_prevents_field_confusion() {
+        let prefixed = |a: &[u8], b: &[u8]| {
+            let mut h = Sha256::new();
+            update_length_prefixed(&mut h, a);
+            update_length_prefixed(&mut h, b);
+            h.finalize()
+        };
+        let plain = |a: &[u8], b: &[u8]| {
+            let mut h = Sha256::new();
+            h.update(a);
+            h.update(b);
+            h.finalize()
+        };
+
+        // Premise: the naive concatenation really does collide.
+        assert_eq!(
+            plain(b"ab", b"c"),
+            plain(b"a", b"bc"),
+            "premise: without a prefix these two field splits are one byte string"
+        );
+        // The encoding keeps them apart.
+        assert_ne!(
+            prefixed(b"ab", b"c"),
+            prefixed(b"a", b"bc"),
+            "the length prefix must separate adjacent fields"
+        );
+    }
+
+    /// The prefix is the length in bytes, big-endian, independent of the host
+    /// pointer width.
+    #[test]
+    fn length_prefix_is_eight_big_endian_bytes() {
+        let mut h = Sha256::new();
+        update_length_prefixed(&mut h, b"xy");
+        let via_helper = h.finalize();
+
+        let mut h = Sha256::new();
+        h.update(2_u64.to_be_bytes());
+        h.update(b"xy");
+        assert_eq!(via_helper, h.finalize());
     }
 }

@@ -29,6 +29,7 @@ dependencies = [
  "rand_chacha",
  "rayon",
  "rustfft",
+ "sha2",
 ]
 
 [[package]]
