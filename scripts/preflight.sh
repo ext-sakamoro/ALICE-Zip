@@ -57,9 +57,13 @@ cargo clippy --manifest-path libalice/Cargo.toml --all-targets --features python
 
 step "security: audit (3 lockfiles) / deny / machete / stub-guard / FFI guard"
 if have cargo-audit; then
-  cargo audit --deny yanked
-  cargo audit --deny yanked --file libalice/Cargo.lock
-  cargo audit --deny yanked --file libalice-enterprise/Cargo.lock
+  # the advisory database lives under the build directory: the default
+  # ~/.cargo/advisory-db may already hold another tool's copy, which cargo-audit
+  # refuses to reuse
+  db="${CARGO_TARGET_DIR:-target}/advisory-db"
+  cargo audit --db "$db" --deny yanked
+  cargo audit --db "$db" --deny yanked --file libalice/Cargo.lock
+  cargo audit --db "$db" --deny yanked --file libalice-enterprise/Cargo.lock
 else echo "skip: cargo-audit not installed" >&2; fi
 if have cargo-deny; then
   cargo deny --all-features check all
