@@ -181,6 +181,51 @@ assert!(matches!(law.ingest(&[(0.5, 2.0), (3.5, 8.0)], &policy), Verdict::Suppor
 The rules and their order are documented on the module and pinned by
 [`tests/analytic_law.rs`](tests/analytic_law.rs).
 
+#### Identifying a law by its content
+
+`SignalLaw::law_id` returns a 32-byte identifier for a law, so a stored result
+can name the law it came from:
+
+```rust
+use alice_zip::law::{Provenance, SignalLaw};
+
+let pts: Vec<(f64, f64)> = (0..5).map(|i| (i as f64, 1.0 + 2.0 * i as f64)).collect();
+let law = SignalLaw::fit_polynomial(&pts, 1, Provenance::new("bench run 1", "least squares"))?;
+
+// 32 bytes identifying the arithmetic used to evaluate the law; a crate that
+// provides deterministic transcendentals publishes one.
+let semantics_id = [0u8; 32];
+let id = law.law_id(&semantics_id);
+# Ok::<(), alice_zip::law::LawError>(())
+```
+
+The digest covers exactly what `evaluate` reads — the valid range and the
+coefficients — plus `semantics_id`. The evidence, the residual, the provenance
+and the oracle cases are deliberately left out: they record how the law was
+obtained and justified, not what it computes, so the same law fitted from two
+different measurement runs gets one identifier.
+
+**Guaranteed:** equal identifier implies `evaluate` returns the same bits for
+every `x`, on any target where the IEEE 754 basic operations hold.
+<!-- claim-test: equal_law_id_implies_bit_identical_evaluation -->
+
+**Not guaranteed:** the converse. Two laws that evaluate identically can still
+get different identifiers — appending a zero coefficient is the simplest case.
+Reducing a law to a normal form first is a separate problem, so the identifier
+is not a deduplication key.
+<!-- claim-test: evaluation_equivalent_laws_may_still_differ_in_id -->
+
+The byte layout is documented on `law_id` and pinned by a golden digest that CI
+reproduces on every supported target, so an independent implementation can
+compute the same identifier.
+<!-- claim-test: law_id_golden -->
+
+Floats enter the digest as raw bits, and `-0.0` is **not** folded into `+0.0`:
+with a negative linear coefficient the sign of a zero constant term is visible
+in the result at the lower end of the range, so folding the two would hand one
+identifier to laws that compute different bits.
+<!-- claim-test: negative_zero_is_observable_in_evaluation_so_it_changes_the_id -->
+
 ## Benchmarks
 
 | Data Type | Original | Compressed | Ratio |

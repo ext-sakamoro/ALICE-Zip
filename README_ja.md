@@ -176,6 +176,36 @@ assert!(matches!(law.ingest(&[(0.5, 2.0), (3.5, 8.0)], &policy), Verdict::Suppor
 
 規則と順序は module の doc に書き、[`tests/analytic_law.rs`](tests/analytic_law.rs) で固定している
 
+#### 法則を内容で識別する
+
+`SignalLaw::law_id` は法則の 32 byte の識別子を返す 保存した結果が「どの法則から出たか」を名指しできる
+
+```rust
+use alice_zip::law::{Provenance, SignalLaw};
+
+let pts: Vec<(f64, f64)> = (0..5).map(|i| (i as f64, 1.0 + 2.0 * i as f64)).collect();
+let law = SignalLaw::fit_polynomial(&pts, 1, Provenance::new("bench run 1", "least squares"))?;
+
+// 法則の評価に使う算術を識別する 32 byte 決定論的な超越関数を提供する crate が公開する
+let semantics_id = [0u8; 32];
+let id = law.law_id(&semantics_id);
+# Ok::<(), alice_zip::law::LawError>(())
+```
+
+digest に入るのは `evaluate` が読むもの (有効範囲と係数) と `semantics_id` だけ 証拠・残差・出典・oracle case は意図的に外してある それらは法則をどう得てどう正当化したかの記録で、法則が何を計算するかではないので、同じ法則を別の測定から当てはめても識別子は 1 つになる
+
+**保証する**: 識別子が同じなら、IEEE 754 の基本演算が成り立つどの target でも `evaluate` は全ての `x` で同じ bit を返す
+<!-- claim-test: equal_law_id_implies_bit_identical_evaluation -->
+
+**保証しない**: その逆 評価が同じでも識別子は分かれうる 末尾に 0 の係数を足した場合が最も単純な例 法則を正規形に落とすのは別の問題なので、識別子は重複排除の鍵には使えない
+<!-- claim-test: evaluation_equivalent_laws_may_still_differ_in_id -->
+
+byte 配置は `law_id` の doc に書き、CI が対応 target すべてで再現する golden digest で固定している 独立の実装が同じ識別子を計算できる
+<!-- claim-test: law_id_golden -->
+
+浮動小数は生の bit で入り、`-0.0` は `+0.0` に畳まない 1 次の係数が負なら、定数項の零の符号が範囲の下端の結果に現れるので、畳むと評価の異なる法則に同じ識別子を与えることになる
+<!-- claim-test: negative_zero_is_observable_in_evaluation_so_it_changes_the_id -->
+
 ## ベンチマーク
 
 | データタイプ | 元サイズ | 圧縮後 | 圧縮率 |

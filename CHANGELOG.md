@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `law::SignalLaw::law_id` — a 32-byte content identifier for a law, so a
+  stored result can name the law it came from. SHA-256 over the valid range,
+  the coefficients and a caller-supplied identifier for the numeric semantics;
+  the evidence, residual, provenance and oracle cases are excluded, so the same
+  law fitted from two measurement runs gets one identifier. Equal identifier
+  implies bit-identical `evaluate`; the converse is not guaranteed and the
+  identifier is not a deduplication key. The byte layout is documented on the
+  method and pinned by a golden digest.
+- `law::LAW_ID_DOMAIN` and `law::SIGNAL_LAW_KIND` — the two tags the encoding
+  mixes in, published so an independent implementation can reproduce an
+  identifier byte for byte.
+- `tests/analytic_law_id.rs` — injectivity over each evaluation input, metadata
+  independence, the observability of a zero's sign, rejection of the inputs the
+  encoding cannot canonicalise, and a cross-platform golden.
+
+### Changed
+
+- New dependency `sha2` (`default-features = false`, so the `no_std` build is
+  unaffected) for the digest above.
+
 ## [0.5.1] - 2026-10-07
 
 ### Added
