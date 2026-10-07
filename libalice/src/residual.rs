@@ -546,7 +546,7 @@ pub fn estimate_entropy(data: &[f32]) -> f32 {
     for &c in &counts {
         if c > 0 {
             let p = f64::from(c) * rcp_total; // multiply, not divide
-            entropy -= p * p.log2();
+            entropy -= p * alice_det_math::log2_64(p);
         }
     }
 
@@ -759,7 +759,7 @@ mod tests {
     /// Build a deterministic test signal (sine wave, 1000 samples).
     fn test_signal(n: usize) -> Vec<f32> {
         (0..n)
-            .map(|i| ((i as f32) * std::f32::consts::TAU / 100.0).sin() * 50.0)
+            .map(|i| alice_det_math::sin((i as f32) * std::f32::consts::TAU / 100.0) * 50.0)
             .collect()
     }
 

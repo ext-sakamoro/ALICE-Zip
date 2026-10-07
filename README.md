@@ -51,7 +51,7 @@ pip install alice-zip
 # Rust
 cargo add alice-zip                       # std (default): + zlib wrappers
 cargo add alice-zip --features fft,parallel,lzma   # rustfft analysis, rayon textures, LZMA residual containers
-cargo add alice-zip --no-default-features     # no_std + alloc (libm float math)
+cargo add alice-zip --no-default-features     # no_std + alloc (sqrt / floor / round via libm)
 ```
 
 ### Rust crate
@@ -80,7 +80,7 @@ let regenerated = generate_from_coefficients(32, &bins, dc);
 | `fft` | `generators::analyze_signal_fft` (rustfft, same contract as the naive DFT) | |
 | `parallel` | rayon row parallelism for `generate_perlin_2d` / `_advanced` | |
 | `lzma` | `compression::{lzma_compress, lzma_decompress}` + the `.alice` quantised / lossless residual containers (lzma-rs) | |
-| *(none)* | `no_std + alloc`; float math via `libm`; CI builds the rlib for `thumbv7em-none-eabihf` | |
+| *(none)* | `no_std + alloc`; `sqrt` / `floor` / `round` via `libm` (the transcendentals go through `alice-det-math` in every build); CI builds the rlib for `thumbv7em-none-eabihf` | |
 
 Two persisted coefficient conventions coexist under explicit names (they are
 different laws and are never silently interchangeable): `fit_polynomial` /
@@ -192,10 +192,10 @@ use alice_zip::law::{Provenance, SignalLaw};
 let pts: Vec<(f64, f64)> = (0..5).map(|i| (i as f64, 1.0 + 2.0 * i as f64)).collect();
 let law = SignalLaw::fit_polynomial(&pts, 1, Provenance::new("bench run 1", "least squares"))?;
 
-// 32 bytes identifying the arithmetic used to evaluate the law; a crate that
-// provides deterministic transcendentals publishes one.
-let semantics_id = [0u8; 32];
-let id = law.law_id(&semantics_id);
+// 32 bytes identifying the arithmetic used to evaluate the law. For a law
+// evaluated through this crate that is `law::SEMANTICS_ID`, re-exported from
+// `alice-det-math`; pass another value only if another arithmetic is used.
+let id = law.law_id(&alice_zip::law::SEMANTICS_ID);
 # Ok::<(), alice_zip::law::LawError>(())
 ```
 
@@ -208,6 +208,19 @@ different measurement runs gets one identifier.
 **Guaranteed:** equal identifier implies `evaluate` returns the same bits for
 every `x`, on any target where the IEEE 754 basic operations hold.
 <!-- claim-test: equal_law_id_implies_bit_identical_evaluation -->
+
+That guarantee is why the crate takes its float transcendentals from
+`alice-det-math` rather than from the platform: IEEE 754 does not require `sin`,
+`cos`, `atan2` or `log2` to be correctly rounded, so the platform version may
+differ between operating system, CPU and compiler. Measured on one machine by
+changing nothing but the `std` feature, the 0.5 line produced different bits in
+1 of 64 samples of `generate_multi_sine` and in 6 of 9 fields of
+`analyze_signal`. `tests/determinism_golden.rs` records the bit patterns and CI
+runs it on three operating systems and in the `no_std` build, and
+`clippy.toml` refuses the platform methods so they cannot come back; `sqrt`,
+`floor` and `round` stay on the platform because IEEE 754 specifies them
+exactly.
+<!-- claim-test: sinusoid_generators_are_the_recorded_bits -->
 
 **Not guaranteed:** the converse. Two laws that evaluate identically can still
 get different identifiers — appending a zero coefficient is the simplest case.

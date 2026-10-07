@@ -19,6 +19,10 @@
 use alloc::vec::Vec;
 use core::f32::consts::PI;
 
+use alice_det_math::{atan2, cos, cos64, sin, sin64};
+
+// `sqrt` only: IEEE 754 specifies it exactly, so the shim and the platform
+// version agree bit for bit. The transcendentals above do not go through it.
 // (test builds link std, whose inherent methods shadow the trait → allow)
 #[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
@@ -52,7 +56,7 @@ pub fn analyze_signal(
     let spectrum: Vec<(usize, f32, f32)> = (1..=n / 2)
         .map(|k| {
             let (re, im) = dft_bin(&centered, k);
-            (k, (re * re + im * im).sqrt(), im.atan2(re))
+            (k, (re * re + im * im).sqrt(), atan2(im, re))
         })
         .collect();
 
@@ -130,7 +134,7 @@ pub fn generate_from_coefficients(
             let x = i as f32;
             let sum: f32 = terms
                 .iter()
-                .map(|&(amp, omega, phase)| amp * (omega * x + phase).cos())
+                .map(|&(amp, omega, phase)| amp * cos(omega * x + phase))
                 .sum();
             sum + dc_offset
         })
@@ -155,7 +159,7 @@ pub fn generate_sine_wave(
     (0..n)
         .map(|i| {
             let theta = 2.0 * PI * frequency * i as f32 * inv_n + phase;
-            amplitude * theta.sin() + dc_offset
+            amplitude * sin(theta) + dc_offset
         })
         .collect()
 }
@@ -181,7 +185,7 @@ pub fn generate_multi_sine(n: usize, components: &[(f32, f32, f32)], dc_offset: 
                 .iter()
                 .map(|&(freq, amp, phase)| {
                     let theta = 2.0 * PI * freq * x * inv_n + phase;
-                    amp * theta.sin()
+                    amp * sin(theta)
                 })
                 .sum();
             sum + dc_offset
@@ -235,8 +239,8 @@ fn dft_bin(values: &[f32], k: usize) -> (f32, f32) {
     let mut im = 0.0_f64;
     for (i, &v) in values.iter().enumerate() {
         let theta = omega * i as f64;
-        re += f64::from(v) * theta.cos();
-        im -= f64::from(v) * theta.sin();
+        re += f64::from(v) * cos64(theta);
+        im -= f64::from(v) * sin64(theta);
     }
     (re as f32, im as f32)
 }

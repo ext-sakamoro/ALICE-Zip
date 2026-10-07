@@ -2,6 +2,23 @@
 
 All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
+## [2.5.0] - 2026-10-08
+
+### Changed
+- Core crate raised to `alice-zip` 0.6, whose float transcendentals now come from
+  `alice-det-math` instead of the platform `libm`. The signal generators and the entropy
+  estimate re-exported through `alice_core` therefore return different bits in the last
+  places; analytic behaviour, the container formats and this crate's own API are unchanged
+  (see the core [CHANGELOG](../CHANGELOG.md) for why bit-identical transcendentals are a
+  requirement rather than a preference)
+- **Breaking:** this crate's own float transcendentals follow, so results change in the
+  last places for `analyzer` (sine fitting, variance and mean squared error),
+  `media::audio` (sinusoid synthesis), `media::image` (gradient direction and the radial
+  distance normalisation) and `residual` (the entropy estimate). The repository
+  `clippy.toml` now refuses the platform methods in this crate too, so a later change
+  cannot reintroduce one unnoticed; `sqrt`, `floor`, `round` and `mul_add` are unaffected
+  because IEEE 754 specifies each of them exactly
+
 ## [2.4.0] - 2026-09-16
 
 ### Changed

@@ -47,7 +47,9 @@ mod tests {
 
     #[test]
     fn test_compress_residual_quantized() {
-        let data: Vec<f32> = (0..1000).map(|i| (i as f32).sin() * 100.0).collect();
+        let data: Vec<f32> = (0..1000)
+            .map(|i| alice_det_math::sin(i as f32) * 100.0)
+            .collect();
 
         let compressed = compress_residual_quantized(&data, 8, 6).unwrap();
         let restored = decompress_residual_quantized(&compressed).unwrap();
@@ -67,7 +69,9 @@ mod tests {
 
     #[test]
     fn test_compress_residual_lossless() {
-        let data: Vec<f32> = (0..1000).map(|i| (i as f32).sin() * 100.0).collect();
+        let data: Vec<f32> = (0..1000)
+            .map(|i| alice_det_math::sin(i as f32) * 100.0)
+            .collect();
 
         let compressed = compress_residual_lossless(&data, 6).unwrap();
         let restored = decompress_residual_lossless(&compressed).unwrap();

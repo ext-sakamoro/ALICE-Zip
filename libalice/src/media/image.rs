@@ -139,8 +139,8 @@ impl ImageGenerator {
         let rcp_h = if h > 1 { 1.0 / (h - 1) as f32 } else { 1.0 };
 
         let angle_rad = angle_degrees * (PI / 180.0);
-        let nx = angle_rad.cos();
-        let ny = angle_rad.sin();
+        let nx = alice_det_math::cos(angle_rad);
+        let ny = alice_det_math::sin(angle_rad);
 
         // Pre-compute divisor reciprocal to avoid per-pixel division
         let divisor = (w as f32).mul_add(nx.abs(), (h as f32) * ny.abs());
@@ -189,7 +189,7 @@ impl ImageGenerator {
         // Maximum possible distance from centre (to a corner)
         let dx_max = cx.max(w as f32 - cx);
         let dy_max = cy.max(h as f32 - cy);
-        let max_dist = dx_max.hypot(dy_max);
+        let max_dist = alice_det_math::hypot(dx_max, dy_max);
         let rcp_max = if max_dist > 1e-10 {
             1.0 / max_dist
         } else {
@@ -209,7 +209,7 @@ impl ImageGenerator {
             for x in 0..w {
                 let dx = x as f32 - cx;
                 let dy = y as f32 - cy;
-                let t = (dx.hypot(dy) * rcp_max).clamp(0.0, 1.0);
+                let t = (alice_det_math::hypot(dx, dy) * rcp_max).clamp(0.0, 1.0);
                 let one_minus_t = 1.0 - t;
                 for ch in 0..3 {
                     let v = s[ch].mul_add(one_minus_t, e[ch] * t);

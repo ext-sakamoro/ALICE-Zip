@@ -68,6 +68,20 @@ pub const LAW_ID_DOMAIN: &[u8] = b"alice-zip/law-id/v1";
 /// incompatible encodings indistinguishable.
 pub const SIGNAL_LAW_KIND: &[u8] = b"signal-law/polynomial/v1";
 
+/// The numeric semantics this crate evaluates laws with, to pass as
+/// `semantics_id` to [`SignalLaw::law_id`]
+///
+/// Re-exported from `alice-det-math`, which derives it from the reference
+/// values its kernels are pinned against. It is a parameter of `law_id` rather
+/// than a constant baked into it, so that a caller evaluating a law with other
+/// arithmetic can say so; this constant is the right value for a law evaluated
+/// through this crate.
+///
+/// Without it a caller has nothing to pass but an invented array, and an
+/// identifier whose arithmetic half is invented does not identify the
+/// arithmetic.
+pub use alice_det_math::SEMANTICS_ID;
+
 /// Length prefix, so that concatenating two fields cannot be confused with a
 /// single longer one (`"ab" + "c"` and `"a" + "bc"` must not collide).
 fn update_length_prefixed(h: &mut Sha256, bytes: &[u8]) {

@@ -57,7 +57,10 @@ fn residual_is_measured_against_the_evidence_not_reported_by_the_fit() {
     assert!((r.max_abs - 0.5).abs() < 1e-12, "{r:?}");
     // rms of x - 0.5 over 101 evenly spaced points: sqrt(Σ(i/100 - 0.5)² / 101)
     let expect = ((0..=100)
-        .map(|i| (i as f64 / 100.0 - 0.5).powi(2))
+        .map(|i| {
+            let d = i as f64 / 100.0 - 0.5;
+            d * d
+        })
         .sum::<f64>()
         / 101.0)
         .sqrt();

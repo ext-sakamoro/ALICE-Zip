@@ -91,10 +91,13 @@ if [[ $quick -eq 1 ]]; then
   echo; echo "preflight --quick: OK (test suites / fuzz build / semver skipped)"; exit 0
 fi
 
-step "tests (default / docs.rs set / no_std lib / libalice)"
+step "tests (default / docs.rs set / no_std lib / no_std golden / libalice)"
 cargo test
 cargo test --features "$ALL_FEATURES"
 cargo test --lib --no-default-features
+# Same digests as the default build, with libm in place of the platform
+# `sqrt` / `floor` / `round` (ci.yml has the same step)
+cargo test --test determinism_golden --no-default-features
 cargo test --manifest-path libalice/Cargo.toml
 cargo test --manifest-path libalice/Cargo.toml --features codec
 

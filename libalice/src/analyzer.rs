@@ -105,7 +105,13 @@ fn variance_f64(data: &[f64]) -> f64 {
     }
     let inv_n = 1.0 / n as f64;
     let mean = data.iter().sum::<f64>() * inv_n;
-    data.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() * inv_n
+    data.iter()
+        .map(|&x| {
+            let d = x - mean;
+            d * d
+        })
+        .sum::<f64>()
+        * inv_n
 }
 
 /// Compute normalized MSE: MSE / variance (returns MSE when variance ≈ 0)
@@ -116,7 +122,10 @@ fn normalized_mse(data: &[f64], fitted: &[f64]) -> f64 {
     let mse = data
         .iter()
         .zip(fitted.iter())
-        .map(|(&a, &b)| (a - b).powi(2))
+        .map(|(&a, &b)| {
+            let d = a - b;
+            d * d
+        })
         .sum::<f64>()
         / n;
     let var = variance_f64(data);
@@ -255,7 +264,7 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
             .enumerate()
             .map(|(i, &y)| {
                 let arg = two_pi_f_inv_n * i as f64;
-                let fitted = amplitude * (arg + phase).sin() + dc_offset;
+                let fitted = amplitude * alice_det_math::sin64(arg + phase) + dc_offset;
                 let diff = f64::from(y) - fitted;
                 diff * diff
             })
@@ -273,7 +282,7 @@ pub fn try_sine_fit(data: &[f32]) -> Option<FitResult> {
         data,
         (0..n).map(|i| {
             let arg = two_pi_f_inv_n * i as f64;
-            amplitude * (arg + best_phase).sin() + dc_offset
+            amplitude * alice_det_math::sin64(arg + best_phase) + dc_offset
         }),
     );
 
@@ -675,7 +684,7 @@ mod tests {
     /// Generate a pure sine wave with known parameters
     fn make_sine(n: usize, freq: f32, amp: f32, phase: f32, dc: f32) -> Vec<f32> {
         (0..n)
-            .map(|i| dc + amp * (2.0 * PI * freq * i as f32 / n as f32 + phase).sin())
+            .map(|i| dc + amp * alice_det_math::sin(2.0 * PI * freq * i as f32 / n as f32 + phase))
             .collect()
     }
 
@@ -730,7 +739,8 @@ mod tests {
         let data: Vec<f32> = (0..n)
             .map(|i| {
                 let t = i as f32 / n as f32;
-                (2.0 * PI * 3.0 * t).sin() * 1.5 + (2.0 * PI * 7.0 * t).sin() * 0.8
+                alice_det_math::sin(2.0 * PI * 3.0 * t) * 1.5
+                    + alice_det_math::sin(2.0 * PI * 7.0 * t) * 0.8
             })
             .collect();
 

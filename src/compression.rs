@@ -307,7 +307,9 @@ mod tests {
 
         #[test]
         fn quantized_container_roundtrip_both_widths() {
-            let residual: Vec<f32> = (0..300).map(|i| (i as f32 * 0.37).sin() * 5.0).collect();
+            let residual: Vec<f32> = (0..300)
+                .map(|i| alice_det_math::sin(i as f32 * 0.37) * 5.0)
+                .collect();
             for bits in [8u8, 16, 0, 255] {
                 let c = compress_residual_quantized(&residual, bits, 6).unwrap();
                 assert_eq!(c[0], bits);

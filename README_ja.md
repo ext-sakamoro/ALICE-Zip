@@ -51,7 +51,7 @@ pip install alice-zip
 # Rust
 cargo add alice-zip                       # std (default): zlib wrapper 付き
 cargo add alice-zip --features fft,parallel,lzma   # rustfft 解析、rayon texture、LZMA residual container
-cargo add alice-zip --no-default-features     # no_std + alloc (float は libm)
+cargo add alice-zip --no-default-features     # no_std + alloc (sqrt / floor / round は libm)
 ```
 
 ### Rust crate
@@ -80,7 +80,7 @@ let regenerated = generate_from_coefficients(32, &bins, dc);
 | `fft` | `generators::analyze_signal_fft` (rustfft、naive DFT と同一契約) | |
 | `parallel` | `generate_perlin_2d` / `_advanced` の rayon 行並列 | |
 | `lzma` | `compression::{lzma_compress, lzma_decompress}` + `.alice` の量子化 / lossless residual container (lzma-rs) | |
-| *(なし)* | `no_std + alloc`、float は `libm`、CI が `thumbv7em-none-eabihf` で rlib build | |
+| *(なし)* | `no_std + alloc`、`sqrt` / `floor` / `round` は `libm` (超越関数は全 build で `alice-det-math` 経由)、CI が `thumbv7em-none-eabihf` で rlib build | |
 
 永続化されている係数 convention は 2 つあり、別名で共存する (別の法則なので暗黙に
 混用できない): `fit_polynomial` / `generate_polynomial` (`x = 0..n-1`、昇順 —
@@ -186,9 +186,9 @@ use alice_zip::law::{Provenance, SignalLaw};
 let pts: Vec<(f64, f64)> = (0..5).map(|i| (i as f64, 1.0 + 2.0 * i as f64)).collect();
 let law = SignalLaw::fit_polynomial(&pts, 1, Provenance::new("bench run 1", "least squares"))?;
 
-// 法則の評価に使う算術を識別する 32 byte 決定論的な超越関数を提供する crate が公開する
-let semantics_id = [0u8; 32];
-let id = law.law_id(&semantics_id);
+// 法則の評価に使う算術を識別する 32 byte 本 crate で評価する法則なら
+// `law::SEMANTICS_ID` (`alice-det-math` からの再公開) 別の算術を使う場合だけ別の値を渡す
+let id = law.law_id(&alice_zip::law::SEMANTICS_ID);
 # Ok::<(), alice_zip::law::LawError>(())
 ```
 
@@ -196,6 +196,9 @@ digest に入るのは `evaluate` が読むもの (有効範囲と係数) と `s
 
 **保証する**: 識別子が同じなら、IEEE 754 の基本演算が成り立つどの target でも `evaluate` は全ての `x` で同じ bit を返す
 <!-- claim-test: equal_law_id_implies_bit_identical_evaluation -->
+
+この保証があるため、float の超越関数は platform ではなく `alice-det-math` から取る IEEE 754 は `sin` / `cos` / `atan2` / `log2` に正確丸めを要求しないので、platform 版は OS / CPU / compiler で違いうる `std` feature だけを変えた同一機での実測では、0.5 系は `generate_multi_sine` が 64 sample のうち 1、`analyze_signal` が 9 field のうち 6 で別の bit を返した `tests/determinism_golden.rs` が bit 配列を記録し、CI が 3 OS と `no_std` build で走らせる `clippy.toml` が platform の method を拒否するので逆流しない `sqrt` / `floor` / `round` は IEEE 754 が結果を 1 通りに定めるので platform のままにしている
+<!-- claim-test: sinusoid_generators_are_the_recorded_bits -->
 
 **保証しない**: その逆 評価が同じでも識別子は分かれうる 末尾に 0 の係数を足した場合が最も単純な例 法則を正規形に落とすのは別の問題なので、識別子は重複排除の鍵には使えない
 <!-- claim-test: evaluation_equivalent_laws_may_still_differ_in_id -->

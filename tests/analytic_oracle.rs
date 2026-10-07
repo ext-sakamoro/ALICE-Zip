@@ -21,6 +21,16 @@ use alice_zip::generators::{
 use alice_zip::prelude::*;
 use std::f32::consts::PI;
 
+/// `base^exponent` left-to-right, so the association order is written down
+/// rather than left to the compiler as `f64::powi` does
+fn pow_fixed_order(base: f64, exponent: usize) -> f64 {
+    let mut acc = 1.0;
+    for _ in 0..exponent {
+        acc *= base;
+    }
+    acc
+}
+
 /// Small deterministic corpus shared by the round-trip laws
 fn corpus() -> Vec<Vec<u8>> {
     let mut lcg = 0x2545_F491_4F6C_DD1Du64;
@@ -47,6 +57,10 @@ fn corpus() -> Vec<Vec<u8>> {
 fn entropy_equiprobable_k_symbols_is_log2_k() {
     for k in [1u32, 2, 3, 5, 8, 16, 37, 100, 256] {
         let data: Vec<u8> = (0..k * 11).map(|i| (i % k) as u8).collect();
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "the expected value has to come from somewhere independent of the implementation under test: the platform libm is that reference here, and the tolerance below is orders of magnitude looser than any disagreement between libm implementations"
+        )]
         let expected = f64::from(k).log2();
         let e = shannon_entropy(&data);
         assert!((e - expected).abs() < 1e-9, "k={k}: {e} vs {expected}");
@@ -60,6 +74,10 @@ fn entropy_binary_source_matches_closed_form() {
         let mut data = vec![0u8; total - ones];
         data.extend(std::iter::repeat_n(1u8, ones));
         let p = ones as f64 / total as f64;
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "the expected value has to come from somewhere independent of the implementation under test: the platform libm is that reference here, and the tolerance below is orders of magnitude looser than any disagreement between libm implementations"
+        )]
         let expected = -(p * p.log2() + (1.0 - p) * (1.0 - p).log2());
         let e = shannon_entropy(&data);
         assert!((e - expected).abs() < 1e-9, "p={p}: {e} vs {expected}");
@@ -250,7 +268,7 @@ fn fit_polynomial_recovers_f32_sampled_polynomials() {
             let coeffs: Vec<f64> = unit_coeffs
                 .iter()
                 .enumerate()
-                .map(|(j, a)| a * h.powi(j as i32))
+                .map(|(j, a)| a * pow_fixed_order(h, j))
                 .collect();
             let values = generate_polynomial(n, &coeffs);
             let (fit, degree, err) = fit_polynomial(&values, 6, 1e-9).expect("fit");
@@ -260,7 +278,7 @@ fn fit_polynomial_recovers_f32_sampled_polynomials() {
             } else {
                 assert_eq!(degree, d, "n={n} d={d}: {fit:?}");
                 for (j, (a, b)) in fit.iter().zip(&unit_coeffs).enumerate() {
-                    let a_unit = a / h.powi(j as i32);
+                    let a_unit = a / pow_fixed_order(h, j);
                     assert!(
                         (a_unit - b).abs() < 1e-3,
                         "n={n} d={d} j={j}: {a_unit} vs {b}"
@@ -333,7 +351,10 @@ fn single_bin_reconstruction_is_exact_including_nyquist() {
             let amp = 1.5f32;
             let phase = 0.4f32;
             let samples: Vec<f32> = (0..n)
-                .map(|i| amp * (2.0 * PI * k as f32 * i as f32 / n as f32 + phase).cos() + 0.25)
+                .map(|i| {
+                    amp * alice_det_math::cos(2.0 * PI * k as f32 * i as f32 / n as f32 + phase)
+                        + 0.25
+                })
                 .collect();
             let (coefs, dc) = analyze_signal(&samples, 1, 1.0);
             assert_eq!(coefs.len(), 1, "n={n} k={k}: {coefs:?}");
@@ -341,6 +362,10 @@ fn single_bin_reconstruction_is_exact_including_nyquist() {
             assert_eq!(kk, k);
             // At Nyquist cos(π i + φ) = cos φ · (−1)^i: the phase collapses into
             // the (real) amplitude, |X| = A n |cos φ|; elsewhere |X| = A n / 2
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "the expected value has to come from somewhere independent of the implementation under test: the platform libm is that reference here, and the tolerance below is orders of magnitude looser than any disagreement between libm implementations"
+            )]
             let expected_mag = if 2 * k == n {
                 amp * n as f32 * phase.cos().abs()
             } else {
@@ -366,7 +391,7 @@ fn full_spectrum_reconstructs_any_signal() {
     // Fourier completeness: keeping all n/2 bins reproduces the input
     for n in [4usize, 9, 32, 65, 128] {
         let signal: Vec<f32> = (0..n)
-            .map(|i| ((i * i) % 13) as f32 - 6.0 + (i as f32).sin())
+            .map(|i| ((i * i) % 13) as f32 - 6.0 + alice_det_math::sin(i as f32))
             .collect();
         let (coefs, dc) = analyze_signal(&signal, n, 1.0);
         let recon = generate_from_coefficients(n, &coefs, dc);
@@ -389,6 +414,10 @@ fn multi_sine_is_sum_of_single_sines() {
             let sum: f32 = singles.iter().map(|s| s[i]).sum::<f32>() + 0.75;
             assert!((multi[i] - sum).abs() < 1e-5, "n={n} i={i}");
             // closed form
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "the expected value has to come from somewhere independent of the implementation under test: the platform libm is that reference here, and the tolerance below is orders of magnitude looser than any disagreement between libm implementations"
+            )]
             let expected: f32 = comps
                 .iter()
                 .map(|&(f, a, p)| a * (2.0 * PI * f * i as f32 / n as f32 + p).sin())
@@ -709,13 +738,19 @@ fn fit_error_is_normalised_mse_of_the_returned_fit() {
         let mean = values.iter().map(|v| f64::from(*v)).sum::<f64>() / n;
         let var = values
             .iter()
-            .map(|v| (f64::from(*v) - mean).powi(2))
+            .map(|v| {
+                let d = f64::from(*v) - mean;
+                d * d
+            })
             .sum::<f64>()
             / n;
         let mse = values
             .iter()
             .zip(&regen)
-            .map(|(y, p)| (f64::from(*y) - f64::from(*p)).powi(2))
+            .map(|(y, p)| {
+                let d = f64::from(*y) - f64::from(*p);
+                d * d
+            })
             .sum::<f64>()
             / n;
         let expected = mse / var;
@@ -863,7 +898,7 @@ fn residual_containers_have_the_documented_layout_and_round_trip() {
         decompress_residual_quantized, lzma_compress,
     };
     let residual: Vec<f32> = (0..500)
-        .map(|i| ((i as f32) * 0.05).cos() * 3.0 - 1.0)
+        .map(|i| alice_det_math::cos((i as f32) * 0.05) * 3.0 - 1.0)
         .collect();
     for bits in [8u8, 16] {
         let c = compress_residual_quantized(&residual, bits, 6).unwrap();

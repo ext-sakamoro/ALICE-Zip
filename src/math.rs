@@ -1,26 +1,35 @@
-//! `no_std` 用の float 数学関数 shim
+//! `no_std` 用の float 数学関数 shim (IEEE 754 が厳密に規定する演算のみ)
 //!
-//! `std` あり: `f32` / `f64` の inherent method (`sin` / `sqrt` / `log2` 等) を
-//! そのまま使う (本 module は空)
+//! `std` あり: `f32` / `f64` の inherent method をそのまま使う (本 module は空)
 //!
-//! `std` なし (`--no-default-features`): core には float の超越関数が無いため、
-//! 同名 method を [`FloatExt`] trait で提供し、実装は [`libm`] (pure Rust、
-//! `no_std`) に委譲する 各 module は
-//! `#[cfg(not(feature = "std"))] use crate::math::FloatExt;` で取り込む
-//! (`abs` / `clamp` / `is_finite` は core にあるので shim 不要)
+//! `std` なし (`--no-default-features`): core には無いので同名 method を
+//! [`FloatExt`] trait で提供し、実装は [`libm`] (pure Rust、`no_std`) に委譲する
+//! 各 module は `#[cfg(not(feature = "std"))] use crate::math::FloatExt;` で
+//! 取り込む (`abs` / `clamp` / `is_finite` は core にあるので shim 不要)
 //!
-//! 精度注意: `libm` と platform libm (glibc / macOS / MSVC CRT) は最終 ulp で
-//! 異なりうる 法則 (式の形・operand 順) は両 build で同一なので、差は超越関数
-//! 1 呼び出しあたり ≤ 1-2 ulp に留まる
+//! 本 trait が持つのは `sqrt` / `floor` / `round` の 3 つだけで、どれも
+//! **IEEE 754 が結果を 1 通りに定めている** ので、`libm` と platform libm
+//! (glibc / macOS / MSVC CRT) で bit 単位に一致する
+//!
+//! 超越関数 (`sin` / `cos` / `atan2` / `log2` 等) は本 trait に**置かない**
+//! IEEE 754 はこれらに正確丸めを要求しないので実装ごとに最終 ulp が違い、
+//! 「差は 1-2 ulp に留まる」は決定論の主張にならない (1 ulp 違えば別の bit で、
+//! 法則の内容識別子 [`crate::law::SignalLaw::law_id`] が指す評価結果が変わる)
+//! ⇒ `alice-det-math` 経由に統一し、`clippy.toml` の `disallowed-methods` で
+//! platform 版への逆流を禁止している
+//!
+//! 実測 (2026-10-08、同一機で feature set のみを変えた比較): 超越関数を
+//! platform libm に置いていた 0.5.2 では `generate_multi_sine` が 64 sample の
+//! うち 1、`analyze_signal` が 9 field のうち 6 で bits が違った `alice-det-math`
+//! へ移した後は 5 項目すべて一致する
 
+// 本 trait が使われるのは `no_std` の lib build だけ test build は std が
+// 繋がり inherent method が trait を隠すので、そこでは未使用になる
 #[cfg(not(feature = "std"))]
+#[cfg_attr(test, allow(dead_code))]
 pub trait FloatExt: Sized {
     fn sqrt(self) -> Self;
-    fn sin(self) -> Self;
-    fn cos(self) -> Self;
-    fn atan2(self, other: Self) -> Self;
     fn floor(self) -> Self;
-    fn log2(self) -> Self;
     fn round(self) -> Self;
 }
 
@@ -31,24 +40,8 @@ impl FloatExt for f32 {
         libm::sqrtf(self)
     }
     #[inline]
-    fn sin(self) -> Self {
-        libm::sinf(self)
-    }
-    #[inline]
-    fn cos(self) -> Self {
-        libm::cosf(self)
-    }
-    #[inline]
-    fn atan2(self, other: Self) -> Self {
-        libm::atan2f(self, other)
-    }
-    #[inline]
     fn floor(self) -> Self {
         libm::floorf(self)
-    }
-    #[inline]
-    fn log2(self) -> Self {
-        libm::log2f(self)
     }
     #[inline]
     fn round(self) -> Self {
@@ -63,24 +56,8 @@ impl FloatExt for f64 {
         libm::sqrt(self)
     }
     #[inline]
-    fn sin(self) -> Self {
-        libm::sin(self)
-    }
-    #[inline]
-    fn cos(self) -> Self {
-        libm::cos(self)
-    }
-    #[inline]
-    fn atan2(self, other: Self) -> Self {
-        libm::atan2(self, other)
-    }
-    #[inline]
     fn floor(self) -> Self {
         libm::floor(self)
-    }
-    #[inline]
-    fn log2(self) -> Self {
-        libm::log2(self)
     }
     #[inline]
     fn round(self) -> Self {

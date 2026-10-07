@@ -9,6 +9,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-08
+
+### Changed
+
+- **Breaking:** the float transcendentals now come from `alice-det-math`
+  instead of the platform `libm`, so `generators::{analyze_signal,
+  generate_from_coefficients, generate_sine_wave, generate_multi_sine}` and
+  `entropy::{shannon_entropy, theoretical_min_size}` return different bits in
+  the last places. Analytic behaviour is unchanged (the analytic oracles pass
+  untouched) and `law::SignalLaw::law_id` is unaffected, since evaluating a
+  polynomial law uses only IEEE 754 basic operations.
+
+  The reason is that `law_id` promises that two laws share an identifier only
+  if evaluating them returns the same bits for every `x`, and IEEE 754 does not
+  require the transcendentals to be correctly rounded: the platform
+  implementation is free to differ between operating system, CPU and compiler.
+  Measured on one machine by changing nothing but the `std` feature,
+  `generate_multi_sine` differed in 1 sample of 64 and `analyze_signal` in 6
+  fields of 9. After the move, all five recorded scenarios agree.
+
+- `math::FloatExt`, the `no_std` shim, now carries only `sqrt`, `floor` and
+  `round`. IEEE 754 specifies each of them exactly, so the shim and the
+  platform agree bit for bit; the module documentation no longer claims that
+  the transcendentals stay "within 1-2 ulp", which is not a statement about
+  determinism.
+
+### Added
+
+- `law::SEMANTICS_ID`, re-exported from `alice-det-math`: the value to pass as
+  `semantics_id` to `law::SignalLaw::law_id` for a law evaluated through this
+  crate. Previously a caller had nothing to pass but an invented array, and an
+  identifier whose arithmetic half is invented does not identify arithmetic.
+- `tests/determinism_golden.rs` — records the bit patterns of the law
+  identifier, the evaluation it stands for, the sinusoid generators, the
+  spectrum, the reconstruction, the entropy and one path with no transcendental
+  on it. Nothing in the crate pinned a single bit before: the 193 existing
+  tests all stayed green while the outputs above changed, because they compare
+  against closed forms with tolerances. Each scenario checks a minimum byte
+  count first, so a scenario that stopped producing values cannot pass by
+  comparing nothing against nothing. CI runs the file on three operating
+  systems in the default build and again in the `no_std` build, and every run
+  has to produce the same digests.
+- `clippy.toml` — `disallowed-methods` for the 50 float transcendental methods
+  of `f32` and `f64`, so a platform implementation cannot come back unnoticed.
+  `sqrt`, `floor`, `round`, `trunc`, `ceil` and `mul_add` are deliberately
+  absent (IEEE 754 specifies all of them exactly). The entropy tests keep the
+  platform `log2` behind a scoped allow, because an oracle whose expected value
+  comes from the implementation under test proves nothing.
+
+  The two gates catch different things, measured by reverting each change one
+  at a time: of 10 such reversions, the golden caught 8 and the lint 7, with 2
+  caught only by the lint (where the platform and `alice-det-math` happen to
+  agree at the sampled points) and 3 only by the golden (changes to the
+  identifier's field order and to the evaluation itself, which no lint can
+  see). None survived both.
+
 ## [0.5.2] - 2026-10-07
 
 ### Added
@@ -188,7 +244,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Initial crates.io release: `lz77`, `dictionary`, `entropy`, `bpe`, `error`,
   `prelude` (split from a single `lib.rs`, 102 tests)
 
-[Unreleased]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.4.0...v0.5.0

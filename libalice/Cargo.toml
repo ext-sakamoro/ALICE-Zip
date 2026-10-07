@@ -1,6 +1,6 @@
 [package]
 name = "alice-zip-cli"
-version = "2.4.0"
+version = "2.5.0"
 edition = "2021"
 # Same MSRV as the core crate; verified by the CI `msrv` job (`cargo +1.87 check`).
 # Declared so clippy's MSRV-aware lints do not suggest newer std APIs.
@@ -34,7 +34,11 @@ numpy = { version = "0.29", optional = true }
 
 # Generator laws (polynomial / Fourier / Perlin) — single home, see
 # src/generators/mod.rs. `fft` = rustfft analysis, `parallel` = rayon rows.
-alice_zip = { package = "alice-zip", path = "..", version = "0.5", features = ["std", "fft", "parallel", "lzma"] }
+# Deterministic transcendentals, the same ones the core crate uses: the
+# platform libm is not required to be correctly rounded, so a signal fitted
+# here and regenerated elsewhere would not agree bit for bit
+alice-det-math = "0.4"
+alice_zip = { package = "alice-zip", path = "..", version = "0.6", features = ["std", "fft", "parallel", "lzma"] }
 
 # Seeded white noise for media::audio
 rand = "0.8"

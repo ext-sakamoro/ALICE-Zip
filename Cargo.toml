@@ -1,6 +1,6 @@
 [package]
 name = "alice-zip"
-version = "0.5.2"
+version = "0.6.0"
 edition = "2021"
 # MSRV-aware dependency resolution (cargo 1.84+): `cargo update` never picks a
 # dependency whose own `rust-version` exceeds ours, so the lockfile cannot
@@ -39,8 +39,10 @@ exclude = [
 default = ["std"]
 # Host std: enables the `compression` module (zlib via flate2) and
 # `std::error::Error` for `ZipError`. Without it the crate is `no_std + alloc`
-# and float math goes through `libm`.
-std = ["dep:flate2", "rand/std", "rand_chacha/std"]
+# and the exactly-rounded float operations (`sqrt` / `floor` / `round`) go
+# through `libm`. The transcendentals do not depend on this feature: they go
+# through `alice-det-math` in both builds.
+std = ["dep:flate2", "rand/std", "rand_chacha/std", "alice-det-math/std"]
 # rustfft-backed `generators::analyze_signal_fft` (same contract as the naive
 # DFT `analyze_signal`, O(n log n)); implies `std`.
 fft = ["std", "dep:rustfft"]
@@ -51,9 +53,19 @@ parallel = ["std", "dep:rayon"]
 lzma = ["std", "dep:lzma-rs"]
 
 [dependencies]
+# Deterministic transcendentals. A content identifier for a law is only
+# meaningful if evaluating the law returns the same bits everywhere, and the
+# platform libm does not promise that: `sin` / `cos` / `atan2` / `log2` are not
+# required to be correctly rounded, so two targets may disagree in the last
+# place. This crate computes them in Rust, identically on every target, and
+# publishes `SEMANTICS_ID` so a stored result can name the arithmetic it used.
+alice-det-math = { version = "0.4", default-features = false }
 flate2 = { version = "1.0", optional = true }
-# Pure-Rust float transcendentals for the `no_std` build (the `FloatExt` shim in
-# `src/math.rs`). Unused under `std`, hence the cargo-machete ignore below.
+# `sqrt` / `floor` / `round` for the `no_std` build (the `FloatExt` shim in
+# `src/math.rs`). IEEE 754 specifies all three exactly, so these agree with the
+# platform versions bit for bit and carry no determinism risk; the operations
+# that do are in `alice-det-math` above. Unused under `std`, hence the
+# cargo-machete ignore below.
 libm = "0.2"
 # Seeded permutation table for `generators::PerlinNoise` (no_std capable).
 rand = { version = "0.8", default-features = false }

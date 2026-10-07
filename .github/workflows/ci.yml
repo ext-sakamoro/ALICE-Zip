@@ -36,6 +36,13 @@ jobs:
         run: cargo test --features "$ALL_FEATURES"
       - name: Test (no_std, lib unit tests)
         run: cargo test --lib --no-default-features
+      # The golden records bit patterns, so it is the one suite whose result
+      # depends on the OS and on which float implementation is linked. The two
+      # runs above cover the default build on each OS; this adds the no_std
+      # build, where `sqrt` / `floor` / `round` come from `libm` instead of the
+      # platform. Every one of these runs has to produce the same digests.
+      - name: Determinism golden (no_std build, same digests as the std build)
+        run: cargo test --test determinism_golden --no-default-features
 
   clippy:
     name: Clippy (-D warnings)

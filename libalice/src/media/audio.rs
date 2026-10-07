@@ -155,7 +155,7 @@ impl AudioGenerator {
         let rcp_sr = 1.0 / sr as f32;
         let omega = 2.0 * PI * freq * rcp_sr; // radians per sample
         (0..n)
-            .map(|i| amp * (omega * i as f32 + phase).sin())
+            .map(|i| amp * alice_det_math::sin(omega * i as f32 + phase))
             .collect()
     }
 
@@ -173,7 +173,9 @@ impl AudioGenerator {
             .map(|i| {
                 omegas
                     .iter()
-                    .map(|&(omega, amp, phase)| amp * omega.mul_add(i as f32, phase).sin())
+                    .map(|&(omega, amp, phase)| {
+                        amp * alice_det_math::sin(omega.mul_add(i as f32, phase))
+                    })
                     .sum::<f32>()
             })
             .collect()

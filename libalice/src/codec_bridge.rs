@@ -133,7 +133,7 @@ pub fn estimate_ratio(subband: SubBand3D, data_len: usize) -> f64 {
         SubBand3D::HHH => 1.2,
     };
     // Larger data generally compresses better due to pattern repetition
-    let size_factor = (data_len as f64 / 1024.0).ln().max(1.0);
+    let size_factor = alice_det_math::ln64(data_len as f64 / 1024.0).max(1.0);
     base_ratio * size_factor
 }
 
@@ -145,7 +145,7 @@ mod tests {
     fn test_compress_decompress_roundtrip() {
         // Sine-like correlated data (typical for low-frequency sub-band)
         let data: Vec<i32> = (0..256)
-            .map(|i| ((i as f32 * 0.1).sin() * 1000.0) as i32)
+            .map(|i| (alice_det_math::sin(i as f32 * 0.1) * 1000.0) as i32)
             .collect();
 
         let compressed = compress_subband(&data, SubBand3D::LLL).unwrap();

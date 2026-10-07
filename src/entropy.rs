@@ -4,15 +4,15 @@
 //! plus a lower-bound estimate of the compressed size (`bits / 8`, rounded up).
 //!
 //! Law: `H = -Σ p_i · log2(p_i)` over the 256 byte values with `p_i > 0`
-//! `log2` is exact (`f64::log2` / `libm::log2`), so `k` equiprobable symbols
-//! give `H = log2(k)` to within a few ulp (uniform 256 → exactly `8.0`)
+//! `log2` comes from [`alice_det_math`], which computes the same bits on every
+//! target; the platform `log2` is not required to be correctly rounded and so
+//! cannot be used here (the `math` module of this crate has the reasoning)
+//! `k` equiprobable symbols give
+//! `H = log2(k)` to within a few ulp (uniform 256 → exactly `8.0`)
 //! Versions ≤ 0.3 used a 20-term series that saturated at `≈ 6.74` for the
 //! uniform case; `tests/analytic_oracle.rs` pins the exact values
 
-// (test builds link std, whose inherent methods shadow the trait → allow)
-#[cfg(not(feature = "std"))]
-#[allow(unused_imports)]
-use crate::math::FloatExt;
+use alice_det_math::log2_64;
 
 /// シャノンエントロピー (bits per byte)
 ///
@@ -32,7 +32,7 @@ pub fn shannon_entropy(data: &[u8]) -> f64 {
     for &f in &freq {
         if f > 0 {
             let p = f as f64 / n;
-            entropy -= p * p.log2();
+            entropy -= p * log2_64(p);
         }
     }
     entropy
@@ -80,6 +80,10 @@ mod tests {
             }
         }
         let e = shannon_entropy(&data);
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "the expected value has to come from somewhere independent of the implementation under test: the platform libm is that reference here, and the tolerance below is orders of magnitude looser than any disagreement between libm implementations"
+        )]
         let expected = f64::from(k).log2();
         assert!(
             (e - expected).abs() < 1e-9,
@@ -124,6 +128,10 @@ mod tests {
         let mut data = alloc::vec![0u8; 900];
         data.extend_from_slice(&alloc::vec![1u8; 100]);
         let e = shannon_entropy(&data);
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "the expected value has to come from somewhere independent of the implementation under test: the platform libm is that reference here, and the tolerance below is orders of magnitude looser than any disagreement between libm implementations"
+        )]
         let expected = -(0.9_f64 * 0.9_f64.log2() + 0.1_f64 * 0.1_f64.log2());
         assert!((e - expected).abs() < 1e-9, "{e} vs {expected}");
     }
