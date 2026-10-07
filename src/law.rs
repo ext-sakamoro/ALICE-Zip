@@ -11,6 +11,7 @@
 //! | [`ResidualStats`] | measured `y - f(x)` over the evidence (not a quantity reported by the fit) |
 //! | [`Provenance`] | where the evidence came from and how the law was obtained |
 //! | [`OracleCase`] | a reference value the law has to reproduce within a tolerance |
+//! | [`SignalLawParts`] | every field public, for storing a law elsewhere ([`SignalLaw::to_parts`] / [`SignalLaw::from_parts`]) |
 //! | [`Verdict`] | what new evidence does to the law: supports it, updates its parameters, grows its residual, breaks it, or lies outside its range |
 //!
 //! Evaluation never extrapolates: [`SignalLaw::evaluate`] returns
@@ -218,6 +219,24 @@ pub enum Verdict {
     },
 }
 
+/// The stored form of a [`SignalLaw`]: every field public, for persisting the
+/// law in another format and restoring it with [`SignalLaw::from_parts`]
+#[derive(Debug, Clone, PartialEq)]
+pub struct SignalLawParts {
+    /// Ascending coefficients in `u = (x - lo) / (hi - lo)`
+    pub coefficients: Vec<f64>,
+    /// Valid range
+    pub domain: ValidRange,
+    /// Evidence the law stands on
+    pub evidence: Vec<(f64, f64)>,
+    /// Residual as stored; [`SignalLaw::from_parts`] re-measures it from the evidence
+    pub residual: ResidualStats,
+    /// Source and method
+    pub provenance: Provenance,
+    /// Reference values
+    pub oracles: Vec<OracleCase>,
+}
+
 /// `y = f(x)` as a polynomial of fixed degree, with its evidence, residual,
 /// valid range, provenance and oracle cases
 #[derive(Debug, Clone, PartialEq)]
@@ -283,6 +302,79 @@ impl SignalLaw {
     pub fn with_oracle(mut self, case: OracleCase) -> Self {
         self.oracles.push(case);
         self
+    }
+
+    /// Ascending coefficients in the normalised variable `u = (x - lo) / (hi - lo)`
+    #[must_use]
+    pub fn coefficients(&self) -> &[f64] {
+        &self.coeffs
+    }
+
+    /// The law as plain parts, for storing it elsewhere
+    #[must_use]
+    pub fn to_parts(&self) -> SignalLawParts {
+        SignalLawParts {
+            coefficients: self.coeffs.clone(),
+            domain: self.domain,
+            evidence: self.evidence.clone(),
+            residual: self.residual,
+            provenance: self.provenance.clone(),
+            oracles: self.oracles.clone(),
+        }
+    }
+
+    /// Restores a law from stored parts without refitting it
+    ///
+    /// The coefficients are taken as stored; the residual is measured again
+    /// over the stored evidence (a stored residual is not trusted).
+    ///
+    /// # Errors
+    ///
+    /// [`LawError::TooFewPoints`] for no coefficients, no evidence or fewer
+    /// points than coefficients; [`LawError::NonFinite`] for a non-finite
+    /// coefficient, bound or evidence value; [`LawError::DegenerateDomain`]
+    /// for `hi <= lo`; [`LawError::OutOfRange`] for evidence outside the domain
+    pub fn from_parts(parts: SignalLawParts) -> Result<Self, LawError> {
+        let SignalLawParts {
+            coefficients,
+            domain,
+            evidence,
+            provenance,
+            oracles,
+            ..
+        } = parts;
+        if coefficients.is_empty() || evidence.is_empty() || evidence.len() < coefficients.len() {
+            return Err(LawError::TooFewPoints);
+        }
+        if coefficients.iter().any(|c| !c.is_finite())
+            || !domain.lo.is_finite()
+            || !domain.hi.is_finite()
+            || evidence
+                .iter()
+                .any(|(x, y)| !x.is_finite() || !y.is_finite())
+        {
+            return Err(LawError::NonFinite);
+        }
+        if domain.hi <= domain.lo {
+            return Err(LawError::DegenerateDomain);
+        }
+        if evidence.iter().any(|(x, _)| !domain.contains(*x)) {
+            return Err(LawError::OutOfRange);
+        }
+        let mut law = Self {
+            coeffs: coefficients,
+            domain,
+            evidence,
+            residual: ResidualStats {
+                n: 0,
+                rms: 0.0,
+                max_abs: 0.0,
+            },
+            provenance,
+            oracles,
+        };
+        law.residual = law.residual_over(&law.evidence);
+        Ok(law)
     }
 
     /// Degree of the polynomial

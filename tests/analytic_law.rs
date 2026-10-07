@@ -238,3 +238,56 @@ fn provenance_is_kept_with_the_law() {
     assert_eq!(law.provenance().method, "least squares, degree 2");
     assert_eq!(law.evidence().len(), 3);
 }
+
+// ---- parts: storing and restoring a law ---------------------------------------
+
+#[test]
+fn a_law_survives_a_round_trip_through_its_parts() {
+    let law = law_from_three_points().with_oracle(OracleCase::new(
+        0.0,
+        0.3,
+        1e-9,
+        "the measured middle point",
+    ));
+    let parts = law.to_parts();
+    assert_eq!(parts.coefficients.len(), 3);
+    assert_eq!(parts.domain, ValidRange { lo: -1.0, hi: 1.0 });
+    let back = SignalLaw::from_parts(parts.clone()).unwrap();
+    assert_eq!(back, law);
+    // the residual is re-measured from the evidence, not trusted from the parts
+    let mut forged = parts;
+    forged.residual.rms = 0.0;
+    forged.evidence[1].1 = 0.9;
+    let back = SignalLaw::from_parts(forged).unwrap();
+    assert!(back.residual().rms > 0.1, "{:?}", back.residual());
+    assert_eq!(law.coefficients(), law.to_parts().coefficients.as_slice());
+}
+
+#[test]
+fn parts_that_do_not_describe_a_law_are_rejected() {
+    let good = law_from_three_points().to_parts();
+    let mut p = good.clone();
+    p.coefficients.clear();
+    assert_eq!(
+        SignalLaw::from_parts(p).unwrap_err(),
+        LawError::TooFewPoints
+    );
+    let mut p = good.clone();
+    p.domain = ValidRange { lo: 1.0, hi: 1.0 };
+    assert_eq!(
+        SignalLaw::from_parts(p).unwrap_err(),
+        LawError::DegenerateDomain
+    );
+    let mut p = good.clone();
+    p.coefficients[0] = f64::NAN;
+    assert_eq!(SignalLaw::from_parts(p).unwrap_err(), LawError::NonFinite);
+    let mut p = good.clone();
+    p.evidence.push((5.0, 1.0)); // evidence outside the stated domain
+    assert_eq!(SignalLaw::from_parts(p).unwrap_err(), LawError::OutOfRange);
+    let mut p = good;
+    p.evidence.clear(); // a law must keep the evidence it stands on
+    assert_eq!(
+        SignalLaw::from_parts(p).unwrap_err(),
+        LawError::TooFewPoints
+    );
+}

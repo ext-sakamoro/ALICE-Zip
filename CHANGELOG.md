@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-07
+
 ### Added
 - `law` module (`no_std`): `SignalLaw` keeps a fixed-degree polynomial fitted by
   least squares together with its evidence, measured `ResidualStats`, the closed
@@ -21,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `tests/analytic_law.rs`: closed-form recovery at unsampled conditions, residual
   measured against the evidence, range refusal, oracle outcomes, each verdict,
   and degenerate input (empty / too few points / single `x` / NaN / repeated `x`)
+- `law::SignalLawParts` with `SignalLaw::to_parts` / `from_parts` / `coefficients`:
+  every field public for storing a law in another format; `from_parts` validates
+  the parts (coefficients, finite values, domain, evidence inside the domain) and
+  measures the residual again from the stored evidence instead of trusting it
+
+### Changed
+- `scripts/preflight.sh`: `cargo audit` keeps its advisory database under the build
+  directory
 
 ## [0.5.0] - 2026-09-16
 

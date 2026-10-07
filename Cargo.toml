@@ -1,6 +1,6 @@
 [package]
 name = "alice-zip"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 # MSRV-aware dependency resolution (cargo 1.84+): `cargo update` never picks a
 # dependency whose own `rust-version` exceeds ours, so the lockfile cannot

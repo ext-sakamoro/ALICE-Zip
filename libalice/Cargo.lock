@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "alice-zip"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "flate2",
  "libm",
