@@ -79,7 +79,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # EmbarkStudios/cargo-deny-action@v2 は Docker container 内で稼働し path dep が
-      # 見えないため直接 install (canonical 罠 #1)
+      # 見えないため直接 install
       - name: Install cargo-deny
         run: cargo install --locked cargo-deny
       - name: cargo deny (core, all features)
@@ -114,7 +114,7 @@ jobs:
       # 必要 file が漏れる — これらは repo / workspace に file がある限り
       # cargo build も cargo test も clippy も preflight も全部通り、
       # crates.io から取得した利用者だけが compile 不能になる
-      # (2026-09-28 ALICE-LOL lol.gbnf、canonical template 罠 #51)
+      # (2026-09-28 ALICE-LOL lol.gbnf で発生)
       #
       # semver-checks は baseline を build するので結果的に検出するが、
       # (a) 壊れた版を publish した後にしか分からない
@@ -153,7 +153,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      # set -o pipefail: `| tee` が cargo の exit code を mask しないように (罠 #22)
+      # set -o pipefail: `| tee` が cargo の exit code を mask しないように
       - name: Run coverage (docs.rs feature set, unit + integration tests)
         run: |
           set -o pipefail
@@ -190,7 +190,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      # CLAUDE.md「仮実装完了偽装の禁止ルール」準拠 core src/ + libalice/src/ の
+      # core src/ + libalice/src/ の
       # production path に todo! / unimplemented! / panic!(STUB) が混入していないか grep で
       # block libalice/src/bin/ は CLI 意図的 panic 許容のため除外
       - name: Detect todo! / unimplemented! / panic!(STUB)
@@ -205,7 +205,7 @@ jobs:
             echo "$hits"
             echo ""
             echo "Fix: use ? operator, Result<T, E>, or remove the stub."
-            echo "  See CLAUDE.md § 仮実装完了偽装の禁止ルール"
+            echo "  A stub must fail fast, not return a silent Ok."
             exit 1
           fi
           echo "✓ No todo! / unimplemented! / panic!(STUB) in src/ or libalice/src/"

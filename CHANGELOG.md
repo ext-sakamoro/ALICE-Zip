@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the transcendentals stay "within 1-2 ulp", which is not a statement about
   determinism.
 
+- `.gitignore` を Rust / Python のビルド生成物に絞り、CI と test の comment を
+  外部参照でなく理由そのものを書く形に直した (`.gitignore` は公開 package に
+  同梱されるので、開発環境固有の除外は clone ごとの `.git/info/exclude` に置く)
+
 ### Added
 
 - `law::SEMANTICS_ID`, re-exported from `alice-det-math`: the value to pass as
