@@ -149,6 +149,33 @@ restored = zipper.decompress(compressed)
 結果: 400 KB → 280バイト = 1400倍圧縮
 ```
 
+### 証拠つきの法則 (`law` module)
+
+`law::SignalLaw` は当てはめた多項式を、元になった証拠 (点列)、測った残差、証拠が覆う `x` の範囲、出典、再現すべき参照値と一緒に持つ 新しい条件で再計算できるが範囲外へは外挿しない 新しい証拠は追記せず判定する
+
+```rust
+use alice_zip::law::{IngestPolicy, Provenance, SignalLaw, Verdict};
+
+let pts: Vec<(f64, f64)> = (0..5).map(|i| (i as f64, 1.0 + 2.0 * i as f64)).collect();
+let law = SignalLaw::fit_polynomial(&pts, 1, Provenance::new("bench run 1", "least squares"))?;
+assert!((law.evaluate(2.5)? - 6.0).abs() < 1e-12); // a condition that was not measured
+assert!(law.evaluate(9.0).is_err());               // outside the measured range
+
+let policy = IngestPolicy { abs_tolerance: 0.01, break_factor: 4.0 };
+assert!(matches!(law.ingest(&[(0.5, 2.0), (3.5, 8.0)], &policy), Verdict::Supports { .. }));
+# Ok::<(), alice_zip::law::LawError>(())
+```
+
+| 判定 | 条件 |
+|------|------|
+| `Supports` | 新しい点が許容幅の中で法則と一致する |
+| `ParameterUpdate` | 同じ形で旧と新の点を合わせて当てはまり、パラメータだけが変わる (当てはめ直した法則を返す) |
+| `ResidualGrew` | ずれが許容幅を超えるが、その `break_factor` 倍以内 |
+| `Breaks` | 新しい点はこの形では説明できない |
+| `OutOfRange` | 当てはめた範囲の外の点がある 何も判定しない |
+
+規則と順序は module の doc に書き、[`tests/analytic_law.rs`](tests/analytic_law.rs) で固定している
+
 ## ベンチマーク
 
 | データタイプ | 元サイズ | 圧縮後 | 圧縮率 |

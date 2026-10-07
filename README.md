@@ -150,6 +150,37 @@ Output: Parameters only (~280 bytes)
 Result: 400 KB → 280 bytes = 1400x compression
 ```
 
+### Laws with evidence (`law` module)
+
+`law::SignalLaw` keeps a fitted polynomial together with the evidence it came
+from, the measured residual, the `x` range the evidence covers, its provenance
+and reference values it must reproduce. It is recomputed at new conditions but
+never extrapolated, and new evidence is judged rather than appended:
+
+```rust
+use alice_zip::law::{IngestPolicy, Provenance, SignalLaw, Verdict};
+
+let pts: Vec<(f64, f64)> = (0..5).map(|i| (i as f64, 1.0 + 2.0 * i as f64)).collect();
+let law = SignalLaw::fit_polynomial(&pts, 1, Provenance::new("bench run 1", "least squares"))?;
+assert!((law.evaluate(2.5)? - 6.0).abs() < 1e-12); // a condition that was not measured
+assert!(law.evaluate(9.0).is_err());               // outside the measured range
+
+let policy = IngestPolicy { abs_tolerance: 0.01, break_factor: 4.0 };
+assert!(matches!(law.ingest(&[(0.5, 2.0), (3.5, 8.0)], &policy), Verdict::Supports { .. }));
+# Ok::<(), alice_zip::law::LawError>(())
+```
+
+| Verdict | When |
+|---------|------|
+| `Supports` | the new points agree with the law within the band |
+| `ParameterUpdate` | the same form fits old and new points with other parameters (the refitted law is returned) |
+| `ResidualGrew` | the deviation exceeds the band but not `break_factor` times it |
+| `Breaks` | the new points are not described by this form |
+| `OutOfRange` | some points lie outside the range the law was fitted on; nothing is judged |
+
+The rules and their order are documented on the module and pinned by
+[`tests/analytic_law.rs`](tests/analytic_law.rs).
+
 ## Benchmarks
 
 | Data Type | Original | Compressed | Ratio |

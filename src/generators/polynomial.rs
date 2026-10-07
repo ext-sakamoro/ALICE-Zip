@@ -108,7 +108,7 @@ fn unit_xs(n: usize) -> Vec<f64> {
 
 /// Horner's rule for ascending coefficients: `c0 + x*(c1 + x*(c2 + …))`
 #[inline]
-fn horner_ascending(coeffs: &[f64], x: f64) -> f64 {
+pub(crate) fn horner_ascending(coeffs: &[f64], x: f64) -> f64 {
     coeffs.iter().rev().fold(0.0_f64, |acc, &c| acc * x + c)
 }
 
@@ -166,7 +166,7 @@ fn fit_generic(
 /// Vandermonde matrix and not its square (normal equations lost 4-5 digits at
 /// degree 5 on `[0, 1]`) Returns ascending coefficients, or `None` when
 /// `n < m` or the matrix is rank-deficient (repeated `x`)
-fn least_squares_fit(xs: &[f64], ys: &[f64], degree: usize) -> Option<Vec<f64>> {
+pub(crate) fn least_squares_fit(xs: &[f64], ys: &[f64], degree: usize) -> Option<Vec<f64>> {
     let n = xs.len();
     let m = degree + 1;
     if n < m {

@@ -38,6 +38,7 @@
 //! | [`entropy`] | Shannon entropy + 理論最小サイズ | — |
 //! | [`bpe`] | Byte-pair encoding (最頻ペア検出 + 置換) | — |
 //! | [`generators`] | polynomial / Fourier / Perlin generator laws | `fft` / `parallel` で加速 path 追加 |
+//! | [`law`] | fitted law + residual + valid range + provenance + oracle cases, verdict on new evidence | — |
 //! | [`quantize`] | 8 / 16-bit min-max quantisation of `f32` samples | — |
 //! | [`compression`] | zlib wrappers ([`flate2`]); LZMA + `.alice` residual containers | `std`; `lzma` |
 //! | [`error`] | 共通 [`error::ZipError`] | — |
@@ -66,6 +67,7 @@ pub mod dictionary;
 pub mod entropy;
 pub mod error;
 pub mod generators;
+pub mod law;
 pub mod lz77;
 pub(crate) mod math;
 pub mod prelude;

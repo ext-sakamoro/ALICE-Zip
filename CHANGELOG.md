@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `law` module (`no_std`): `SignalLaw` keeps a fixed-degree polynomial fitted by
+  least squares together with its evidence, measured `ResidualStats`, the closed
+  `ValidRange` of the evidence, `Provenance` and `OracleCase`s `evaluate` refuses
+  `x` outside the range (`LawError::OutOfRange`) instead of extrapolating,
+  `check_oracles` reports pass / fail / out of range, and `ingest` judges new
+  evidence as `Supports` / `ParameterUpdate` (with the refitted law) /
+  `ResidualGrew` / `Breaks` / `OutOfRange` / `NoEvidence` by documented rules
+  The fit reuses the crate's Householder QR solver on `x` normalised to `[0, 1]`
+- `tests/analytic_law.rs`: closed-form recovery at unsampled conditions, residual
+  measured against the evidence, range refusal, oracle outcomes, each verdict,
+  and degenerate input (empty / too few points / single `x` / NaN / repeated `x`)
+
 ## [0.5.0] - 2026-09-16
 
 ### Added

@@ -35,7 +35,7 @@
 
 mod fourier;
 mod perlin;
-mod polynomial;
+pub(crate) mod polynomial;
 
 #[cfg(feature = "fft")]
 pub use fourier::analyze_signal_fft;
