@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-07
+
 ### Added
 
 - `law::SignalLaw::law_id` — a 32-byte content identifier for a law, so a
@@ -186,7 +188,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Initial crates.io release: `lz77`, `dictionary`, `entropy`, `bpe`, `error`,
   `prelude` (split from a single `lib.rs`, 102 tests)
 
-[Unreleased]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/ext-sakamoro/ALICE-Zip/compare/alice-zip-v0.3.0...v0.3.1
