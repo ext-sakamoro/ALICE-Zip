@@ -123,7 +123,14 @@ else echo "skip: cargo-fuzz / nightly not installed" >&2; fi
 
 step "semver-checks vs crates.io (docs.rs feature set)"
 if have cargo-semver-checks; then
-  cargo semver-checks check-release --package alice-zip --only-explicit-features --features "$ALL_FEATURES"
+  # --release-type patch を付けないと、Cargo.toml が crates.io より先行した時点で
+  # 全 lint が不要判定になり 0 件も比較せず exit 0 になる (実測: 0.6.0 -> 0.7.0 で 0 checks)
+  cargo semver-checks check-release --package alice-zip --only-explicit-features \
+    --features "$ALL_FEATURES" --release-type patch 2>&1 | tee semver.log || true
+  ran=$(grep -oE '[0-9]+ checks:' semver.log | grep -oE '[0-9]+' | tail -1)
+  rm -f semver.log
+  echo "semver-checks ran ${ran:-0} checks"
+  [ "${ran:-0}" -gt 0 ] || { echo "semver-checks compared nothing" >&2; exit 1; }
 else echo "skip: cargo-semver-checks not installed" >&2; fi
 
 echo; echo "preflight: OK"
