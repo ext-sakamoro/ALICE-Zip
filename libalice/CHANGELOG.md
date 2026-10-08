@@ -2,6 +2,22 @@
 
 All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
+## [2.6.0] - 2026-10-08
+
+### Changed
+- Core crate raised to `alice-zip` 0.7, whose reconstruction laws now accumulate in `f64`
+  and round to `f32` once on return instead of accumulating in `f32`. The signal
+  generators re-exported through this module therefore return different bits in the last
+  places; analytic behaviour, the container formats and this crate's own API are unchanged,
+  and the reconstruction is more accurate (maximum error against the `f64` closed form
+  5.95e-8 against 9.16e-7)
+- The core change exists because each law was implemented twice and the two copies
+  disagreed on 788 of 1024 samples for a sine. This module hit the same class of defect
+  between 2.2.0 and 2.3.0, when it carried its own copies of the polynomial / Fourier /
+  Perlin laws and they diverged from the core crate. Point evaluators
+  (`alice_zip::generators::{sine_at, multi_sine_at, fourier_at, polynomial_at}`) are the
+  single implementation of each law now, and the array generators are a `map` over them
+
 ## [2.5.0] - 2026-10-08
 
 ### Changed

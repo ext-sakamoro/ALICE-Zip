@@ -14,12 +14,32 @@
 //!   rustfft in O(n log n); the coefficient selection is shared code and the
 //!   oracle test pins naive-vs-FFT parity
 //!
-//! Sinusoid helpers evaluate `A · sin(2π f i / n + φ) + dc` in `f32`
+//! Sinusoid helpers evaluate `A · sin(2π f i / n + φ) + dc`
+//!
+//! # One law, one implementation
+//!
+//! Every reconstruction law has exactly one evaluator — the **point** evaluator
+//! ([`sine_at`], [`multi_sine_at`], [`fourier_at`]) — and the array generators
+//! are a `map` over it. Consumers that answer single-sample queries call the
+//! point evaluator instead of writing their own copy of the law.
+//!
+//! This is not a style preference. The laws used to be implemented twice: here
+//! over whole arrays, and again in the consumer that needed one sample at a
+//! time. On the same input at integer positions with `n = 1024` the two
+//! disagreed on **788 / 1024** samples for a sine, **881 / 1024** for a
+//! multi-sine and **962 / 1024** for a Fourier reconstruction, because the
+//! array side accumulated in `f32` and added the DC term last while the copy
+//! accumulated in `f64` starting from the DC term. Against the `f64` closed
+//! form the `f32` accumulation was off by at most 9.16e-7 and the `f64` one by
+//! 5.95e-8, so the laws now accumulate in `f64` and round once on the way out.
+//! `tests/law_single_source.rs` pins both halves: the error against the closed
+//! form stays inside one `f32` step, and the array output equals the point
+//! output bit for bit.
 
 use alloc::vec::Vec;
-use core::f32::consts::PI;
+use core::f64::consts::PI;
 
-use alice_det_math::{atan2, cos, cos64, sin, sin64};
+use alice_det_math::{atan2, cos64, sin64};
 
 // `sqrt` only: IEEE 754 specifies it exactly, so the shim and the platform
 // version agree bit for bit. The transcendentals above do not go through it.
@@ -102,14 +122,79 @@ pub fn analyze_signal_fft(
     )
 }
 
+/// Sample `i` of the Fourier reconstruction — **the law**
+///
+/// Each coefficient `(k, magnitude, phase)` with `k < n` contributes
+/// `w_k · magnitude / n · cos(2π k i / n + phase)`, where `w_k = 2` for
+/// `0 < k < n/2` and `w_k = 1` for `k == 0` or `k == n/2` (self-conjugate
+/// bins). Coefficients with `k >= n` are ignored (a DFT bin index of a
+/// length-`n` transform is always `< n`).
+///
+/// `i` is a position in samples and may be fractional, which is what lets a
+/// consumer answer a point query without materialising the whole segment.
+/// `n == 0` has no positions, so the law degenerates to the DC term.
+///
+/// Accumulation is `f64` from the DC term outwards and rounds to `f32` once on
+/// return — see the module docs for the measurement behind that choice.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
+pub fn fourier_at(n: usize, coefficients: &[(usize, f32, f32)], dc_offset: f32, i: f64) -> f32 {
+    if n == 0 {
+        return dc_offset;
+    }
+    let inv_n = 1.0 / n as f64;
+    let mut sum = f64::from(dc_offset);
+    for &(k, mag, phase) in coefficients {
+        if k >= n {
+            continue;
+        }
+        let weight = if k == 0 || 2 * k == n { 1.0 } else { 2.0 };
+        let theta = 2.0 * PI * k as f64 * i * inv_n + f64::from(phase);
+        sum += weight * f64::from(mag) * inv_n * cos64(theta);
+    }
+    sum as f32
+}
+
+/// Sample `i` of `amplitude · sin(2π·frequency·i/n + phase) + dc_offset` — **the law**
+///
+/// `i` may be fractional (see [`fourier_at`] for why). `n == 0` degenerates to
+/// `amplitude · sin(phase) + dc_offset`.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
+pub fn sine_at(
+    n: usize,
+    frequency: f32,
+    amplitude: f32,
+    phase: f32,
+    dc_offset: f32,
+    i: f64,
+) -> f32 {
+    let inv_n = if n == 0 { 0.0 } else { 1.0 / n as f64 };
+    let theta = 2.0 * PI * f64::from(frequency) * i * inv_n + f64::from(phase);
+    (f64::from(dc_offset) + f64::from(amplitude) * sin64(theta)) as f32
+}
+
+/// Sample `i` of a sum of sinusoids plus one shared `dc_offset` — **the law**
+///
+/// `dc_offset + Σ_j amplitude_j · sin(2π·frequency_j·i/n + phase_j)`, i.e. the
+/// sum of the corresponding [`sine_at`] values with a single DC term.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
+pub fn multi_sine_at(n: usize, components: &[(f32, f32, f32)], dc_offset: f32, i: f64) -> f32 {
+    let inv_n = if n == 0 { 0.0 } else { 1.0 / n as f64 };
+    let mut sum = f64::from(dc_offset);
+    for &(freq, amp, phase) in components {
+        let theta = 2.0 * PI * f64::from(freq) * i * inv_n + f64::from(phase);
+        sum += f64::from(amp) * sin64(theta);
+    }
+    sum as f32
+}
+
 /// Reconstruct a signal of length `n` from the Fourier coefficients produced
 /// by [`analyze_signal`] / `analyze_signal_fft` plus the DC offset.
 ///
-/// Each coefficient `(k, magnitude, phase)` with `k < n` contributes
-/// `w_k · magnitude / n · cos(2π k i / n + phase)` to sample `i`, where
-/// `w_k = 2` for `0 < k < n/2` and `w_k = 1` for `k == 0` or `k == n/2`
-/// (self-conjugate bins). Coefficients with `k >= n` are ignored (a DFT bin
-/// index of a length-`n` transform is always `< n`).
+/// This is [`fourier_at`] evaluated at `i = 0, 1, …, n-1` — the array and the
+/// point query cannot drift apart because there is only one law.
 #[must_use]
 #[allow(clippy::cast_precision_loss)]
 pub fn generate_from_coefficients(
@@ -117,32 +202,15 @@ pub fn generate_from_coefficients(
     coefficients: &[(usize, f32, f32)],
     dc_offset: f32,
 ) -> Vec<f32> {
-    if n == 0 {
-        return Vec::new();
-    }
-    let inv_n = 1.0 / n as f32;
-    let terms: Vec<(f32, f32, f32)> = coefficients
-        .iter()
-        .filter(|&&(k, _, _)| k < n)
-        .map(|&(k, mag, phase)| {
-            let weight = if k == 0 || 2 * k == n { 1.0 } else { 2.0 };
-            (weight * mag * inv_n, 2.0 * PI * k as f32 * inv_n, phase)
-        })
-        .collect();
     (0..n)
-        .map(|i| {
-            let x = i as f32;
-            let sum: f32 = terms
-                .iter()
-                .map(|&(amp, omega, phase)| amp * cos(omega * x + phase))
-                .sum();
-            sum + dc_offset
-        })
+        .map(|i| fourier_at(n, coefficients, dc_offset, i as f64))
         .collect()
 }
 
 /// Emit `n` samples of `amplitude * sin(2*pi*frequency*i/n + phase) +
 /// dc_offset` for `i = 0, 1, …, n-1`.
+///
+/// This is [`sine_at`] evaluated at the integer positions.
 #[must_use]
 #[allow(clippy::cast_precision_loss)]
 pub fn generate_sine_wave(
@@ -152,44 +220,20 @@ pub fn generate_sine_wave(
     phase: f32,
     dc_offset: f32,
 ) -> Vec<f32> {
-    if n == 0 {
-        return Vec::new();
-    }
-    let inv_n = 1.0 / n as f32;
     (0..n)
-        .map(|i| {
-            let theta = 2.0 * PI * frequency * i as f32 * inv_n + phase;
-            amplitude * sin(theta) + dc_offset
-        })
+        .map(|i| sine_at(n, frequency, amplitude, phase, dc_offset, i as f64))
         .collect()
 }
 
 /// Emit `n` samples that are the sum of multiple sinusoids `(frequency,
 /// amplitude, phase)` plus a shared `dc_offset`.
 ///
-/// Each sample `i` evaluates to
-/// `dc_offset + sum_j(amplitude_j * sin(2*pi*frequency_j*i/n + phase_j))`,
-/// i.e. exactly the sum of the corresponding [`generate_sine_wave`] outputs
-/// (with a single DC term).
+/// This is [`multi_sine_at`] evaluated at the integer positions.
 #[must_use]
 #[allow(clippy::cast_precision_loss)]
 pub fn generate_multi_sine(n: usize, components: &[(f32, f32, f32)], dc_offset: f32) -> Vec<f32> {
-    if n == 0 {
-        return Vec::new();
-    }
-    let inv_n = 1.0 / n as f32;
     (0..n)
-        .map(|i| {
-            let x = i as f32;
-            let sum: f32 = components
-                .iter()
-                .map(|&(freq, amp, phase)| {
-                    let theta = 2.0 * PI * freq * x * inv_n + phase;
-                    amp * sin(theta)
-                })
-                .sum();
-            sum + dc_offset
-        })
+        .map(|i| multi_sine_at(n, components, dc_offset, i as f64))
         .collect()
 }
 

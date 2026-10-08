@@ -222,6 +222,17 @@ runs it on three operating systems and in the `no_std` build, and
 exactly.
 <!-- claim-test: sinusoid_generators_are_the_recorded_bits -->
 
+**Guaranteed:** every reconstruction law has one implementation. `sine_at`,
+`multi_sine_at`, `fourier_at` and `polynomial_at` evaluate a law at one
+position, which may be fractional, and the array generators are a `map` over
+them — so reading a range and reading a single sample cannot disagree. A
+consumer that answers point queries calls these rather than keeping its own
+copy of the law. Before 0.7.0 a second copy existed outside this crate and the
+two differed on 788 of 1024 samples for a sine; the law now accumulates in
+`f64` and rounds once, which is the more accurate of the two forms (maximum
+error against the `f64` closed form 5.95e-8 against 9.16e-7).
+<!-- claim-test: array_generators_are_a_map_over_the_point_law -->
+
 **Not guaranteed:** the converse. Two laws that evaluate identically can still
 get different identifiers — appending a zero coefficient is the simplest case.
 Reducing a law to a normal form first is a separate problem, so the identifier

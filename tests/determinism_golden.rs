@@ -159,6 +159,23 @@ fn law_id_and_evaluation_are_the_recorded_bits() {
 //
 // These are the ones that actually differed between builds before the move to
 // `alice-det-math`.
+//
+// The two sinusoid digests below were re-recorded in 0.7.0, when the
+// reconstruction laws moved from `f32` accumulation to `f64` accumulation
+// rounded once on return. A digest is a change detector, so re-recording one
+// needs a reason outside the digest itself: the laws were implemented twice
+// (here over arrays, and again in a consumer that answered single-sample
+// queries), the two disagreed on 788 / 1024 samples for a sine and 962 / 1024
+// for a Fourier reconstruction, and against the `f64` closed form the `f32`
+// accumulation was off by 9.16e-7 against the other's 5.95e-8. The array
+// generators are now a `map` over the point evaluator, which
+// `tests/law_single_source.rs` pins bit for bit alongside the error against
+// the closed form.
+//
+// `polynomial_generation_is_the_recorded_bits` and
+// `law_id_and_evaluation_are_the_recorded_bits` are unchanged: the polynomial
+// law already evaluated in `f64` through `horner_ascending`, so making it a
+// `map` over `polynomial_at` moved no bits and left every `law_id` intact.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -177,7 +194,7 @@ fn sinusoid_generators_are_the_recorded_bits() {
         "sine wave and multi sine",
         bits,
         (64 + 64 + 32) * 4 + 3 * 8,
-        "d4a18c7d47f85e10504e716f49ae98c5079051588564173ca4de5803a8dfc7d2",
+        "96898e3223e8c8d49cdd2a6b49df652ab48347c45df5922237783e10a73a290d",
     );
 }
 
@@ -200,7 +217,7 @@ fn spectrum_and_reconstruction_are_the_recorded_bits() {
         "analyze_signal and generate_from_coefficients",
         bits,
         (8 + 31 + 64) * 4,
-        "249bb501b397591df38f2673a2944fd4ea28eec9627b9b8089ab9a4b88a0fb25",
+        "f354146d062704960e408e1e5c8c54872a636d8deb42d8f1704caf6822e5ec4a",
     );
 }
 

@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-08
+
+### Changed
+
+- **Breaking:** the reconstruction laws accumulate in `f64` and round to `f32`
+  once on return, instead of accumulating in `f32` and adding the DC term
+  last. `generators::{generate_sine_wave, generate_multi_sine,
+  generate_from_coefficients}` therefore return different bits in the last
+  places. Analytic behaviour is unchanged and `law_id` is unaffected (the
+  polynomial path already evaluated in `f64`).
+
+  The reason is that each law was implemented twice: here over whole arrays,
+  and again in a consumer that answered single-sample queries without
+  materialising a segment. On the same input at integer positions with
+  `n = 1024` the two disagreed on **788 / 1024** samples for a sine,
+  **881 / 1024** for a multi-sine and **962 / 1024** for a Fourier
+  reconstruction. Against the `f64` closed form the `f32` accumulation was off
+  by at most 9.16e-7 and the `f64` one by 5.95e-8, so the more accurate form
+  became the law. `tests/determinism_golden.rs` re-records the two sinusoid
+  digests for this reason.
+
+### Added
+
+- `generators::{sine_at, multi_sine_at, fourier_at, polynomial_at}` evaluate a
+  law at one position, which may be fractional. These are **the** laws, and the
+  array generators are now a `map` over them, so an array read and a point read
+  cannot drift apart. A consumer that answers point queries calls these instead
+  of keeping its own copy of the law.
+- `tests/law_single_source.rs` pins both halves of that: the error of each
+  array generator against the `f64` closed form stays inside one `f32` step
+  (1.19e-7), and the array output equals the point output bit for bit over
+  seven lengths including `n = 1`, `2`, `3` and `257`, with a byte-count gate so
+  a comparison of nothing cannot pass. A separate case pins that the point
+  evaluator does not round its position, which an integer-only comparison would
+  miss.
+
+
 ## [0.6.0] - 2026-10-08
 
 ### Changed

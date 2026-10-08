@@ -58,13 +58,32 @@ pub fn fit_polynomial(
     Some((coeffs, degree, err))
 }
 
+/// Value of a polynomial with **ascending** coefficients at position `x` — **the law**
+///
+/// `x` is a position in samples and may be fractional, which is what lets a
+/// consumer answer a point query without materialising the whole segment.
+/// Horner's rule in `f64`, rounded to `f32` once on return.
+///
+/// ⚠️ Separate multiply and add, **not** `f64::mul_add`. Both are
+/// deterministic, but they produce different bits, and this is the form that
+/// [`crate::law::SignalLaw::evaluate`] uses — so a `law_id` identifies this
+/// one. A consumer that evaluates the same coefficients with `mul_add` is a
+/// second law wearing the first one's identifier.
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+pub fn polynomial_at(coefficients: &[f64], x: f64) -> f32 {
+    horner_ascending(coefficients, x) as f32
+}
+
 /// Evaluate a polynomial with **ascending** coefficients at integer indices
 /// `x = 0, 1, …, n-1` and return the samples as `f32`.
+///
+/// This is [`polynomial_at`] evaluated at the integer positions.
 #[must_use]
 pub fn generate_polynomial(n: usize, coefficients: &[f64]) -> Vec<f32> {
-    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_precision_loss)]
     (0..n)
-        .map(|i| horner_ascending(coefficients, i as f64) as f32)
+        .map(|i| polynomial_at(coefficients, i as f64))
         .collect()
 }
 

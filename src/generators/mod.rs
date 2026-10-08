@@ -40,9 +40,11 @@ pub(crate) mod polynomial;
 #[cfg(feature = "fft")]
 pub use fourier::analyze_signal_fft;
 pub use fourier::{
-    analyze_signal, generate_from_coefficients, generate_multi_sine, generate_sine_wave,
+    analyze_signal, fourier_at, generate_from_coefficients, generate_multi_sine,
+    generate_sine_wave, multi_sine_at, sine_at,
 };
 pub use perlin::{generate_fbm_1d, generate_perlin_2d, generate_perlin_advanced, PerlinNoise};
 pub use polynomial::{
     fit_polynomial, fit_polynomial_unit, generate_polynomial, generate_polynomial_unit,
+    polynomial_at,
 };
