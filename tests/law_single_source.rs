@@ -27,6 +27,7 @@
 //! 置いてあり、**f32 内部で積む実装では原理的に満たせない** (実測 9.16e-7 = 8 倍超過)
 
 use alice_zip::generators;
+use alice_zip::law::{Provenance, ResidualStats, SignalLaw, SignalLawParts, ValidRange};
 
 /// `f32` の刻み (1.0 付近) これを下回る誤差は f32 の表現限界に達している
 const F32_STEP_NEAR_ONE: f64 = 1.192_092_9e-7;
@@ -261,5 +262,60 @@ fn point_law_is_continuous_between_samples() {
         at_3.to_bits(),
         at_3_5.to_bits(),
         "sine_at が位置を丸めている (i=3 と i=3.5 が同値)"
+    );
+}
+
+/// 法則の評価は **積と和を別に丸める** Horner であり、FMA ではない
+///
+/// `law_id` の保証は「識別子が同じなら `evaluate` は全ての `x` で同じ bit を返す」なので、
+/// ⚠️ **別の実装が FMA で評価したら、同じ識別子のまま違う bit を返す** `f64::mul_add` は
+/// 融合積和で丸めが 1 回、`acc * x + c` は 2 回なので、両者は 1 ulp 違いうる どちらも
+/// 決定論的なので、どちらを法則とするかは**選択**であり、その選択は pin しないと守れない
+///
+/// 期待値の出所は literal `0.2` — 係数 `[0.1, 0.2, 0.3]` を `u = 1/3` で Horner 評価すると
+/// 厳密に `0.2` (f64 の最近傍、bits `0x3fc999999999999a`) になり、FMA 評価は
+/// `0.19999999999999998` (bits `…9999`) になる 実装の出力は期待値に 1 度も入っていない
+///
+/// ⚠️ **`generators::polynomial_at` では同じ変異を観測できない** `f32` に丸めて返すので
+/// f64 の 1 ulp 差が吸収される 無作為な係数 (次数 2-4) と `x` の組 40 万件で `f32` 出力に
+/// 差が出たのは **0 件**だった ⇒ FMA かどうかが観測できるのは `f64` を返す評価だけなので、
+/// そちらに gate を置く
+#[test]
+fn law_evaluation_is_horner_with_separate_rounding_not_fma() {
+    // 正規化変数は u = (x - lo) / (hi - lo) なので lo=0 / hi=3 / x=1 で u = 1/3
+    let law = SignalLaw::from_parts(SignalLawParts {
+        coefficients: vec![0.1, 0.2, 0.3],
+        domain: ValidRange { lo: 0.0, hi: 3.0 },
+        evidence: vec![(0.0, 0.1), (1.0, 0.2), (3.0, 0.6)],
+        // from_parts が evidence から測り直すので、ここの値は使われない
+        residual: ResidualStats {
+            n: 0,
+            rms: 0.0,
+            max_abs: 0.0,
+        },
+        provenance: Provenance::new("oracle", "coefficients given directly"),
+        oracles: Vec::new(),
+    })
+    .expect("fixture satisfies every precondition");
+
+    let got = law.evaluate(1.0).expect("x = 1 is inside 0..=3");
+
+    assert_eq!(
+        got.to_bits(),
+        0.2_f64.to_bits(),
+        "評価が {got:?} (bits {:#018x}) — 積と和を別に丸める Horner なら厳密に 0.2 になる",
+        got.to_bits()
+    );
+
+    // ⚠️ 歯の確認を test 自身に埋める: FMA 評価は別の bit になる (= 上の assert は
+    //    「どちらでも通る空振り」ではない)
+    let fma: f64 = [0.1_f64, 0.2, 0.3]
+        .iter()
+        .rev()
+        .fold(0.0_f64, |acc, &c| acc.mul_add(1.0 / 3.0, c));
+    assert_ne!(
+        fma.to_bits(),
+        0.2_f64.to_bits(),
+        "FMA 評価も 0.2 になるなら、この fixture では 2 つの算術を区別できない"
     );
 }
