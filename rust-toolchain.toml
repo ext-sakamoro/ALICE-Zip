@@ -1,4 +1,6 @@
-# Rust toolchain pin (feedback_clippy_rust_version_drift 準拠)
+# Toolchain pin. clippy's lint set moves with the compiler, so an unpinned
+# toolchain turns `-D warnings` into a gate that changes under the project
+# without any change to the project.
 # `targets`: the bare-metal target the CI `no_std` job builds the rlib for; listed
 # here (not in the workflow) so rustup installs it for the pinned toolchain that
 # cargo actually uses (dtolnay/rust-toolchain@stable would add it to stable only)

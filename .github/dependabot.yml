@@ -1,4 +1,6 @@
-# Dependabot 設定 (feedback_dependabot_major_bump_initial_wave 準拠)
+# Dependabot. The ignore list below exists because a major bump that lands
+# unattended turns a green CI into a red one for reasons unrelated to the
+# change under review.
 version: 2
 updates:
   - package-ecosystem: cargo
