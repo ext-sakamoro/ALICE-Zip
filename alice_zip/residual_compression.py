@@ -60,6 +60,9 @@ class ResidualData:
     # "base_value" of an earlier Rust "delta" file (its first delta is the
     # first value); an earlier Python "delta" file has none and lost it
     base_value: Optional[float] = None
+    # the payload is the Rust writer's earlier quantized container (its header
+    # records min_val / scale / bits)
+    rust_container: bool = False
 
     # Maximum header size - prevents DoS via malformed header_len
     # 10MB is generous for JSON metadata; larger payloads should use binary format
@@ -221,11 +224,6 @@ class ResidualData:
             if field not in header:
                 raise ValueError(f"Missing required field: {field}")
 
-        # the Rust writer's quantized payload (its residual container, with
-        # min_val / scale / bits in the header) is not this reader's format;
-        # refused rather than misread until it is supported
-        if header['method'] == ResidualCompressionMethod.QUANTIZED.value and 'min_val' in header:
-            raise ValueError("Quantized residual of the Rust writer (not supported yet)")
 
         # Validate method
         try:
@@ -253,6 +251,7 @@ class ResidualData:
             compression_ratio=0.0,  # Not stored, recalculated if needed
             quantization_bits=header.get('quant_bits'),
             base_value=header.get('base_value'),
+            rust_container=(method == ResidualCompressionMethod.QUANTIZED and 'min_val' in header),
         )
 
 
@@ -422,6 +421,8 @@ class ResidualCompressor:
                     "delta residual without its base value: recompress from the original"
                 )
             return self._decompress_delta(compressed, shape)
+        elif method == ResidualCompressionMethod.QUANTIZED and residual_data.rust_container:
+            return _decode_rust_quantized_container(compressed).reshape(shape)
         elif method == ResidualCompressionMethod.QUANTIZED:
             raw_bytes = lzma.decompress(compressed)
             return self._dequantize_residual(
@@ -713,4 +714,42 @@ def _bit_delta_decode(stream: bytes) -> np.ndarray:
     """float32 values from a bitdelta stream (inverts _bit_delta_encode)."""
     d = np.frombuffer(stream, dtype='<u4')
     return np.cumsum(d, dtype=np.uint32).astype('<u4').view('<f4')
+
+
+def _decode_rust_quantized_container(data: bytes) -> np.ndarray:
+    """Values of the Rust writer's earlier quantized container, as its reader
+    returns them: version 1 `0xFC · codec · bits · min: f64 · scale: f64 ·
+    len: u32 · payload` (codec 0 = raw deflate, 1 = LZMA) or version 0
+    `bits · min · scale · len · LZMA payload`; codes of 8 or 16 bits (little
+    endian), `code / (levels - 1) * scale + min` in float64, then float32."""
+    if data[:1] == b"\xfc":
+        if len(data) < 23:
+            raise ValueError("Rust quantized container too short")
+        codec, bits = data[1], data[2]
+        min_val, scale = struct.unpack("<dd", data[3:19])
+        n = struct.unpack("<I", data[19:23])[0]
+        payload = data[23:23 + n]
+        if codec == 0:
+            codes = zlib.decompress(payload, -15)
+        elif codec == 1:
+            codes = lzma.decompress(payload)
+        else:
+            raise ValueError(f"Unknown codec tag {codec} in a Rust quantized container")
+    else:
+        if len(data) < 21:
+            raise ValueError("Rust quantized container too short")
+        bits = data[0]
+        min_val, scale = struct.unpack("<dd", data[1:17])
+        n = struct.unpack("<I", data[17:21])[0]
+        payload = data[21:21 + n]
+        codes = lzma.decompress(payload)
+    if len(payload) != n:
+        raise ValueError("Rust quantized container truncated")
+    if bits == 8:
+        q = np.frombuffer(codes, dtype=np.uint8).astype(np.float64) / 255.0
+    elif bits == 16:
+        q = np.frombuffer(codes, dtype="<u2").astype(np.float64) / 65535.0
+    else:
+        raise ValueError(f"Rust quantized container with {bits} bits")
+    return (q * scale + min_val).astype(np.float32)
 

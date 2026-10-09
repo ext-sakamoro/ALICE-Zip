@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed (破壊的変更)
 
-- ResidualData の header の鍵を Python の書き手の形 (`method` / `shape` / `dtype` / `quant_bits` / `version`) にそろえた Python の読み手は libalice の旧 header (`original_len` だけ) も読む (shape は `[original_len]`、dtype は float32) 量子化の payload は Python と libalice で形式が違う (Python は min/scale の double 2 個 + 符号、libalice は残差コンテナ) ので、libalice が書いた量子化の file は対応するまで `ValueError` で拒否する どちらの読み手がどの書き手の file を受け付けるかは、各書き手の実際の出力で表 (`tests/data/residual/acceptance.txt`) にしている
+- ResidualData の header の鍵を Python の書き手の形 (`method` / `shape` / `dtype` / `quant_bits` / `version`) にそろえ、libalice と互いの file を読み合える Python の読み手は libalice の旧 header (`original_len` だけ) も読む (shape は `[original_len]`、dtype は float32) libalice の旧量子化コンテナ (header に `min_val`、payload は marker 0xFC の残差コンテナ) も読む libalice の量子化の書き手は Python と同じ形式・同じ符号 (偶数への丸め) を出す どちらの読み手がどの書き手の file を受け付けるかは、各書き手の実際の出力で表 (`tests/data/residual/acceptance.txt`) にしている
 - Python package (`alice_zip.core`) の ALICE_ZIP 読み手は、書き手が出したことのない値を別の値として読まず拒否する (`ValueError`) Rust の `container::parse_legacy_alice_zip_header` と同じ規則
   - 版 1.0 / 1.1 以外 (major 2 を 1.1 として、minor 2 以上を 1.1 として読んでいた)
   - 未知の `payload_type` (`PROCEDURAL` として読んでいた)

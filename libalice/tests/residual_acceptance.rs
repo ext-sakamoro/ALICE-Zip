@@ -90,7 +90,7 @@ fn the_rust_reader_accepts_exactly_the_files_the_table_lists() {
         }
         compared += 1;
     }
-    assert_eq!(compared, 36, "every row compared");
+    assert_eq!(compared, 39, "every row compared");
 }
 
 #[test]
@@ -114,8 +114,7 @@ fn the_original_shape_and_dtype_are_kept() {
 
 #[test]
 fn this_crate_writes_the_canonical_header() {
-    // the Python writer's keys, in its order; the quantized container adds its
-    // own parameters after them
+    // the Python writer's keys, in its order
     let header = |name: &str| {
         let b = std::fs::read(dir().join(name)).unwrap();
         let n = u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize;
@@ -129,9 +128,10 @@ fn this_crate_writes_the_canonical_header() {
         header("rust_delta.bin"),
         r#"{"method":"bitdelta","shape":[4],"dtype":"float32","quant_bits":null,"version":2}"#
     );
-    assert!(header("rust_quantized.bin").starts_with(
-        r#"{"method":"quantized","shape":[4],"dtype":"float32","quant_bits":8,"version":2,"#
-    ));
+    assert_eq!(
+        header("rust_quantized.bin"),
+        r#"{"method":"quantized","shape":[4],"dtype":"float32","quant_bits":8,"version":2}"#
+    );
 }
 
 #[test]

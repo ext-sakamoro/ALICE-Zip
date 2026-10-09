@@ -51,9 +51,8 @@ pub enum ResidualError {
     Io(std::io::Error),
     /// The data is internally inconsistent (e.g., truncated payload).
     Corrupted(String),
-    /// A residual this reader cannot return as it was: it returns
-    /// one-dimensional `f32` values, so an original of another dtype or of
-    /// more than one dimension (the Python writer records both) is refused.
+    /// A residual layout this reader does not read: a `quant_bits` other than
+    /// 8, 16 or 32.
     UnsupportedLayout(String),
     /// A `"delta"` residual without `base_value`: the writer dropped the
     /// first value, so the data cannot be reconstructed; recompress from the
@@ -194,6 +193,14 @@ pub struct ResidualMetadata {
     /// inside the LZMA-compressed delta stream), but kept for symmetry with
     /// the Python implementation.
     pub base_value: f32,
+    /// `quant_bits` of the header. When set, the payload (after the method's
+    /// decompression) is the quantized form the Python writer emits,
+    /// `min: f64 · scale: f64 · codes` (little endian, codes of 8, 16 or 32
+    /// bits), whatever the method; the Python reader reads it the same way.
+    pub quant_bits: Option<u8>,
+    /// The payload is this crate's earlier quantized container (the header
+    /// records `min_val` / `scale` / `bits`, which are written back).
+    pub legacy_container: bool,
 }
 
 impl Default for ResidualMetadata {
@@ -203,6 +210,8 @@ impl Default for ResidualMetadata {
             scale: 1.0,
             bits: 8,
             base_value: 0.0,
+            quant_bits: None,
+            legacy_container: false,
         }
     }
 }
@@ -258,17 +267,18 @@ impl ResidualData {
         // values are float32 of one dimension, so shape is [original_len]
         let mut fields: Vec<String> = Vec::new();
         fields.push(format!(r#""method":"{}""#, self.method.as_str()));
-        fields.push(format!(r#""shape":[{}]"#, self.original_len));
-        fields.push(r#""dtype":"float32""#.to_owned());
-        if self.method == ResidualCompressionMethod::Quantized {
-            fields.push(format!(r#""quant_bits":{}"#, self.metadata.bits));
-        } else {
-            fields.push(r#""quant_bits":null"#.to_owned());
+        let dims: Vec<String> = self.shape.iter().map(ToString::to_string).collect();
+        fields.push(format!(r#""shape":[{}]"#, dims.join(",")));
+        fields.push(format!(r#""dtype":"{}""#, self.dtype));
+        match (self.metadata.legacy_container, self.metadata.quant_bits) {
+            (true, _) => fields.push(format!(r#""quant_bits":{}"#, self.metadata.bits)),
+            (false, Some(b)) => fields.push(format!(r#""quant_bits":{b}"#)),
+            (false, None) => fields.push(r#""quant_bits":null"#.to_owned()),
         }
         fields.push(r#""version":2"#.to_owned());
 
         match self.method {
-            ResidualCompressionMethod::Quantized => {
+            ResidualCompressionMethod::Quantized if self.metadata.legacy_container => {
                 fields.push(format!(r#""min_val":{}"#, self.metadata.min_val));
                 fields.push(format!(r#""scale":{}"#, self.metadata.scale));
                 fields.push(format!(r#""bits":{}"#, self.metadata.bits));
@@ -314,7 +324,6 @@ impl ResidualData {
             let v2_end = 4 + header_len_v2;
             if v2_end <= data.len() {
                 if let Ok(json_str) = std::str::from_utf8(&data[4..v2_end]) {
-                    Self::check_supported_layout(json_str)?;
                     if let Ok(parsed) = Self::parse_json_header(json_str) {
                         // the writers emit `"version":2`: only a bare JSON
                         // integer is a version (the Python reader takes only
@@ -399,38 +408,41 @@ impl ResidualData {
     /// String values have their surrounding quotes stripped. Numeric and boolean
     /// values are kept as-is. Nested objects/arrays are not supported (not needed
     /// for our header format).
-    /// Refuses a header whose original this reader cannot return: a
-    /// `"dtype"` other than `float32` or a `"shape"` of more than one
-    /// dimension. Checked on the raw text, before the flat parser (which
-    /// splits on commas and cannot read a list of several dimensions).
-    fn check_supported_layout(json: &str) -> Result<(), ResidualError> {
-        if let Some(dtype) = Self::raw_json_value(json, "dtype") {
-            let dtype = dtype.trim_matches('"');
-            if dtype != "float32" {
-                return Err(ResidualError::UnsupportedLayout(format!(
-                    "dtype {dtype} (this reader returns float32)"
-                )));
-            }
-        }
-        if let Some(start) = json.find("\"shape\"") {
-            let rest = &json[start..];
-            if let (Some(open), Some(close)) = (rest.find('['), rest.find(']')) {
-                if open < close && rest[open + 1..close].contains(',') {
-                    return Err(ResidualError::UnsupportedLayout(format!(
-                        "shape {} (this reader returns one dimension)",
-                        &rest[open..=close]
-                    )));
+    /// Splits the members of a JSON object body on the commas that are not
+    /// inside a string or a list (`"shape":[2,2]` is one member).
+    fn split_members(inner: &str) -> Vec<&str> {
+        let (mut out, mut depth, mut in_str, mut esc, mut start) =
+            (Vec::new(), 0i32, false, false, 0);
+        for (i, ch) in inner.char_indices() {
+            if in_str {
+                match (esc, ch) {
+                    (true, _) => esc = false,
+                    (false, '\\') => esc = true,
+                    (false, '"') => in_str = false,
+                    _ => {}
                 }
+                continue;
+            }
+            match ch {
+                '"' => in_str = true,
+                '[' | '{' => depth += 1,
+                ']' | '}' => depth -= 1,
+                ',' if depth == 0 => {
+                    out.push(&inner[start..i]);
+                    start = i + 1;
+                }
+                _ => {}
             }
         }
-        Ok(())
+        out.push(&inner[start..]);
+        out
     }
 
     /// The value text of `key` in a flat JSON object as written (a string
     /// keeps its quotes), or `None` when the key is absent.
     fn raw_json_value<'j>(json: &'j str, key: &str) -> Option<&'j str> {
         let inner = json.trim().strip_prefix('{')?.strip_suffix('}')?;
-        inner.split(',').find_map(|pair| {
+        Self::split_members(inner).into_iter().find_map(|pair| {
             let (k, v) = pair.split_once(':')?;
             (k.trim().trim_matches('"') == key).then(|| v.trim())
         })
@@ -445,9 +457,8 @@ impl ResidualData {
         let inner = &json[1..json.len() - 1];
         let mut map = HashMap::new();
 
-        // Split by comma — this works for flat objects where values do not
-        // themselves contain commas (true for all fields we emit).
-        for pair in inner.split(',') {
+        // Split into members; commas inside `shape` lists and strings stay
+        for pair in Self::split_members(inner) {
             let pair = pair.trim();
             if pair.is_empty() {
                 continue;
@@ -494,18 +505,34 @@ impl ResidualData {
         let method = ResidualCompressionMethod::parse(method_str)
             .ok_or_else(|| ResidualError::UnknownMethod(method_str.clone()))?;
 
-        // the length: "shape" (the canonical key, one dimension here; more
-        // were refused before parsing) or "original_len" (this crate's
-        // writer before the keys were aligned)
-        let from_shape = map
+        // the shape (the canonical key) or "original_len" (this crate's
+        // writer before the keys were aligned, one dimension)
+        let shape = map
             .get("shape")
             .map(|v| {
-                v.trim()
-                    .trim_start_matches('[')
-                    .trim_end_matches(']')
+                let body = v
                     .trim()
-                    .parse::<usize>()
-                    .map_err(|e| ResidualError::InvalidHeader(format!("invalid shape {v}: {e}")))
+                    .strip_prefix('[')
+                    .and_then(|b| b.strip_suffix(']'))
+                    .ok_or_else(|| ResidualError::InvalidHeader(format!("invalid shape {v}")))?;
+                body.split(',')
+                    .filter(|d| !d.trim().is_empty())
+                    .map(|d| {
+                        d.trim().parse::<usize>().map_err(|e| {
+                            ResidualError::InvalidHeader(format!("invalid shape {v}: {e}"))
+                        })
+                    })
+                    .collect::<Result<Vec<usize>, _>>()
+            })
+            .transpose()?;
+        let from_shape = shape
+            .as_ref()
+            .map(|dims| {
+                dims.iter()
+                    .try_fold(1usize, |n, &d| n.checked_mul(d))
+                    .ok_or_else(|| {
+                        ResidualError::InvalidHeader(format!("shape {dims:?} is too large"))
+                    })
             })
             .transpose()?;
         let from_len = map
@@ -518,33 +545,55 @@ impl ResidualData {
         let original_len = match (from_shape, from_len) {
             (Some(a), Some(b)) if a != b => {
                 return Err(ResidualError::InvalidHeader(format!(
-                    "shape [{a}] and original_len {b} disagree"
+                    "shape ({a} elements) and original_len {b} disagree"
                 )))
             }
             (Some(n), _) | (None, Some(n)) => n,
             (None, None) => return Err(ResidualError::MissingField("shape".to_owned())),
         };
-        // the Python writer's quantized payload (min/scale doubles + codes)
-        // is not this crate's quantized container; until it is supported it
-        // is refused rather than misread (this crate's writer records min_val)
-        if method == ResidualCompressionMethod::Quantized && !map.contains_key("min_val") {
-            return Err(ResidualError::UnsupportedLayout(
-                "quantized residual of the Python writer (not supported yet)".to_owned(),
-            ));
+        let shape = shape.unwrap_or_else(|| vec![original_len]);
+
+        // the dtype of the original as the writer recorded it
+        let dtype = map.get("dtype").map_or("float32", String::as_str);
+        if !WRITER_DTYPES.contains(&dtype) {
+            return Err(ResidualError::InvalidHeader(format!(
+                "unsupported dtype {dtype}"
+            )));
         }
 
         // Optional / method-specific fields.
-        let mut metadata = ResidualMetadata::default();
+        let quant_bits = match map.get("quant_bits").map(String::as_str) {
+            None | Some("null") => None,
+            Some(v) => match v.parse::<u8>() {
+                Ok(b @ (8 | 16 | 32)) => Some(b),
+                _ => {
+                    return Err(ResidualError::UnsupportedLayout(format!(
+                        "quant_bits {v} (8, 16 and 32 are read)"
+                    )))
+                }
+            },
+        };
+        let mut metadata = ResidualMetadata {
+            quant_bits,
+            ..ResidualMetadata::default()
+        };
 
         if method == ResidualCompressionMethod::Quantized {
-            if let Some(v) = map.get("min_val") {
-                metadata.min_val = v.parse().unwrap_or(0.0);
-            }
-            if let Some(v) = map.get("scale") {
-                metadata.scale = v.parse().unwrap_or(1.0);
-            }
-            if let Some(v) = map.get("bits") {
-                metadata.bits = v.parse().unwrap_or(8);
+            if map.contains_key("min_val") {
+                // this crate's earlier quantized container
+                metadata.legacy_container = true;
+                if let Some(v) = map.get("min_val") {
+                    metadata.min_val = v.parse().unwrap_or(0.0);
+                }
+                if let Some(v) = map.get("scale") {
+                    metadata.scale = v.parse().unwrap_or(1.0);
+                }
+                if let Some(v) = map.get("bits") {
+                    metadata.bits = v.parse().unwrap_or(8);
+                }
+            } else if metadata.quant_bits.is_none() {
+                // the Python reader defaults to 8 bits
+                metadata.quant_bits = Some(8);
             }
         }
 
@@ -564,8 +613,8 @@ impl ResidualData {
             method,
             compressed,
             original_len,
-            shape: vec![original_len],
-            dtype: "float32".to_owned(),
+            shape,
+            dtype: dtype.to_owned(),
             metadata,
         })
     }
@@ -574,6 +623,12 @@ impl ResidualData {
 // ============================================================================
 // Delta compression
 // ============================================================================
+
+/// dtypes the writers record for the original (the real numeric dtypes).
+const WRITER_DTYPES: [&str; 11] = [
+    "float16", "float32", "float64", "int8", "int16", "int32", "int64", "uint8", "uint16",
+    "uint32", "uint64",
+];
 
 /// First bytes of an xz stream; an LZMA stream without them is read as the
 /// "alone" format the earlier Rust writer used.
@@ -896,22 +951,9 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
         }
 
         ResidualCompressionMethod::Quantized => {
-            // Use the existing compress_residual_quantized function which
-            // writes the quantisation header (bits, min_val, scale,
-            // compressed_len) followed by LZMA data.
-            //
-            // We also populate ResidualMetadata for symmetry with the
-            // Python implementation.
-            let (_, min_val, scale) = crate::compression::quantize_8bit(data);
-            let q = crate::compression::compress_residual_quantized(data, 8, 6).ok();
-            let lz = q
-                .is_none()
-                .then(|| crate::compression::lzma_compress(&raw_bytes, 6).ok())
-                .flatten();
-            let (method, compressed) = first_encoding(
-                vec![(method, q), (ResidualCompressionMethod::Lzma, lz)],
-                raw_bytes,
-            );
+            // the Python writer's quantized form (8 bits), xz-compressed
+            let q = xz_compress(&quantize_python(data, 8));
+            let (method, compressed) = first_encoding(vec![(method, q)], raw_bytes);
             ResidualData {
                 method,
                 compressed,
@@ -919,10 +961,8 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
                 shape: vec![data.len()],
                 dtype: "float32".to_owned(),
                 metadata: ResidualMetadata {
-                    min_val,
-                    scale,
-                    bits: 8,
-                    base_value: 0.0,
+                    quant_bits: (method == ResidualCompressionMethod::Quantized).then_some(8),
+                    ..ResidualMetadata::default()
                 },
             }
         }
@@ -938,43 +978,95 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
         return Ok(Vec::new());
     }
 
-    match rd.method {
-        ResidualCompressionMethod::None => {
-            let result: Vec<f32> = rd
-                .compressed
-                .chunks_exact(4)
-                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect();
-            Ok(result)
-        }
-
-        ResidualCompressionMethod::Lzma => {
-            let raw = lzma_or_xz_decompress(&rd.compressed)?;
-            let result: Vec<f32> = raw
-                .chunks_exact(4)
-                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect();
-            Ok(result)
-        }
-
-        ResidualCompressionMethod::Zlib => {
-            let raw = crate::compression::zlib_decompress(&rd.compressed)?;
-            let result: Vec<f32> = raw
-                .chunks_exact(4)
-                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect();
-            Ok(result)
-        }
-
+    let raw = match rd.method {
+        ResidualCompressionMethod::None => rd.compressed.clone(),
+        ResidualCompressionMethod::Lzma => lzma_or_xz_decompress(&rd.compressed)?,
+        ResidualCompressionMethod::Zlib => crate::compression::zlib_decompress(&rd.compressed)?,
+        // the delta methods ignore quant_bits, as the Python reader does
         ResidualCompressionMethod::Delta | ResidualCompressionMethod::BitDelta => {
-            decompress_residual_delta(rd)
+            return decompress_residual_delta(rd)
         }
-
-        ResidualCompressionMethod::Quantized => {
-            let result = crate::compression::decompress_residual_quantized(&rd.compressed)?;
-            Ok(result)
+        ResidualCompressionMethod::Quantized if rd.metadata.legacy_container => {
+            return Ok(crate::compression::decompress_residual_quantized(
+                &rd.compressed,
+            )?)
+        }
+        ResidualCompressionMethod::Quantized => lzma_or_xz_decompress(&rd.compressed)?,
+    };
+    match rd.metadata.quant_bits {
+        Some(bits) => dequantize_python(&raw, bits, rd.original_len),
+        None => {
+            if raw.len() != rd.original_len * 4 {
+                return Err(ResidualError::Corrupted(format!(
+                    "payload holds {} bytes, expected {}",
+                    raw.len(),
+                    rd.original_len * 4
+                )));
+            }
+            Ok(raw
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect())
         }
     }
+}
+
+/// The quantized form the Python writer emits: `min: f64 · scale: f64`
+/// followed by the codes (`bits` wide, little endian). Computed as numpy
+/// does for a float32 array: minimum and range in `f32`, a range below 1e-10
+/// replaced by 1, `(v - min) / range * (levels - 1)` in `f32`, rounded half
+/// to even and clipped to the code range.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn quantize_python(data: &[f32], bits: u8) -> Vec<u8> {
+    let min = data.iter().copied().fold(f32::INFINITY, f32::min);
+    let max = data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let mut scale = max - min;
+    if f64::from(scale) < 1e-10 {
+        scale = 1.0;
+    }
+    let top = (u64::MAX >> (64 - u32::from(bits))) as f32;
+    let mut out = Vec::with_capacity(16 + data.len() * usize::from(bits / 8));
+    out.extend_from_slice(&f64::from(min).to_le_bytes());
+    out.extend_from_slice(&f64::from(scale).to_le_bytes());
+    for &v in data {
+        let code = (((v - min) / scale) * top)
+            .round_ties_even()
+            .clamp(0.0, top);
+        match bits {
+            8 => out.push(code as u8),
+            16 => out.extend_from_slice(&(code as u16).to_le_bytes()),
+            _ => out.extend_from_slice(&(code as u32).to_le_bytes()),
+        }
+    }
+    out
+}
+
+/// Inverts [`quantize_python`] as the Python reader does:
+/// `code / (levels - 1) * scale + min` in `f64`, rounded to `f32`.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn dequantize_python(raw: &[u8], bits: u8, len: usize) -> Result<Vec<f32>, ResidualError> {
+    let width = usize::from(bits / 8);
+    if raw.len() != 16 + len * width {
+        return Err(ResidualError::Corrupted(format!(
+            "quantized payload holds {} bytes, expected {}",
+            raw.len(),
+            16 + len * width
+        )));
+    }
+    let min = f64::from_le_bytes(raw[0..8].try_into().expect("8 bytes"));
+    let scale = f64::from_le_bytes(raw[8..16].try_into().expect("8 bytes"));
+    let top = (u64::MAX >> (64 - u32::from(bits))) as f64;
+    Ok(raw[16..]
+        .chunks_exact(width)
+        .map(|c| {
+            let code = match width {
+                1 => f64::from(c[0]),
+                2 => f64::from(u16::from_le_bytes([c[0], c[1]])),
+                _ => f64::from(u32::from_le_bytes([c[0], c[1], c[2], c[3]])),
+            };
+            (code / top * scale + min) as f32
+        })
+        .collect())
 }
 
 // ============================================================================
@@ -1034,6 +1126,14 @@ mod tests {
             let rd = compress_with_method(&values, method);
             std::fs::write(dir.join(format!("{prefix}_{name}.bin")), rd.to_bytes()).unwrap();
         }
+        // codes on .5 with an even integer below (round half to even)
+        let ties = [0.0f32, 2.5, 4.5, 255.0];
+        let rd = compress_with_method(&ties, M::Quantized);
+        std::fs::write(
+            dir.join(format!("{prefix}_quantized_ties.bin")),
+            rd.to_bytes(),
+        )
+        .unwrap();
         for (name, method) in [("none", M::None), ("lzma", M::Lzma), ("delta", M::Delta)] {
             let rd = compress_with_method(&special, method);
             std::fs::write(

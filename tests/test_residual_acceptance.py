@@ -35,7 +35,7 @@ def rows():
 
 def test_the_python_reader_accepts_exactly_the_files_the_table_lists():
     table = rows()
-    assert len(table) == 36
+    assert len(table) == 39
     for name, writer, _rust, python, values in table:
         try:
             out = ResidualCompressor().decompress_residual(
@@ -66,7 +66,10 @@ def payload(name):
 
 def test_both_writers_quantize_to_the_same_bytes():
     # compared before compression (xz output differs between implementations)
-    (hp, py), (hr, rs) = payload("python_quantized.bin"), payload("rust_quantized.bin")
-    assert hp == hr
-    assert py == rs
+    for name in ("quantized", "quantized_ties"):
+        (hp, py), (hr, rs) = payload(f"python_{name}.bin"), payload(f"rust_{name}.bin")
+        assert hp == hr, name
+        assert py == rs, name
+    # round half to even: codes 0, 2, 4, 255
+    assert payload("python_quantized_ties.bin")[1][16:] == bytes([0, 2, 4, 255])
 

@@ -5,7 +5,7 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 ## [Unreleased]
 
 ### Changed (破壊的変更)
-- `residual::ResidualData::to_bytes` の header を Python の書き手の鍵 (`method` / `shape` / `dtype` / `quant_bits` / `version`) で書く (`original_len` は書かない) 読み手は `shape` からも、旧来の `original_len` からも長さを取る (両方あって食い違えば `InvalidHeader`) Python の書き手の量子化 file (`min_val` を持たない) は payload の形式が違うので、対応するまで `ResidualError::UnsupportedLayout` で拒否する 移行: 旧 header の file はそのまま読める 旧版の本 crate は新しい header (`original_len` 無し) を `MissingField` で読めない
+- `residual::ResidualData` は Python の書き手と同じ file を読み書きする header は Python の鍵 (`method` / `shape` / `dtype` / `quant_bits` / `version`) で書き、`shape` からも旧来の `original_len` からも長さを取る (両方あって食い違えば `InvalidHeader`) 新しい欄 `shape` と `dtype` に元の配列の形と dtype (実数の 11 種、それ以外は `InvalidHeader`) を持ち、値は平らな `f32` で返す 量子化は Python の形式 (`min: f64 · scale: f64 · 符号`、xz) で書き、`quant_bits` があれば方式 (none / lzma / zlib / quantized) によらず Python と同じく逆量子化して読む 本 crate の旧量子化コンテナ (header に `min_val`) も読み、書き戻しても同じ header になる `quant_bits` が 8 / 16 / 32 以外なら `ResidualError::UnsupportedLayout` どちらの読み手がどの書き手の file を受け付けるかは、各書き手の実際の出力で表 (`tests/data/residual/acceptance.txt`) にしている 移行: `ResidualData` を struct 式で作っている呼び出し側は `shape` / `dtype` を足す 旧版の本 crate は新しい header (`original_len` 無し) を読めない
 - `format::AliceFileHeader::from_bytes` は core crate の `container::parse_legacy_alice_zip_header` で header を検査してから読む (読み手を 1 箇所にする) 書き手が出したことのない値は別の値として読まず拒否する
   - 版 1.0 / 1.1 以外 → `FormatError::UnsupportedVersion` (major 2 を 1.1 として読んでいた)
   - 未知の `payload_type` → `FormatError::InvalidPayloadType` (`Procedural` として読んでいた)
@@ -19,7 +19,6 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 - `residual` の delta は新しい method `BitDelta` (`"bitdelta"`) で書く: 隣り合う f32 の bit パターンの差を wrapping な u32 で持ち (先頭は先頭の bit パターン)、xz で圧縮する どの値も bit 単位で戻る (ランダムな bit パターン 10,000 個と NaN / 非正規化数 / ±0 / 無限大の往復の試験) 差分の列は Python の書き手と byte 単位で一致する (`tests/data/residual/bitdelta_streams.txt`) 旧 `"delta"` は `base_value` があれば読み、無ければ `ResidualError::DeltaWithoutBase` (Python の旧 writer は先頭の値を失っていた) `decompress_residual_delta` は `Result` を返す (復元に失敗すると圧縮前の byte を値として読んでいた)
 - 残差の LZMA は xz (Python の `lzma.compress` の既定) と LZMA alone (本 crate の旧 writer) を先頭の magic で判別して読む
 - 残差の書き手は、圧縮に失敗して別の方式に落ちた時に実際に使った方式を記録する (zlib / lzma / quantized の失敗で、method と中身が食い違う file を書いていた) 全部失敗すれば `None` の生の float
-- 元データの dtype が float32 以外、または shape が 1 次元でない residual (Python の書き手が記録する) は `ResidualError::UnsupportedLayout` で拒否する この読み手は 1 次元の float32 しか返せないため どちらの読み手がどの file を受け付けるかは `tests/data/residual/acceptance.txt` に表で持ち、Rust と Python の両方の試験が読む
 - `residual::ResidualData::from_bytes` は `"version"` が JSON の整数でなければ (float `2.0`、文字列 `"2"`) `ResidualError::InvalidHeader` 文字列の `"2"` を版 2 として読んでいた Python 版と同じ規則
 - `alice compress --bits 16` が 16 bit で量子化する これまでは mode 11 (16 bit と表示) を書きながら中身は常に 8 bit で量子化していた (実測: 最大誤差 0.01176 = 8 bit の半 step、file の大きさも `--bits 8` と同じ) 本物の 16 bit は新しい mode 12 で書く mode 11 の既存 file は中身どおり 8 bit として読み続ける (書くことはもう無い) header の版は変わらない mode 12 の file は、未知の mode を拒否する読み手 (この版以降) にしか読めず、以前の読み手は raw LZMA として誤読していたので、以前の CLI で開かないこと
 

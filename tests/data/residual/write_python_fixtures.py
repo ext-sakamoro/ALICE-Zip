@@ -46,4 +46,8 @@ write("lzma_2d", M.LZMA, VALUES.reshape(2, 2))
 # writer quantizes whenever quantization_bits is set)
 write("quantized16", M.QUANTIZED, VALUES, bits=16)
 write("lzma_q8", M.LZMA, VALUES, bits=8)
+# codes that land on .5 with an even integer below (2.5 -> 2, 4.5 -> 4 under
+# round half to even, 3 and 5 under round half away from zero)
+TIES = np.array([0.0, 2.5, 4.5, 255.0], dtype=np.float32)
+write("quantized_ties", M.QUANTIZED, TIES)
 
