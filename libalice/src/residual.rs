@@ -1219,6 +1219,15 @@ mod tests {
     }
 
     #[test]
+    fn eight_bit_codes_are_computed_in_f64() {
+        // oracle: x = f32 0x3F1C1C1C is 0.60980391502380371..., x * 255 =
+        // 155.4999...: 155 exactly; the f32 product rounds to 155.5 and gives 156
+        let x = f32::from_bits(0x3F1C_1C1C);
+        let q = quantize_python(&[0.0, 1.0, x], 8).unwrap();
+        assert_eq!(&q[16..], &[0, 255, 155]);
+    }
+
+    #[test]
     fn values_that_are_not_finite_are_not_quantized() {
         let special: Vec<f32> = SPECIAL_BITS.into_iter().map(f32::from_bits).collect();
         for data in [

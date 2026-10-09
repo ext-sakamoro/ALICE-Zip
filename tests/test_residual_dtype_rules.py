@@ -74,6 +74,15 @@ def test_thirty_two_bit_codes_are_exact_on_every_platform(data):
     assert np.frombuffer(q[16:], dtype="<u4").tolist() == [0, 4294967295, 2147483648, 1073741824]
 
 
+def test_eight_bit_codes_are_computed_in_float64():
+    # oracle: x = float32 0x3F1C1C1C is 0.60980391502380371..., x * 255 =
+    # 155.4999...: 155 exactly; the float32 product rounds to 155.5 and gives 156
+    x = np.array([0x3F1C1C1C], dtype="<u4").view("<f4")[0]
+    data = np.array([0.0, 1.0, x], dtype=np.float32)
+    q = ResidualCompressor(method=M.QUANTIZED)._quantize_residual(data, 8)
+    assert list(q[16:]) == [0, 255, 155]
+
+
 @pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
 @pytest.mark.parametrize("method,bits", [(M.QUANTIZED, None), (M.LZMA, 8), (M.QUANTIZED, 16)])
 def test_values_that_are_not_finite_are_not_quantized(bad, method, bits):
