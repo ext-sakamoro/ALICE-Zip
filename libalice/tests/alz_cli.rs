@@ -78,8 +78,13 @@ fn a_mode_it_never_wrote_is_refused() {
 }
 
 fn f32_input(dir: &Path) -> (std::path::PathBuf, Vec<f32>) {
-    let vals: Vec<f32> = (0..4096)
-        .map(|i| (f64::from(i) * 0.01).sin() as f32 * 3.0 + 0.25)
+    // a ramp with a fold: no transcendental (the crate's lint forbids the
+    // platform libm), range 0.25..=6.25
+    let vals: Vec<f32> = (0..4096u32)
+        .map(|i| {
+            let k = u16::try_from((i * 37) % 1000).expect("below 1000");
+            f32::from(k) / 1000.0 * 6.0 + 0.25
+        })
         .collect();
     let path = dir.join("in.f32");
     let bytes: Vec<u8> = vals.iter().flat_map(|v| v.to_le_bytes()).collect();

@@ -16,7 +16,10 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 // Use the library's compression module (DRY principle)
-use alice_core::compression::{dequantize_8bit, quantize_8bit, zlib_compress, zlib_decompress};
+use alice_core::compression::{
+    dequantize_16bit, dequantize_8bit, quantize_16bit, quantize_8bit, zlib_compress,
+    zlib_decompress,
+};
 
 /// ALICE-Zip: Procedural Compression for Scientific Data
 #[derive(Parser)]
@@ -112,12 +115,15 @@ const FORMAT_VERSION: u8 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 enum CompressionMode {
-    RawLzma = 0,      // Pure LZMA, no procedural
-    Polynomial = 1,   // Polynomial fit + residual
-    Fourier = 2,      // Fourier fit + residual
-    Perlin = 3,       // Perlin noise + residual
-    Quantized8 = 10,  // 8-bit quantized residual
-    Quantized16 = 11, // 16-bit quantized residual
+    RawLzma = 0,     // Pure LZMA, no procedural
+    Polynomial = 1,  // Polynomial fit + residual
+    Fourier = 2,     // Fourier fit + residual
+    Perlin = 3,      // Perlin noise + residual
+    Quantized8 = 10, // 8-bit quantized residual
+    /// Written by earlier releases when 16 bits were asked for, but the data
+    /// is 8-bit quantized; read as 8 bits, never written any more.
+    Quantized8Legacy11 = 11,
+    Quantized16 = 12, // 16-bit quantized residual
     Lossless = 20,    // Full precision residual
 }
 
@@ -132,7 +138,8 @@ impl TryFrom<u8> for CompressionMode {
             2 => Ok(CompressionMode::Fourier),
             3 => Ok(CompressionMode::Perlin),
             10 => Ok(CompressionMode::Quantized8),
-            11 => Ok(CompressionMode::Quantized16),
+            11 => Ok(CompressionMode::Quantized8Legacy11),
+            12 => Ok(CompressionMode::Quantized16),
             20 => Ok(CompressionMode::Lossless),
             _ => Err(format!("unknown .alz mode {v}")),
         }
@@ -255,7 +262,13 @@ fn cmd_compress(
                 .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
                 .collect();
 
-            let (quantized, min_val, scale) = quantize_8bit(&floats);
+            let (quantized, min_val, scale, mode) = if bits == 16 {
+                let (q, lo, s) = quantize_16bit(&floats);
+                (q, lo, s, CompressionMode::Quantized16)
+            } else {
+                let (q, lo, s) = quantize_8bit(&floats);
+                (q, lo, s, CompressionMode::Quantized8)
+            };
 
             // Compress quantized data
             let compressed = zlib_compress(&quantized, level)?;
@@ -265,12 +278,6 @@ fn cmd_compress(
             payload.extend_from_slice(&min_val.to_le_bytes());
             payload.extend_from_slice(&scale.to_le_bytes());
             payload.extend_from_slice(&compressed);
-
-            let mode = if bits == 16 {
-                CompressionMode::Quantized16
-            } else {
-                CompressionMode::Quantized8
-            };
 
             (payload, mode)
         } else {
@@ -330,7 +337,9 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
     // Decompress based on mode
     let decompressed = match header.mode {
         CompressionMode::RawLzma | CompressionMode::Lossless => zlib_decompress(payload)?,
-        CompressionMode::Quantized8 | CompressionMode::Quantized16 => {
+        CompressionMode::Quantized8
+        | CompressionMode::Quantized8Legacy11
+        | CompressionMode::Quantized16 => {
             // Validate payload length
             if payload.len() < 16 {
                 return Err("Payload too short for quantized data".into());
@@ -345,7 +354,11 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
             let quantized = zlib_decompress(compressed)?;
 
             // Dequantize
-            let floats = dequantize_8bit(&quantized, min_val, scale);
+            let floats = if header.mode == CompressionMode::Quantized16 {
+                dequantize_16bit(&quantized, min_val, scale)
+            } else {
+                dequantize_8bit(&quantized, min_val, scale)
+            };
 
             // Convert to bytes
             floats.iter().flat_map(|&f| f.to_le_bytes()).collect()
