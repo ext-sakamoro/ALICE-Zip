@@ -86,7 +86,9 @@ fn the_rust_reader_accepts_exactly_the_files_the_table_lists() {
             "special" => Some(SPECIAL.to_vec()),
             "special11" => Some(SPECIAL11.to_vec()),
             "wide" => Some(WIDE.iter().map(|v| v.to_bits()).collect()),
-            "quant8" | "quant16" | "quant32" => Some(quantized_expected(values)),
+            "quant8" | "quant16" | "quant32" | "rand8" | "rand16" | "rand32" => {
+                Some(quantized_expected(values))
+            }
             _ => None,
         };
         if let (Ok(out), Some(want)) = (read, want) {
@@ -95,7 +97,7 @@ fn the_rust_reader_accepts_exactly_the_files_the_table_lists() {
         }
         compared += 1;
     }
-    assert_eq!(compared, 63, "every row compared");
+    assert_eq!(compared, 69, "every row compared");
 }
 
 #[test]

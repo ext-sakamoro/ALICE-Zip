@@ -1176,7 +1176,40 @@ mod tests {
             },
         };
         files.push(("quantized32".to_owned(), rd.to_bytes()));
+        // random values (tests/data/residual/residual_values.py)
+        let random = random_values();
+        files.push((
+            "quantized_rand8".to_owned(),
+            compress_with_method(&random, M::Quantized).to_bytes(),
+        ));
+        for bits in [16u8, 32] {
+            let rd = ResidualData {
+                method: M::Quantized,
+                compressed: xz_compress(&quantize_python(&random, bits).unwrap()).unwrap(),
+                original_len: random.len(),
+                shape: vec![random.len()],
+                dtype: "float32".to_owned(),
+                metadata: ResidualMetadata {
+                    quant_bits: Some(bits),
+                    ..ResidualMetadata::default()
+                },
+            };
+            files.push((format!("quantized_rand{bits}"), rd.to_bytes()));
+        }
         files
+    }
+
+    /// 64 values in [-8, 8) from a fixed linear congruential sequence, the
+    /// same as `random_values` in tests/data/residual/residual_values.py.
+    #[allow(clippy::cast_precision_loss)]
+    fn random_values() -> Vec<f32> {
+        let mut x: u32 = 0x2545_F491;
+        (0..64)
+            .map(|_| {
+                x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (x >> 8) as f32 / 1_048_576.0 - 8.0
+            })
+            .collect()
     }
 
     fn fixture_dir() -> std::path::PathBuf {
@@ -1208,7 +1241,7 @@ mod tests {
                 "rust_{name}.bin differs from the writer's output"
             );
         }
-        assert_eq!(files.len(), 21, "every writer file compared");
+        assert_eq!(files.len(), 24, "every writer file compared");
     }
 
     #[test]

@@ -37,7 +37,7 @@ def rows():
 
 def test_the_python_reader_accepts_exactly_the_files_the_table_lists():
     table = rows()
-    assert len(table) == 63
+    assert len(table) == 69
     for name, writer, _rust, python, values in table:
         try:
             out = ResidualCompressor().decompress_residual(
@@ -65,7 +65,8 @@ def payload(name):
 
 def test_both_writers_quantize_to_the_same_bytes():
     # compared before compression (xz output differs between implementations)
-    for name in ("quantized", "quantized_ties", "quantized32"):
+    for name in ("quantized", "quantized_ties", "quantized32",
+                 "quantized_rand8", "quantized_rand16", "quantized_rand32"):
         (hp, py), (hr, rs) = payload(f"python_{name}.bin"), payload(f"rust_{name}.bin")
         assert hp == hr, name
         assert py == rs, name
@@ -75,3 +76,32 @@ def test_both_writers_quantize_to_the_same_bytes():
     # 32 bits: 1.0 is the top code, 0.5 and 0.25 rounded half to even
     codes = np.frombuffer(payload("python_quantized32.bin")[1][16:], dtype="<u4").tolist()
     assert codes == [0, 4294967295, 2147483648, 1073741824]
+
+
+def decoded_payload(data):
+    """The header and the payload before compression of a residual file."""
+    import json
+    import lzma
+    import struct
+    import zlib
+    n = struct.unpack("<I", data[:4])[0]
+    header, body = json.loads(data[4:4 + n]), data[4 + n:]
+    if header["method"] == "none":
+        return header, body
+    if header["method"] == "zlib":
+        return header, zlib.decompress(body)
+    return header, lzma.decompress(body)
+
+
+def test_the_python_writer_reproduces_the_committed_files():
+    # the files the other reader is tested against are this writer's current
+    # output; compared before compression (xz output may differ between
+    # liblzma versions)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "write_python_fixtures", DATA / "write_python_fixtures.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert len(module.FILES) == 45
+    for name, data in module.FILES.items():
+        assert decoded_payload(data) == decoded_payload((DATA / name).read_bytes()), name

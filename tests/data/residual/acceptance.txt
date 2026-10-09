@@ -8,7 +8,8 @@
 #           return these values bit for bit (the inputs of the writers: special
 #           has 13 values incl. signaling NaNs, special11 the 11 values the
 #           earlier writer was given); quant8 / quant16 = the dequantized
-#           values in quantized_expected.txt (quant32 too); wide = the
+#           values in quantized_expected.txt (quant32 and rand8 / rand16 /
+#           rand32, the random values of residual_values.py); wide = the
 #           residual values of the dtype_* files, returned as float32 whatever
 #           the dtype of the original; - = not compared
 residual_v2.bin                  hand        accept accept -
@@ -74,3 +75,9 @@ rust_dtype_uint16.bin            rust        accept accept wide
 rust_dtype_uint32.bin            rust        accept accept wide
 rust_dtype_uint64.bin            rust        accept accept wide
 rust_quantized32.bin             rust        accept accept quant32
+python_quantized_rand8.bin       python      accept accept rand8
+python_quantized_rand16.bin      python      accept accept rand16
+python_quantized_rand32.bin      python      accept accept rand32
+rust_quantized_rand8.bin         rust        accept accept rand8
+rust_quantized_rand16.bin        rust        accept accept rand16
+rust_quantized_rand32.bin        rust        accept accept rand32

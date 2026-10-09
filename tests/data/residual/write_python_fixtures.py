@@ -2,7 +2,8 @@
 """Writes residual files with the real Python writer (alice_zip), so the Rust
 reader is tested against what Python actually produces.
 
-Needs numpy. Run from the repository root:
+Needs numpy. Importing the module computes the files (`FILES`, name -> bytes);
+running it writes them. Run from the repository root:
     python tests/data/residual/write_python_fixtures.py
 The Rust writer's files come from the ignored test
 `residual::tests::write_rust_writer_fixtures` in libalice (run with
@@ -28,10 +29,13 @@ SPECIAL = np.array([0x7FC00001, 0x3F800000, 0x7F800000, 0xFF800000, 0x80000000, 
                    dtype="<u4").view("<f4")
 
 
+FILES = {}
+
+
 def write(name, method, data, dtype="float32", bits=None):
     r = ResidualCompressor(method=method, quantization_bits=bits).compress_residual(
         data, original_dtype=dtype)
-    (HERE / f"python_{name}.bin").write_bytes(r.to_bytes())
+    FILES[f"python_{name}.bin"] = r.to_bytes()
 
 
 for name, method in [("none", M.NONE), ("lzma", M.LZMA), ("zlib", M.ZLIB),
@@ -63,3 +67,14 @@ for dt in DTYPES:
 # 32-bit codes: 1.0 lands on the top code 4294967295, which float32 cannot hold
 Q32 = np.array([0.0, 1.0, 0.5, 0.25], dtype=np.float32)
 write("quantized32", M.QUANTIZED, Q32, bits=32)
+# random values (the same 64 values in both writers, residual_values.random_values)
+sys.path.insert(0, str(HERE))
+from residual_values import random_values  # noqa: E402
+
+RANDOM = np.array(random_values(), dtype=np.float32)
+for _bits in (8, 16, 32):
+    write(f"quantized_rand{_bits}", M.QUANTIZED, RANDOM, bits=_bits)
+
+if __name__ == "__main__":
+    for _name, _bytes in FILES.items():
+        (HERE / _name).write_bytes(_bytes)
