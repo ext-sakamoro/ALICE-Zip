@@ -24,3 +24,10 @@ def test_version_2_is_read():
 def test_a_later_version_is_refused_instead_of_being_read_as_version_2():
     with pytest.raises(ValueError, match="version 3"):
         ResidualData.from_bytes((DATA / "residual_v3.bin").read_bytes())
+
+
+@pytest.mark.parametrize("name", ["residual_v2_float.bin", "residual_v2_string.bin"])
+def test_a_version_written_as_a_float_or_a_string_is_refused(name):
+    # same verdict as libalice/tests/residual_version.rs
+    with pytest.raises(ValueError, match="version"):
+        ResidualData.from_bytes((DATA / name).read_bytes())
