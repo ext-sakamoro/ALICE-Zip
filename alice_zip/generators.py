@@ -181,7 +181,7 @@ class PerlinNoiseGenerator(ProceduralGenerator):
             lacunarity=lacunarity
         )
 
-        return result.astype(np.float32)
+        return result.astype(np.dtype(params.dtype))
 
 
 # ============================================================================
@@ -201,7 +201,7 @@ class FourierGenerator(ProceduralGenerator):
         # Use native accelerator (Rust) if available
         result = accel.fourier_generate(n, coefficients, dc_offset)
         # Reshape to original shape
-        return result.astype(np.float32).reshape(params.output_shape)
+        return result.astype(np.dtype(params.dtype)).reshape(params.output_shape)
 
 
 # ============================================================================
@@ -223,7 +223,7 @@ class SineWaveGenerator(ProceduralGenerator):
         # Use native accelerator (Rust) if available
         result = accel.sine_wave(n, frequency, amplitude, phase, dc_offset)
         # Reshape to original shape
-        return result.astype(np.float32).reshape(params.output_shape)
+        return result.astype(np.dtype(params.dtype)).reshape(params.output_shape)
 
 
 # ============================================================================
@@ -242,7 +242,7 @@ class PolynomialGenerator(ProceduralGenerator):
         # Use native accelerator (Rust) if available
         result = accel.polynomial_generate(n, coefficients)
         # Reshape to original shape
-        return result.astype(np.float32).reshape(params.output_shape)
+        return result.astype(np.dtype(params.dtype)).reshape(params.output_shape)
 
 
 # ============================================================================

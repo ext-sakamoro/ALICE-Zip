@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Python package の procedural payload の復元が、書き手が payload に記録した dtype で返る 4 つの生成器 (Perlin / Fourier / sine / polynomial) が結果を常に float32 に変換していたので、float64 の入力が float32 で返り、byte 数が header の `original_size` の半分になっていた 形式は変わらない (dtype は以前から payload の `params.dtype` にある)
+
 ### Added
 
 - `container` — a container that holds several payloads, each identified by
