@@ -41,6 +41,10 @@ const SPECIAL: [u32; 13] = [
     0xFF80_0001,
 ];
 
+/// The residual values of the `dtype_*` files, returned as `f32` whatever the
+/// dtype of the original.
+const WIDE: [f32; 4] = [-36.54, 300.5, 5.5, -129.75];
+
 fn quantized_expected(name: &str) -> Vec<u32> {
     let text = std::fs::read_to_string(dir().join("quantized_expected.txt")).unwrap();
     let line = text
@@ -81,7 +85,8 @@ fn the_rust_reader_accepts_exactly_the_files_the_table_lists() {
             "values" => Some(VALUES.to_vec()),
             "special" => Some(SPECIAL.to_vec()),
             "special11" => Some(SPECIAL11.to_vec()),
-            "quant8" | "quant16" => Some(quantized_expected(values)),
+            "wide" => Some(WIDE.iter().map(|v| v.to_bits()).collect()),
+            "quant8" | "quant16" | "quant32" => Some(quantized_expected(values)),
             _ => None,
         };
         if let (Ok(out), Some(want)) = (read, want) {
@@ -90,7 +95,7 @@ fn the_rust_reader_accepts_exactly_the_files_the_table_lists() {
         }
         compared += 1;
     }
-    assert_eq!(compared, 39, "every row compared");
+    assert_eq!(compared, 63, "every row compared");
 }
 
 #[test]

@@ -93,12 +93,13 @@ def test_a_bitdelta_file_reads_xz():
     assert np.asarray(back, dtype=np.float32).tolist() == VALUES.tolist()
 
 
-def test_the_recorded_dtype_is_returned():
+def test_the_recorded_dtype_is_kept_and_the_values_are_float32():
+    # the dtype is the original's (tests/test_residual_dtype_rules.py)
     back = ResidualCompressor().decompress_residual(read("bitdelta"))
     assert back.dtype == np.float32
-    f64 = ResidualCompressor().decompress_residual(
-        ResidualData.from_bytes((DATA / "python_lzma_float64.bin").read_bytes()))
-    assert f64.dtype == np.float64
+    rd = ResidualData.from_bytes((DATA / "python_lzma_float64.bin").read_bytes())
+    assert rd.original_dtype == "float64"
+    assert ResidualCompressor().decompress_residual(rd).dtype == np.float32
 
 
 def test_a_dtype_the_writer_never_records_is_refused_when_read():
