@@ -16,6 +16,7 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
 ### Fixed
 - `residual::ResidualData::from_bytes` は `"version"` が JSON の整数でなければ (float `2.0`、文字列 `"2"`) `ResidualError::InvalidHeader` 文字列の `"2"` を版 2 として読んでいた Python 版と同じ規則
+- `alice compress --bits 16` が 16 bit で量子化する これまでは mode 11 (16 bit と表示) を書きながら中身は常に 8 bit で量子化していた (実測: 最大誤差 0.01176 = 8 bit の半 step、file の大きさも `--bits 8` と同じ) 本物の 16 bit は新しい mode 12 で書く mode 11 の既存 file は中身どおり 8 bit として読み続ける (書くことはもう無い) header の版は変わらない mode 12 の file は、未知の mode を拒否する読み手 (この版以降) にしか読めず、以前の読み手は raw LZMA として誤読していたので、以前の CLI で開かないこと
 
 ## [2.7.0] - 2026-10-09
 
