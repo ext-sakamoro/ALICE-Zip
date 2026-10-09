@@ -877,13 +877,27 @@ pub struct LegacyHeader {
 }
 
 impl LegacyHeader {
+    /// Whether decompressing the payload reproduces the original exactly, so
+    /// that `original_hash` can be checked against the result.
+    ///
+    /// Only the LZMA fallback payload (`payload_type` `0x30`) is lossless.
+    /// A procedural payload (and every version 1.0 file, which has no
+    /// `payload_type` and is procedural) stores generator parameters and is
+    /// regenerated approximately, and the media and texture payloads store
+    /// parameters too; for those the hash describes data the reader does not
+    /// reproduce, so it cannot match by design.
+    #[must_use]
+    pub fn original_hash_checkable(&self) -> bool {
+        todo!("original_hash_checkable")
+    }
+
     /// Checks data offered as the original: its length against
     /// `original_size`, and its SHA-256 against `original_hash` when the
     /// header records one.
     ///
     /// The container does not decompress the payload, so it cannot produce
     /// the original itself; a reader that decompresses passes its result
-    /// here.
+    /// here, for payloads where [`Self::original_hash_checkable`] holds.
     ///
     /// # Errors
     ///

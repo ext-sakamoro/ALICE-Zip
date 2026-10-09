@@ -749,3 +749,32 @@ fn an_all_zero_hash_means_the_writer_did_not_record_one() {
         })
     );
 }
+
+/// Which `ALICE_ZIP` payloads reproduce the original exactly, so that
+/// `original_hash` can be checked after decompression. The same table is
+/// asserted by the Python reader (tests/test_container_fail_closed.py).
+const CHECKABLE: &[(Option<u8>, bool)] = &[
+    (None, false),       // version 1.0: procedural
+    (Some(0x00), false), // procedural: regenerated approximately
+    (Some(0x10), false), // media image parameters
+    (Some(0x11), false), // media audio parameters
+    (Some(0x12), false), // media video parameters
+    (Some(0x20), false), // texture parameters
+    (Some(0x30), true),  // LZMA fallback: lossless
+];
+
+#[test]
+fn only_a_lossless_payload_has_a_checkable_original_hash() {
+    for &(payload_type, checkable) in CHECKABLE {
+        let mut v = if payload_type.is_some() {
+            LEGACY_V2.to_vec()
+        } else {
+            LEGACY_V1.to_vec()
+        };
+        if let Some(p) = payload_type {
+            v[13] = p;
+        }
+        let (h, _) = alice_zip::container::parse_legacy_alice_zip_header(&v).unwrap();
+        assert_eq!(h.original_hash_checkable(), checkable, "{payload_type:?}");
+    }
+}
