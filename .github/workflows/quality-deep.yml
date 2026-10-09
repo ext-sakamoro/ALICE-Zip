@@ -79,17 +79,19 @@ jobs:
         run: |
           {
             echo "## cargo-mutants (${{ github.event_name == 'pull_request' && 'in-diff' || format('shard {0}/8', matrix.shard) }})"
-            if [ -f mutants.out/outcomes.json ]; then
+            # cargo-mutants --output <dir> creates <dir>/mutants.out, not files
+            # directly in <dir>; read the nested path, not the outer one
+            if [ -f mutants.out/mutants.out/outcomes.json ]; then
               python3 - <<'PY'
           import json
-          d = json.load(open("mutants.out/outcomes.json"))
+          d = json.load(open("mutants.out/mutants.out/outcomes.json"))
           s = d.get("summary", d)
           caught = s.get("caught", 0); missed = s.get("missed", 0); un = s.get("unviable", 0); to = s.get("timeout", 0)
           tot = caught + missed
           print(f"- caught {caught} / missed {missed} / unviable {un} / timeout {to}")
           print(f"- mutation score: {caught / tot * 100:.1f}% (目標 ≥ 80%)" if tot else "- no viable mutants")
           PY
-              echo; echo "### missed"; cat mutants.out/missed.txt 2>/dev/null | head -80
+              echo; echo "### missed"; cat mutants.out/mutants.out/missed.txt 2>/dev/null | head -80
             else
               echo "no output (build failed?)"
             fi
