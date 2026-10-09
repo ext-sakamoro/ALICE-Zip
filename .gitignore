@@ -146,3 +146,6 @@ fuzz/target/
 fuzz/artifacts/
 fuzz/corpus/
 mutants.out/
+
+# container fixtures (earlier ALICE_ZIP files written by tests/data/container/container_ref.py)
+!tests/data/container/*.alice
