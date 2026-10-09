@@ -3,7 +3,12 @@
 Test ALICE-Zip with real images (JPEG/PNG).
 
 Tests:
-1. Lossless mode: Bit-perfect reconstruction
+1. Lossless mode: accepted when the reconstruction is an exact match **or**
+   PSNR > 50 dB — so this file does not actually pin bit-exactness, despite the
+   name of the mode. Whether the Python container should be tightened to
+   require an exact match is tracked separately; the Rust side got a container
+   that is exact by construction in 0.8.0
+   (`compression::compress_residual_xor`).
 2. Lossy mode: Visual quality without residual
 3. Adaptive fallback: Ensures compression ratio >= 1.0x
 """
@@ -14,7 +19,11 @@ import urllib.request
 import os
 from pathlib import Path
 
-sys.path.insert(0, '/Users/ys/ALICE-Zip')
+# Resolve the repository root from this file so the tests run anywhere
+# (an absolute home path only works on the machine it was written on,
+# and this is a public repository).
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from alice_zip.analyzers import ProceduralCompressionDesigner
 from alice_zip.residual_compression import ResidualCompressionMethod
@@ -22,7 +31,7 @@ from alice_zip.residual_compression import ResidualCompressionMethod
 
 def download_test_image(url: str, filename: str) -> Path:
     """Download test image if not exists"""
-    test_dir = Path('/Users/ys/ALICE-Zip/test_images')
+    test_dir = REPO_ROOT / 'test_images'
     test_dir.mkdir(exist_ok=True)
     filepath = test_dir / filename
 
@@ -262,7 +271,7 @@ def test_real_image():
         print(f"SSIM: {ssim_lossy:.4f}")
 
         # Save comparison images
-        test_dir = Path('/Users/ys/ALICE-Zip/test_images')
+        test_dir = REPO_ROOT / 'test_images'
         test_dir.mkdir(exist_ok=True)
         save_image(data_gray, test_dir / 'original_gray.png')
         save_image(reconstructed_lossy, test_dir / 'reconstructed_lossy.png')

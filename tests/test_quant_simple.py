@@ -5,7 +5,12 @@ Simple 8-bit Quantization Test (1D data only, no Perlin)
 
 import numpy as np
 import sys
-sys.path.insert(0, '/Users/ys/ALICE-Zip')
+from pathlib import Path
+# Resolve the repository root from this file so the tests run anywhere
+# (an absolute home path only works on the machine it was written on,
+# and this is a public repository).
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from alice_zip.analyzers import ProceduralCompressionDesigner
 from alice_zip.generators import CompressionEngine

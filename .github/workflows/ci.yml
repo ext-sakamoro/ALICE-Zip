@@ -131,6 +131,19 @@ jobs:
       - name: Check formatting (libalice)
         run: cargo fmt --manifest-path libalice/Cargo.toml -- --check
 
+  claim-check:
+    name: README の主張と test の対応
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # README の `<!-- claim-test: NAME -->` は「この主張には試験がある」と
+      # 読まれるが、2026-10-09 まで検査が無く、rename や削除で marker だけが
+      # 残る経路が開いていた 併せてベンチマーク表には marker が 1 つも無く、
+      # 圧縮率を 2 桁以上過大に書いた状態で全 gate が green だった
+      # ⚠️ marker 0 件でも fail する (空振りを成功と読ませない)
+      - name: claim-test marker が実在の試験を指しているか
+        run: python3 scripts/claim_check.py
+
   libalice:
     name: libalice (CLI / FFI crate)
     runs-on: ubuntu-latest

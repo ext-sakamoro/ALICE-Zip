@@ -25,7 +25,7 @@ checksum = "eef90265249a97cc0fac787cf918f62639991513c0219c33e1853de7f1a28a03"
 
 [[package]]
 name = "alice-zip"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "alice-det-math",
  "flate2",
@@ -40,7 +40,7 @@ dependencies = [
 
 [[package]]
 name = "alice-zip-cli"
-version = "2.6.0"
+version = "2.7.0"
 dependencies = [
  "alice-codec",
  "alice-det-math",

@@ -9,6 +9,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-09
+
+### Added
+
+- `compression::compress_residual_xor` / `decompress_residual_xor` — a residual
+  container that stores `original.to_bits() ^ model.to_bits()` instead of
+  `original - model`. Reversible by construction, so every finite sample comes
+  back unchanged: signed zeros, denormals, and values far smaller than their
+  model all survive. Measured on a 100,000-sample sine fitted by
+  `analyze_signal`, the subtraction form loses the **99 samples nearest the zero
+  crossings** (where `|original| << |model|`, `fl(original - model)` rounds the
+  original away and `model + residual` does not return it); the xor form loses
+  none. It is also smaller on that signal (5,306 B against 8,450 B) because the
+  xor of two close values is mostly zero bytes — on the degree-3 polynomial it
+  is larger (3,916 B against 2,783 B), so the subtraction container stays for
+  callers who prefer size over exactness
+- `compression::ResidualCodec` + `residual_codec_default` +
+  `*_with` variants of all three container constructors — the payload codec is
+  now chosen explicitly and recorded in the container, so a reader never guesses
+- `compression::residual_container_codec` — reads the codec back out of any
+  container this module produces
+- `scripts/claim_check.py` + a CI job: every `<!-- claim-test: NAME -->` in
+  `README.md` / `README_ja.md` must resolve to a real `fn NAME`, the two
+  documents must carry the same set of markers, and **0 markers fails**. The
+  convention existed since the law module landed but nothing checked it
+- `examples/compression_ratio.rs` — prints the benchmark table the READMEs
+  quote, so the numbers there are reproducible rather than asserted
+
+### Changed
+
+- **Residual containers default to deflate instead of LZMA.** `lzma-rs` is pure
+  Rust but its encoder is weak: on the same 400,000 bytes it produced
+  **316,528 B where this crate's own zlib wrapper produced 8,742 B** (36x worse),
+  and on the sine residual 46,916 B against 8,430 B. The README's promise that
+  the fallback is "never worse than standard tools" was therefore wrong by 84x.
+  Deflate comes from `flate2`, already a dependency, so nothing new is pulled in
+  and the pure-Rust / `no_std`-friendly story is unchanged
+- **The `level` argument now does something.** It is the deflate level `0..=9`
+  (clamped to `1..=9`); on the sine residual level 9 is twice as good as level 6.
+  The LZMA path still has fixed settings and ignores it, as before
+- Containers are available with the `std` feature instead of requiring `lzma`;
+  `ResidualCodec::Lzma` (and reading a version 0 container) still needs `lzma`
+  and returns a clear error without it
+- `compress_residual_lossless`'s documentation now states that the container
+  stores the residual array exactly but that a pipeline built on the subtraction
+  form is not bit-exact, and points at `compress_residual_xor`
+
+### Fixed
+
+- Both READMEs quoted parameters-only sizes under the heading "Lossless:
+  Bit-perfect reconstruction" — 1400x for a sine that was in fact reconstructed
+  with a 6e-8 error. The benchmark tables now separate **bit-exact**
+  (75x / 102x / 806x), **lossy** (160x–1286x with the error stated) and
+  **parameters only** (11,111x–20,000x with the error stated), and carry a
+  `zlib alone` baseline column so the comparison is visible. `README_ja.md` was
+  corrected in the same commit
+
+### Format
+
+- Containers written by 0.8.0 carry a version marker and a codec byte
+  (`0xFD` lossless, `0xFE` xor, `0xFC` quantised). **Containers written by
+  earlier releases still decode**; containers written by 0.8.0 need 0.8.0 or
+  later to read
+
 ## [0.7.0] - 2026-10-08
 
 ### Changed

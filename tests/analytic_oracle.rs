@@ -894,38 +894,69 @@ fn quantisation_error_is_bounded_by_half_a_step_and_endpoints_are_exact() {
 #[test]
 fn residual_containers_have_the_documented_layout_and_round_trip() {
     use alice_zip::compression::{
-        compress_residual_lossless, compress_residual_quantized, decompress_residual_lossless,
-        decompress_residual_quantized, lzma_compress,
+        compress_residual_lossless, compress_residual_lossless_with, compress_residual_quantized,
+        compress_residual_xor, decompress_residual_lossless, decompress_residual_quantized,
+        lzma_compress, residual_codec_default, ResidualCodec,
     };
     let residual: Vec<f32> = (0..500)
         .map(|i| alice_det_math::cos((i as f32) * 0.05) * 3.0 - 1.0)
         .collect();
+    let default_tag: u8 = match residual_codec_default() {
+        ResidualCodec::Deflate => 0,
+        ResidualCodec::Lzma => 1,
+        _ => panic!("unknown default codec — this oracle has to be taught about it"),
+    };
+
+    // quantised: 0xFC | codec u8 | bits u8 | min f64 LE | scale f64 LE | len u32 LE
+    const QUANTIZED_HEADER: usize = 1 + 1 + 1 + 8 + 8 + 4;
     for bits in [8u8, 16] {
         let c = compress_residual_quantized(&residual, bits, 6).unwrap();
-        // header: bits u8 | min f64 LE | scale f64 LE | len u32 LE
-        assert_eq!(c[0], bits);
-        let min = f64::from_le_bytes(c[1..9].try_into().unwrap());
-        let scale = f64::from_le_bytes(c[9..17].try_into().unwrap());
-        let len = u32::from_le_bytes(c[17..21].try_into().unwrap()) as usize;
+        assert_eq!(c[0], 0xFC, "quantised marker");
+        assert_eq!(c[1], default_tag, "codec byte");
+        assert_eq!(c[2], bits, "width byte");
+        let min = f64::from_le_bytes(c[3..11].try_into().unwrap());
+        let scale = f64::from_le_bytes(c[11..19].try_into().unwrap());
+        let len = u32::from_le_bytes(c[19..23].try_into().unwrap()) as usize;
         assert!(
             (min - f64::from(residual.iter().cloned().fold(f32::INFINITY, f32::min))).abs() < 1e-12
         );
         let lo = residual.iter().cloned().fold(f32::INFINITY, f32::min);
         let hi = residual.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
         assert!((scale - f64::from(hi - lo)).abs() < 1e-5, "{scale}");
-        assert_eq!(c.len(), 21 + len);
+        assert_eq!(c.len(), QUANTIZED_HEADER + len);
         let out = decompress_residual_quantized(&c).unwrap();
         let tol = scale / f64::from((1u32 << u32::from(bits)) - 1) / 2.0 + 1e-6;
         for (a, b) in out.iter().zip(&residual) {
             assert!((f64::from(a - b)).abs() <= tol, "bits={bits}: {a} vs {b}");
         }
     }
-    // lossless: 0xFF | len u32 LE | LZMA(f32 LE)
+
+    // lossless: 0xFD | codec u8 | len u32 LE | codec(f32 LE)
+    const V1_HEADER: usize = 1 + 1 + 4;
     let c = compress_residual_lossless(&residual, 6).unwrap();
-    assert_eq!(c[0], 0xFF);
-    let len = u32::from_le_bytes(c[1..5].try_into().unwrap()) as usize;
-    assert_eq!(c.len(), 5 + len);
-    let raw: Vec<u8> = residual.iter().flat_map(|v| v.to_le_bytes()).collect();
-    assert_eq!(&c[5..], &lzma_compress(&raw, 6).unwrap()[..]);
+    assert_eq!(c[0], 0xFD, "lossless marker");
+    assert_eq!(c[1], default_tag, "codec byte");
+    let len = u32::from_le_bytes(c[2..6].try_into().unwrap()) as usize;
+    assert_eq!(c.len(), V1_HEADER + len);
     assert_eq!(decompress_residual_lossless(&c).unwrap(), residual);
+
+    // With the LZMA codec requested explicitly the payload is byte-for-byte the
+    // LZMA stream of the samples — this pins what the codec byte means, not just
+    // that a round trip happens to work.
+    let c = compress_residual_lossless_with(&residual, ResidualCodec::Lzma, 6).unwrap();
+    assert_eq!(c[0], 0xFD);
+    assert_eq!(c[1], 1, "codec byte must say LZMA");
+    let len = u32::from_le_bytes(c[2..6].try_into().unwrap()) as usize;
+    assert_eq!(c.len(), V1_HEADER + len);
+    let raw: Vec<u8> = residual.iter().flat_map(|v| v.to_le_bytes()).collect();
+    assert_eq!(&c[V1_HEADER..], &lzma_compress(&raw, 6).unwrap()[..]);
+    assert_eq!(decompress_residual_lossless(&c).unwrap(), residual);
+
+    // xor: 0xFE | codec u8 | len u32 LE | codec(u32 LE of bits ^ bits)
+    let model: Vec<f32> = residual.iter().map(|v| v * 0.999).collect();
+    let c = compress_residual_xor(&residual, &model, 6).unwrap();
+    assert_eq!(c[0], 0xFE, "xor marker");
+    assert_eq!(c[1], default_tag, "codec byte");
+    let len = u32::from_le_bytes(c[2..6].try_into().unwrap()) as usize;
+    assert_eq!(c.len(), V1_HEADER + len);
 }

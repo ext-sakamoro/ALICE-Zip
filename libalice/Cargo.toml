@@ -1,6 +1,6 @@
 [package]
 name = "alice-zip-cli"
-version = "2.6.0"
+version = "2.7.0"
 edition = "2021"
 # Same MSRV as the core crate; verified by the CI `msrv` job (`cargo +1.87 check`).
 # Declared so clippy's MSRV-aware lints do not suggest newer std APIs.
@@ -38,7 +38,7 @@ numpy = { version = "0.29", optional = true }
 # platform libm is not required to be correctly rounded, so a signal fitted
 # here and regenerated elsewhere would not agree bit for bit
 alice-det-math = "0.4"
-alice_zip = { package = "alice-zip", path = "..", version = "0.7", features = ["std", "fft", "parallel", "lzma"] }
+alice_zip = { package = "alice-zip", path = "..", version = "0.8", features = ["std", "fft", "parallel", "lzma"] }
 
 # Seeded white noise for media::audio
 rand = "0.8"

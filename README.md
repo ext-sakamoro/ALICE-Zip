@@ -23,14 +23,25 @@
 
 ALICE-Zip is a next-generation compression tool that stores **"how to generate the data"** instead of the data itself.
 
-For patterns, waves, and mathematical data, it achieves compression ratios of **10x to 1000x**.
-For everything else, it falls back to LZMA, ensuring it's **never worse** than standard tools.
+For patterns, waves and mathematical data it reaches **75x to 806x with the
+original samples recovered bit for bit**, and 160x to 1286x if a 1e-12 error is
+acceptable. When no law fits, it falls back to byte compression and lands on the
+same size as plain zlib rather than worse. Every figure on this page comes from
+`cargo run --release --example compression_ratio --features lzma`.
+<!-- claim-test: the_lossless_container_is_not_worse_than_this_crates_own_zlib_wrapper -->
 
 ## Features
 
 - **Procedural Compression:** Sine waves, polynomials, and mathematical patterns
-- **Adaptive Fallback:** Automatically selects LZMA when procedural methods don't help
-- **Lossless:** Bit-perfect reconstruction
+- **Adaptive Fallback:** compresses the bytes directly when no law fits, and is
+  measured against plain zlib so "no worse than a standard tool" is a check, not
+  a promise
+- **Bit-exact, by construction:** the residual is stored as the bit-pattern xor
+  against the model, so every finite sample — including signed zeros, denormals
+  and values far smaller than their model — comes back unchanged. The older
+  subtraction residual (`original - model` in `f32`) is *not* exact: on the sine
+  below it loses the 99 samples nearest the zero crossings
+  <!-- claim-test: the_xor_container_is_bit_exact_on_every_law_family_the_readme_quotes -->
 - **Cross-Platform:** Python, Rust, C#/Unity, C++/UE5
 
 ## Repository layout
@@ -130,25 +141,38 @@ restored = zipper.decompress(compressed)
 Traditional compression finds patterns in **bytes**. ALICE finds patterns in **mathematics**.
 
 ```
-Original Data = Generated(parameters) + Residual
+Original Data = Generated(parameters) ^ Residual
 
 Where:
   - Generated()  = Mathematical function (polynomial, sine wave, etc.)
-  - parameters   = Tiny description (~100 bytes)
-  - Residual     = Compressed difference (often near-zero)
+  - parameters   = Tiny description (tens of bytes)
+  - Residual     = Compressed bit-pattern xor against Generated()
+                   (mostly zero bytes when the law is a good fit)
 ```
+
+The xor is what makes the recovery exact. A difference (`original - model`)
+computed in `f32` rounds away the original wherever it is much smaller than the
+model, so `model + residual` does not return it; `bits ^ bits` has no such
+case.
 
 ### Example
 
 ```
-Input:  Sine wave, 100,000 samples (400 KB)
+Input:  Sine wave, 100,000 samples (400,000 bytes of f32)
         ↓
-Analysis: Detected as "Sine wave, freq=50Hz, amp=1.0"
+Analysis: one Fourier coefficient — "freq bin 50, amp 1.0, phase 0"
         ↓
-Output: Parameters only (~280 bytes)
+Output: 20 bytes of parameters + 5,306 bytes of compressed xor residual
         ↓
-Result: 400 KB → 280 bytes = 1400x compression
+Result: 400,000 -> 5,326 bytes = 75x, and the samples come back bit for bit
+        (plain zlib on the same bytes: 8,742 -> 45.8x)
 ```
+
+Keeping only the 20 bytes of parameters is 20,000x, but that is an
+**approximation** with a max absolute error of 1.8e-7 — not a reconstruction.
+Both numbers are in the benchmark table below, in separate columns, because
+quoting the first one next to the word "lossless" overstates the result by more
+than two orders of magnitude.
 
 ### Laws with evidence (`law` module)
 
@@ -252,12 +276,45 @@ identifier to laws that compute different bits.
 
 ## Benchmarks
 
-| Data Type | Original | Compressed | Ratio |
-|-----------|----------|------------|-------|
-| Sine wave (100K samples) | 400 KB | ~280 bytes | **1400x** |
-| Polynomial (degree 3) | 400 KB | ~285 bytes | **1400x** |
-| Linear gradient | 400 KB | ~250 bytes | **1600x** |
-| Random data | 400 KB | ~370 KB | 1.08x (LZMA fallback) |
+100,000 `f32` samples (400,000 bytes), deflate level 9, reproduced by
+`cargo run --release --example compression_ratio --features lzma`. The
+`zlib alone` column is the same bytes through this crate's own zlib wrapper at
+the same level — the floor the fallback has to match.
+
+**Bit-exact** (law parameters + xor residual, samples recovered unchanged):
+
+| Data type | Compressed | Ratio | Bit-exact | zlib alone |
+|-----------|-----------|-------|-----------|------------|
+| Sine wave | 5,326 B | **75x** | yes | 8,742 B (45.8x) |
+| Polynomial (degree 3) | 3,916 B | **102x** | yes | 330,123 B (1.2x) |
+| Linear gradient | 496 B | **806x** | yes | 293,616 B (1.4x) |
+| Random data | 364,645 B | 1x | yes | 364,641 B (1.1x) |
+
+<!-- claim-test: the_xor_container_is_bit_exact_on_every_law_family_the_readme_quotes -->
+
+**Lossy**, for callers who can accept a bounded error:
+
+| Data type | Law parameters only | Ratio | Max abs error | Quantised residual (16-bit) | Ratio | Max abs error |
+|-----------|--------------------|-------|---------------|----------------------------|-------|---------------|
+| Sine wave | 20 B | 20,000x | 1.8e-7 | 2,075 B | 193x | 1.4e-12 |
+| Polynomial (degree 3) | 36 B | 11,111x | 6.0e-8 | 2,500 B | 160x | 9.1e-13 |
+| Linear gradient | 20 B | 20,000x | 7.5e-9 | 311 B | 1,286x | 5.0e-14 |
+| Random data | 4 B | 100,000x | 1.0e0 | 200,062 B | 2x | 1.5e-5 |
+
+Reading the table:
+
+- **Random data is the fallback working.** No law fits, so the whole signal goes
+  through byte compression and the result matches plain zlib to four bytes. That
+  is the point of the fallback — not to win, but not to lose.
+- **The parameters-only column is not a reconstruction.** 20,000x is the size of
+  the law; the error column is what you give up for it.
+- **The xor container buys exactness, not size.** The subtraction residual the
+  earlier releases used is still available (`compress_residual_lossless`) and is
+  smaller on the polynomial (2,783 B against 3,916 B) and on short signals (at
+  4,096 samples the sine goes the other way too), but it is not bit-exact.
+  `compress_residual_xor` is the one to use when the samples have to come back
+  unchanged; pick the other one when a bounded error is acceptable and size is
+  what matters.
 
 ## Ideal Use Cases
 

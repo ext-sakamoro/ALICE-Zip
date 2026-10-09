@@ -2,6 +2,23 @@
 
 All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
+## [2.7.0] - 2026-10-09
+
+### Added
+- Re-exports for the core crate's new residual API: `compress_residual_xor` /
+  `decompress_residual_xor` (bit-exact by construction — it stores the bit-pattern
+  xor against the model instead of the difference), `ResidualCodec`,
+  `residual_codec_default`, `residual_container_codec` and the `*_with` variants of
+  all three container constructors
+
+### Changed
+- Core crate raised to `alice-zip` 0.8, whose residual containers default to deflate
+  instead of LZMA. `lzma-rs`'s encoder produced 316,528 bytes where zlib produced
+  8,742 on the same input (36x worse), so every container this crate writes gets
+  smaller; the `level` argument is now the deflate level and actually takes effect.
+  Containers written by earlier releases still decode, but containers written from
+  this release need 2.7.0 or later to read
+
 ## [2.6.0] - 2026-10-08
 
 ### Changed
