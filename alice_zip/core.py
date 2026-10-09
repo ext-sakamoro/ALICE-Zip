@@ -321,16 +321,36 @@ def original_hash_checkable(header: "AliceFileHeader") -> bool:
     return header.payload_type == AlicePayloadType.LZMA_FALLBACK
 
 
+# The dtypes the writer records in a procedural payload (`str(array.dtype)` of
+# the real numeric arrays it accepts). Any other string is refused: it would
+# make the reader return data of a type and size the writer never produced.
+_WRITER_DTYPES = frozenset({
+    "float16", "float32", "float64",
+    "int8", "int16", "int32", "int64",
+    "uint8", "uint16", "uint32", "uint64",
+})
+
+
+def _writer_dtype(value) -> str:
+    if not isinstance(value, str) or value not in _WRITER_DTYPES:
+        raise ValueError(f"Unsupported dtype {value!r} in the generator payload")
+    return value
+
+
 def _verify_original(header: "AliceFileHeader", result) -> None:
-    """Checks a decompressed lossless payload against original_size and, when
-    one is recorded (not all zeros), original_hash."""
-    if not original_hash_checkable(header):
+    """Checks a decompressed array against the header: its length against
+    original_size for the procedural and LZMA fallback payloads, and, where
+    the payload is lossless and a hash is recorded (not all zeros), its
+    SHA-256 against original_hash."""
+    if header.payload_type not in (AlicePayloadType.PROCEDURAL, AlicePayloadType.LZMA_FALLBACK):
         return
     raw = np.asarray(result).tobytes()
     if len(raw) != header.original_size:
         raise ValueError(
             f"Decompressed data is {len(raw)} bytes, original_size states {header.original_size}"
         )
+    if not original_hash_checkable(header):
+        return
     if header.original_hash != bytes(32) and hashlib.sha256(raw).digest() != header.original_hash:
         raise ValueError("Decompressed data does not match original_hash")
 
@@ -863,7 +883,7 @@ class ALICEZip:
             seed=int(params_dict['seed']),
             parameters=params_dict['parameters'],
             output_shape=tuple(output_shape),
-            dtype=params_dict.get('dtype', 'float32')
+            dtype=_writer_dtype(params_dict.get('dtype', 'float32'))
         )
 
         return decompress_from_params(params)

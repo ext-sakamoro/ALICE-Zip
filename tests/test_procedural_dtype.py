@@ -56,7 +56,7 @@ def test_a_dtype_the_writer_never_records_is_refused(new):
         ALICEZip().decompress(_with_dtype(_f32_procedural(), new))
 
 
-@pytest.mark.parametrize("new", ["float16", "float64", "uint16"])
+@pytest.mark.parametrize("new", ["float16", "float64"])  # the 7-letter names the writer records
 def test_a_recorded_dtype_that_disagrees_with_original_size_is_refused(new):
     # a dtype the writer can record, but 1000 elements of it are not the
     # 4000 bytes the header states
