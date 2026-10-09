@@ -20,10 +20,7 @@ use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
 
 use crate::error::ZipError;
-// (test builds link std, whose inherent methods shadow the trait → allow)
-#[cfg(not(feature = "std"))]
-#[allow(unused_imports)]
-use crate::math::FloatExt;
+use crate::math::floor_f32;
 
 /// Perlin noise gradient vectors (precomputed)
 const GRAD2: [[f32; 2]; 8] = [
@@ -104,8 +101,8 @@ impl PerlinNoise {
         clippy::cast_sign_loss
     )]
     pub fn noise2d(&self, x: f32, y: f32) -> f32 {
-        let xi = x.floor() as i32;
-        let yi = y.floor() as i32;
+        let xi = floor_f32(x) as i32;
+        let yi = floor_f32(y) as i32;
         let xf = x - xi as f32;
         let yf = y - yi as f32;
         let xi = (xi & 255) as usize;
@@ -269,7 +266,7 @@ pub fn generate_fbm_1d(
 /// hashed integer lattice points
 #[allow(clippy::cast_possible_truncation)]
 fn value_noise_1d(x: f32, seed: u64) -> f32 {
-    let x0 = x.floor();
+    let x0 = floor_f32(x);
     let x1 = x0 + 1.0;
     let t = x - x0;
     let s = t * t * (3.0 - 2.0 * t);

@@ -53,6 +53,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::generators::polynomial::{horner_ascending, least_squares_fit};
+use crate::math::sqrt_f64;
 use sha2::{Digest, Sha256};
 
 /// Domain separation for [`SignalLaw::law_id`]
@@ -100,11 +101,6 @@ fn update_length_prefixed(h: &mut Sha256, bytes: &[u8]) {
 const fn u64_len(n: usize) -> u64 {
     n as u64
 }
-
-// (test builds link std, whose inherent methods shadow the trait → allow)
-#[cfg(not(feature = "std"))]
-#[allow(unused_imports)]
-use crate::math::FloatExt;
 
 /// Why a law could not be fitted or evaluated
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -557,7 +553,7 @@ impl SignalLaw {
         let rms = if points.is_empty() {
             0.0
         } else {
-            (sum_sq / points.len() as f64).sqrt()
+            sqrt_f64(sum_sq / points.len() as f64)
         };
         ResidualStats {
             n: points.len(),

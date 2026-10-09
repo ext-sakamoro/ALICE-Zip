@@ -15,13 +15,9 @@
 //! sampled from an exact polynomial of degree `d ≤ max_degree` is recovered
 //! with `degree == d` and coefficient error `≤ 1e-6` (relative)
 
+use crate::math::sqrt_f64;
 use alloc::vec;
 use alloc::vec::Vec;
-
-// (test builds link std, whose inherent methods shadow the trait → allow)
-#[cfg(not(feature = "std"))]
-#[allow(unused_imports)]
-use crate::math::FloatExt;
 
 /// Relative size of an `R` diagonal entry (vs the largest) below which the
 /// Vandermonde system is treated as rank-deficient
@@ -205,11 +201,7 @@ pub(crate) fn least_squares_fit(xs: &[f64], ys: &[f64], degree: usize) -> Option
 
     for k in 0..m {
         // Householder vector for column k, rows k..n
-        let norm = a[k * n + k..(k + 1) * n]
-            .iter()
-            .map(|v| v * v)
-            .sum::<f64>()
-            .sqrt();
+        let norm = sqrt_f64(a[k * n + k..(k + 1) * n].iter().map(|v| v * v).sum::<f64>());
         if norm == 0.0 {
             return None;
         }

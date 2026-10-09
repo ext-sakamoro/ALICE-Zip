@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- A build without the `std` feature failed under `-D warnings` with
+  `trait FloatExt is never used` whenever another crate in the dependency graph
+  enabled `alice-det-math`'s default `std` feature (for example a downstream
+  crate that also depends on `alice-det-math`). Linking std made the float
+  method calls (`x.sqrt()`, `x.floor()`, `x.round()`) resolve to std's inherent
+  methods, so the `libm` shim was never used. The shim is now four functions in
+  `math` (`floor_f32`, `sqrt_f32`, `sqrt_f64`, `round_f64`) that the call sites
+  name explicitly, so the `std` feature of this crate alone decides which
+  implementation runs. All four operations are exactly specified by IEEE 754,
+  so the results are bit-identical either way.
+
+### Changed
+
+- CI and `scripts/preflight.sh` build the library on the host without `std`
+  under `-D warnings`, once as is and once with `alice-det-math/std` enabled.
+
 ## [0.8.0] - 2026-10-09
 
 ### Added

@@ -39,14 +39,8 @@
 use alloc::vec::Vec;
 use core::f64::consts::PI;
 
+use crate::math::sqrt_f32;
 use alice_det_math::{atan2, cos64, sin64};
-
-// `sqrt` only: IEEE 754 specifies it exactly, so the shim and the platform
-// version agree bit for bit. The transcendentals above do not go through it.
-// (test builds link std, whose inherent methods shadow the trait → allow)
-#[cfg(not(feature = "std"))]
-#[allow(unused_imports)]
-use crate::math::FloatExt;
 
 /// Bins with magnitude below this are never reported (numerical zero)
 const MIN_MAGNITUDE: f32 = 1e-10;
@@ -76,7 +70,7 @@ pub fn analyze_signal(
     let spectrum: Vec<(usize, f32, f32)> = (1..=n / 2)
         .map(|k| {
             let (re, im) = dft_bin(&centered, k);
-            (k, (re * re + im * im).sqrt(), atan2(im, re))
+            (k, sqrt_f32(re * re + im * im), atan2(im, re))
         })
         .collect();
 

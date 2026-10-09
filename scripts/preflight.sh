@@ -80,6 +80,12 @@ relint
 rustup target list --installed | grep -q '^thumbv7em-none-eabihf$' || rustup target add thumbv7em-none-eabihf
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; RUSTC_WORKSPACE_WRAPPER="$(rustup which clippy-driver)" cargo rustc --lib --no-default-features --crate-type rlib --target thumbv7em-none-eabihf -- -D warnings )
 
+step "ci.yml / no_std: Host lib build without std (-D warnings)"
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; RUSTFLAGS="-D warnings" cargo build --lib --no-default-features )
+
+step "ci.yml / no_std: Host lib build without std, alice-det-math std on (-D warnings)"
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; RUSTFLAGS="-D warnings" cargo build --lib --no-default-features --features alice-det-math/std )
+
 step "ci.yml / msrv: cargo check on MSRV (lib, default features)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo +1.87 check --lib --locked )
 

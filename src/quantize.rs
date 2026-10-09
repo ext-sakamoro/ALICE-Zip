@@ -12,11 +12,8 @@
 //! and of `alice-edge` coefficient batches; the law moved here from `libalice`
 //! in 0.5.0 (single home, see `generators`)
 
+use crate::math::round_f64;
 use alloc::vec::Vec;
-
-#[cfg(not(feature = "std"))]
-#[allow(unused_imports)]
-use crate::math::FloatExt;
 
 /// `(min, scale)` of the data with the constant-data guard applied
 fn range(data: &[f32]) -> (f64, f64) {
@@ -45,7 +42,7 @@ pub fn quantize_8bit(data: &[f32]) -> (Vec<u8>, f64, f64) {
         .iter()
         .map(|&v| {
             let normalized = ((f64::from(v) - min_val) / scale).clamp(0.0, 1.0);
-            (normalized * 255.0).round() as u8
+            round_f64(normalized * 255.0) as u8
         })
         .collect();
     (quantized, min_val, scale)
@@ -78,7 +75,7 @@ pub fn quantize_16bit(data: &[f32]) -> (Vec<u8>, f64, f64) {
         .iter()
         .flat_map(|&v| {
             let normalized = ((f64::from(v) - min_val) / scale).clamp(0.0, 1.0);
-            ((normalized * 65535.0).round() as u16).to_le_bytes()
+            (round_f64(normalized * 65535.0) as u16).to_le_bytes()
         })
         .collect();
     (bytes, min_val, scale)

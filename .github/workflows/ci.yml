@@ -73,6 +73,15 @@ jobs:
           RUSTC_WORKSPACE_WRAPPER="$(rustup which clippy-driver)"
           cargo rustc --lib --no-default-features --crate-type rlib
           --target thumbv7em-none-eabihf -- -D warnings
+      # A host build without std still has std linked as soon as another crate
+      # in the graph enables it. A downstream that turns on `alice-det-math`'s
+      # default (`std`) does exactly that, and its `-D warnings` build compiles
+      # this crate with that graph. Both graphs are built here: method syntax
+      # on floats would pick a different implementation in each.
+      - name: Host lib build without std (-D warnings)
+        run: RUSTFLAGS="-D warnings" cargo build --lib --no-default-features
+      - name: Host lib build without std, alice-det-math std on (-D warnings)
+        run: RUSTFLAGS="-D warnings" cargo build --lib --no-default-features --features alice-det-math/std
 
   msrv:
     name: MSRV (rust-version = 1.87)
