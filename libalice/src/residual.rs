@@ -936,6 +936,52 @@ mod tests {
     // Delta round-trip
     // ------------------------------------------------------------------
 
+    /// Writes the files of this crate's residual writer into
+    /// `tests/data/residual/` (run on purpose: `cargo test --lib -- --ignored
+    /// write_rust_writer_fixtures`, with `ALICE_RESIDUAL_PREFIX` naming them).
+    #[test]
+    #[ignore = "writes fixtures; run on purpose"]
+    fn write_rust_writer_fixtures() {
+        use ResidualCompressionMethod as M;
+        let prefix = std::env::var("ALICE_RESIDUAL_PREFIX").unwrap_or_else(|_| "rust".to_owned());
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/data/residual");
+        let values = [5.0f32, 5.5, 6.0, 4.0];
+        let special: Vec<f32> = [
+            0x7FC0_0001u32,
+            0x3F80_0000,
+            0x7F80_0000,
+            0xFF80_0000,
+            0x8000_0000,
+            0x0000_0000,
+            0x0000_0001,
+            0x7F7F_FFFF,
+            0xFFFF_FFFF,
+            0x3200_0000,
+            0x4CBE_BC20,
+        ]
+        .into_iter()
+        .map(f32::from_bits)
+        .collect();
+        for (name, method) in [
+            ("none", M::None),
+            ("lzma", M::Lzma),
+            ("zlib", M::Zlib),
+            ("delta", M::Delta),
+            ("quantized", M::Quantized),
+        ] {
+            let rd = compress_with_method(&values, method);
+            std::fs::write(dir.join(format!("{prefix}_{name}.bin")), rd.to_bytes()).unwrap();
+        }
+        for (name, method) in [("none", M::None), ("lzma", M::Lzma), ("delta", M::Delta)] {
+            let rd = compress_with_method(&special, method);
+            std::fs::write(
+                dir.join(format!("{prefix}_{name}_special.bin")),
+                rd.to_bytes(),
+            )
+            .unwrap();
+        }
+    }
+
     #[test]
     fn the_bitdelta_streams_equal_the_shared_reference() {
         // written by tests/data/residual/make_fixtures.py with integer

@@ -96,12 +96,13 @@ def test_a_bitdelta_file_reads_xz():
 def test_the_recorded_dtype_is_returned():
     back = ResidualCompressor().decompress_residual(read("bitdelta"))
     assert back.dtype == np.float32
-    f64 = ResidualCompressor().decompress_residual(read("float64_1d"))
+    f64 = ResidualCompressor().decompress_residual(
+        ResidualData.from_bytes((DATA / "python_lzma_float64.bin").read_bytes()))
     assert f64.dtype == np.float64
 
 
 def test_a_dtype_the_writer_never_records_is_refused_when_read():
-    raw = (DATA / "residual_float32_1d.bin").read_bytes()
+    raw = (DATA / "python_lzma.bin").read_bytes()
     bad = raw.replace(b'"dtype":"float32"', b'"dtype":"complex"')
     with pytest.raises(ValueError, match="dtype"):
         ResidualData.from_bytes(bad)

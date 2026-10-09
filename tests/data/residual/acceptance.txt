@@ -1,12 +1,41 @@
-# Which reader accepts which fixture (read by libalice/tests/residual_acceptance.rs
-# and tests/test_residual_acceptance.py). Columns: file, rust, python.
-residual_v2.bin                  accept accept
-residual_v3.bin                  refuse refuse
-residual_v2_float.bin            refuse refuse
-residual_v2_string.bin           refuse refuse
-residual_delta_python_legacy.bin refuse refuse
-residual_delta_rust_legacy.bin   accept accept
-residual_bitdelta.bin            accept accept
-residual_float32_1d.bin          accept accept
-residual_float64_1d.bin          refuse accept
-residual_float32_2d.bin          refuse accept
+# Which reader accepts which residual file. Read by
+# libalice/tests/residual_acceptance.rs and tests/test_residual_acceptance.py.
+# Columns: file | writer | rust | python | values
+#   writer: python = alice_zip (write_python_fixtures.py), rust = this crate's
+#           writer, rust-legacy = the writer before the header keys were
+#           aligned (main a826c56), hand = written by make_fixtures.py
+#   values: values / special = a reader that accepts the file must return
+#           these values bit for bit (the inputs of the writers); - = not compared
+residual_v2.bin                  hand        accept accept -
+residual_v3.bin                  hand        refuse refuse -
+residual_v2_float.bin            hand        refuse refuse -
+residual_v2_string.bin           hand        refuse refuse -
+residual_delta_python_legacy.bin hand        refuse refuse -
+residual_delta_rust_legacy.bin   hand        accept accept values
+residual_bitdelta.bin            hand        accept accept values
+python_none.bin                  python      accept accept values
+python_lzma.bin                  python      accept accept values
+python_zlib.bin                  python      accept accept values
+python_delta.bin                 python      accept accept values
+python_quantized.bin             python      refuse accept -
+python_none_special.bin          python      accept accept special
+python_lzma_special.bin          python      accept accept special
+python_delta_special.bin         python      accept accept special
+python_lzma_float64.bin          python      refuse accept -
+python_lzma_2d.bin               python      refuse accept -
+rust_none.bin                    rust        accept accept values
+rust_lzma.bin                    rust        accept accept values
+rust_zlib.bin                    rust        accept accept values
+rust_delta.bin                   rust        accept accept values
+rust_quantized.bin               rust        accept refuse -
+rust_none_special.bin            rust        accept accept special
+rust_lzma_special.bin            rust        accept accept special
+rust_delta_special.bin           rust        accept accept special
+rust_legacy_none.bin             rust-legacy accept accept values
+rust_legacy_lzma.bin             rust-legacy accept accept values
+rust_legacy_zlib.bin             rust-legacy accept accept values
+rust_legacy_delta.bin            rust-legacy accept accept values
+rust_legacy_quantized.bin        rust-legacy accept refuse -
+rust_legacy_none_special.bin     rust-legacy accept accept special
+rust_legacy_lzma_special.bin     rust-legacy accept accept special
+rust_legacy_delta_special.bin    rust-legacy accept accept -

@@ -1,43 +1,78 @@
-//! Which residual fixtures the Rust reader accepts, from the table both
-//! readers are tested against (tests/data/residual/acceptance.txt).
+//! Which residual files the Rust reader accepts, and what it returns, from
+//! the table both readers are tested against (tests/data/residual/acceptance.txt).
+//!
+//! The files are the real output of each writer (the Python writer, this
+//! crate's writer, this crate's writer before the header keys were aligned)
+//! plus hand-made files for header grammar.
 
 use std::path::Path;
 
-use alice_core::residual::{decompress, ResidualData};
+use alice_core::residual::{decompress, ResidualData, ResidualError};
+
+const VALUES: [u32; 4] = [0x40A0_0000, 0x40B0_0000, 0x40C0_0000, 0x4080_0000];
+const SPECIAL: [u32; 11] = [
+    0x7FC0_0001,
+    0x3F80_0000,
+    0x7F80_0000,
+    0xFF80_0000,
+    0x8000_0000,
+    0x0000_0000,
+    0x0000_0001,
+    0x7F7F_FFFF,
+    0xFFFF_FFFF,
+    0x3200_0000,
+    0x4CBE_BC20,
+];
+
+fn dir() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/data/residual")
+}
 
 #[test]
 fn the_rust_reader_accepts_exactly_the_files_the_table_lists() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/data/residual");
-    let table = std::fs::read_to_string(dir.join("acceptance.txt")).unwrap();
+    let table = std::fs::read_to_string(dir().join("acceptance.txt")).unwrap();
     let mut compared = 0;
     for line in table
         .lines()
         .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
     {
-        let cols: Vec<&str> = line.split_whitespace().collect();
-        let bytes = std::fs::read(dir.join(cols[0])).unwrap();
+        let c: Vec<&str> = line.split_whitespace().collect();
+        let (name, writer, rust, values) = (c[0], c[1], c[2], c[4]);
+        let bytes = std::fs::read(dir().join(name)).unwrap();
         let read = ResidualData::from_bytes(&bytes).and_then(|r| decompress(&r));
         assert_eq!(
             read.is_ok(),
-            cols[1] == "accept",
-            "{}: {:?}",
-            cols[0],
-            read.err()
+            rust == "accept",
+            "{name} ({writer}): {:?}",
+            read.as_ref().err()
         );
+        if let (Ok(out), Some(want)) = (
+            read,
+            match values {
+                "values" => Some(&VALUES[..]),
+                "special" => Some(&SPECIAL[..]),
+                _ => None,
+            },
+        ) {
+            let got: Vec<u32> = out.iter().map(|v| v.to_bits()).collect();
+            assert_eq!(got, want, "{name} ({writer})");
+        }
         compared += 1;
     }
-    assert_eq!(compared, 10, "every row compared");
+    assert_eq!(compared, 33, "every row compared");
 }
 
 #[test]
 fn a_layout_this_reader_cannot_return_is_refused_by_name() {
-    use alice_core::residual::ResidualError;
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/data/residual");
-    for name in ["residual_float64_1d.bin", "residual_float32_2d.bin"] {
-        let bytes = std::fs::read(dir.join(name)).unwrap();
+    for name in [
+        "python_lzma_float64.bin",
+        "python_lzma_2d.bin",
+        "python_quantized.bin",
+    ] {
+        let bytes = std::fs::read(dir().join(name)).unwrap();
         assert!(
             matches!(
-                ResidualData::from_bytes(&bytes),
+                ResidualData::from_bytes(&bytes).and_then(|r| decompress(&r)),
                 Err(ResidualError::UnsupportedLayout(_))
             ),
             "{name}"
