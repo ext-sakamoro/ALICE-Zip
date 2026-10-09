@@ -63,6 +63,7 @@ extern crate alloc;
 pub mod bpe;
 #[cfg(feature = "std")]
 pub mod compression;
+pub mod container;
 pub mod dictionary;
 pub mod entropy;
 pub mod error;
