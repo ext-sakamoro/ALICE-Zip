@@ -197,12 +197,19 @@ fn invalid(msg: impl Into<String>) -> io::Error {
 
 /// Compress `payload` with `codec`
 ///
-/// `level` is the deflate level `0..=9` (clamped); the LZMA path has fixed
+/// `level` is the deflate level `0..=9` (values above 9 are clamped to 9;
+/// **0 means store**, as in [`zlib_compress`]); the LZMA path has fixed
 /// settings and ignores it.
 fn codec_compress(payload: &[u8], codec: ResidualCodec, level: u32) -> io::Result<Vec<u8>> {
     match codec {
         ResidualCodec::Deflate => {
-            let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(level.clamp(1, 9)));
+            // `min(9)` で揃える — `zlib_compress` も同じで、level 0 は store
+            // ⚠️ 以前は `clamp(1, 9)` で floor していたので **level 0 が黙って 1 に
+            //    上がり**、同 module の 2 本の公開 API が同じ引数に別の意味を与えて
+            //    いた (実測: 400,000 byte に対し `zlib_compress(.., 0)` は 400,071 byte
+            //    = store なのに、容器の level 0 は 31,607 byte = level 1 と byte 一致)
+            //    「無圧縮を頼んだのに圧縮される」形なので floor を外した
+            let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(level.min(9)));
             encoder.write_all(payload)?;
             encoder.finish()
         }
@@ -505,9 +512,15 @@ pub fn decompress_residual_lossless(data: &[u8]) -> io::Result<Vec<f32>> {
 /// `original[i].to_bits() ^ model[i].to_bits()` is reversible by construction,
 /// so [`decompress_residual_xor`] returns the original samples bit for bit:
 /// signed zeros, denormals, and values far smaller than their model all
-/// survive, where `original - model` in `f32` loses them. When the model is
-/// close to the signal the high bits agree and the xor is mostly zero, so it
-/// compresses at least as well as the subtraction form.
+/// survive, where `original - model` in `f32` loses them. ⚠️ **Every** bit
+/// pattern survives, not only the finite ones — infinities and NaN round trip
+/// too, since nothing about `bits ^ bits` looks at what the bits mean.
+///
+/// ⚠️ It buys exactness, not size. When the model is close to the signal the
+/// high bits agree and the xor is mostly zero bytes, which is usually smaller
+/// than the subtraction residual; on a degree-3 polynomial, and on short
+/// signals, it is larger. Pick by whether the samples have to come back
+/// unchanged.
 ///
 /// `model` must have the same length as `original`, and the same `model` must
 /// be passed to the decoder — it is the other half of the data.

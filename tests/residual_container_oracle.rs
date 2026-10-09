@@ -157,6 +157,42 @@ fn the_xor_container_is_exact_for_the_values_subtraction_loses() {
 }
 
 #[test]
+fn the_xor_container_is_exact_for_non_finite_values_too() {
+    // The doc says "every finite sample", but `bits ^ bits` is reversible for
+    // every bit pattern, so infinities and NaN survive as well. Pinned here so
+    // the stronger statement is the checked one — a doc that understates is
+    // still a doc that can drift.
+    let original = vec![
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NAN,
+        -f32::NAN,
+        0.0,
+        1.0,
+    ];
+    let model = vec![
+        1.0f32,
+        -1.0,
+        0.0,
+        f32::INFINITY,
+        f32::NAN,
+        f32::NEG_INFINITY,
+    ];
+
+    let packed = compress_residual_xor(&original, &model, 6).expect("xor container");
+    let back = decompress_residual_xor(&packed, &model).expect("round trip");
+    for (i, (o, b)) in original.iter().zip(back.iter()).enumerate() {
+        assert_eq!(
+            o.to_bits(),
+            b.to_bits(),
+            "sample {i}: {:#010x} came back as {:#010x}",
+            o.to_bits(),
+            b.to_bits()
+        );
+    }
+}
+
+#[test]
 fn the_xor_container_refuses_a_model_of_the_wrong_length() {
     let original = vec![1.0f32, 2.0, 3.0];
     let model = vec![1.0f32, 2.0];
@@ -188,8 +224,11 @@ fn the_lossless_container_is_not_worse_than_this_crates_own_zlib_wrapper() {
         .collect();
 
     // Same level on both sides — the container's `level` is the deflate level,
-    // and on this data level 9 is twice as good as level 6, so comparing
-    // different levels measures the level, not the container.
+    // so comparing different levels would measure the level, not the container.
+    // ⚠️ How much the level matters is input-dependent: measured level 6 / level 9
+    // is 1.13x at n = 4,096 and 1.98x at n = 100,000 (an earlier version of this
+    // comment said "twice as good" for the 4,096 case, which was the 100,000
+    // figure quoted for the wrong input).
     const LEVEL: u32 = 9;
     let baseline = zlib_compress(&as_bytes(&residual), LEVEL)
         .expect("zlib baseline")
@@ -263,6 +302,49 @@ fn the_level_argument_is_not_silently_ignored() {
     assert!(
         best < fast,
         "xor: level 9 ({best} B) did not beat level 1 ({fast} B)"
+    );
+}
+
+#[test]
+fn level_zero_means_store_in_the_container_as_it_does_in_zlib_compress() {
+    // ⚠️ The container used to floor the level at 1, so `level 0` silently
+    // became `level 1`: measured on 400,000 bytes, `zlib_compress(.., 0)`
+    // produced 400,071 (store) while the container produced 31,607 — the same
+    // bytes as level 1. Two public functions in one module gave the same
+    // argument two different meanings, and "compress nothing" was not
+    // reachable through the container at all.
+    let residual: Vec<f32> = (0..4_096u32)
+        .map(|i| f32::from_bits(0x3f00_0000 ^ (i << 3)))
+        .collect();
+    let raw_len = residual.len() * 4;
+
+    let store = compress_residual_lossless(&residual, 0).expect("level 0");
+    let fast = compress_residual_lossless(&residual, 1).expect("level 1");
+    assert!(
+        store.len() > raw_len,
+        "level 0 produced {} bytes for {raw_len} bytes of input — that is not a \
+         store (it compressed)",
+        store.len()
+    );
+    assert_ne!(
+        store.len(),
+        fast.len(),
+        "level 0 and level 1 produced the same size, so the level is floored"
+    );
+
+    // Round trips all the same.
+    let back = decompress_residual_lossless(&store).expect("store round trip");
+    assert_eq!(back.len(), residual.len());
+    for (a, b) in residual.iter().zip(back.iter()) {
+        assert_eq!(a.to_bits(), b.to_bits());
+    }
+
+    // `zlib_compress` has always treated 0 as store; the two now agree.
+    let bytes = as_bytes(&residual);
+    let zlib_store = zlib_compress(&bytes, 0).expect("zlib level 0");
+    assert!(
+        zlib_store.len() > raw_len,
+        "the comparison point is wrong: zlib level 0 compressed"
     );
 }
 

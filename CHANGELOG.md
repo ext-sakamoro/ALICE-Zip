@@ -47,7 +47,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Deflate comes from `flate2`, already a dependency, so nothing new is pulled in
   and the pure-Rust / `no_std`-friendly story is unchanged
 - **The `level` argument now does something.** It is the deflate level `0..=9`
-  (clamped to `1..=9`); on the sine residual level 9 is twice as good as level 6.
+  (values above 9 are clamped to 9, and **0 means store**, the same as
+  `zlib_compress`). How much the level matters depends on the input and its
+  length — measured on the sine residual
+  (`generate_sine_wave(n, 50.0, 1.0, 0.0, 0.0)` fitted by
+  `analyze_signal(.., 8, 0.999)`, one coefficient):
+
+  | n | non-zero residual | max | level 6 | level 9 | ratio |
+  |---|---|---|---|---|---|
+  | 4,096 | 3,008 | 1.192e-7 | 1,139 B | 1,009 B | 1.13x |
+  | 100,000 | 74,100 | 1.788e-7 | 16,687 B | 8,430 B | 1.98x |
+
+  ⚠️ An earlier draft of this entry quoted the 1.98x figure without the input
+  it belongs to, which reads as a property of the level rather than of that
+  signal at that length.
   The LZMA path still has fixed settings and ignores it, as before
 - Containers are available with the `std` feature instead of requiring `lzma`;
   `ResidualCodec::Lzma` (and reading a version 0 container) still needs `lzma`
@@ -58,6 +71,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`level 0` no longer silently becomes `level 1` in the residual containers.**
+  The deflate level was floored with `clamp(1, 9)`, so "store it, do not
+  compress" was unreachable through the containers while `zlib_compress` in the
+  same module has always honoured 0: measured on the same 400,000 bytes,
+  `zlib_compress(.., 0)` produced 400,071 (a store) and the container produced
+  31,607 — byte-identical to level 1. ⚠️ Two public functions in one module gave
+  the same argument two different meanings. The floor had no reason behind it
+  and is gone; `tests/residual_container_oracle.rs` now pins that level 0
+  produces more bytes than the input and differs from level 1 (the assertion
+  goes red if the floor comes back)
 - Both READMEs quoted parameters-only sizes under the heading "Lossless:
   Bit-perfect reconstruction" — 1400x for a sine that was in fact reconstructed
   with a 6e-8 error. The benchmark tables now separate **bit-exact**
