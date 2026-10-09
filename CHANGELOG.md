@@ -23,7 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   identifiers checked against the header's semantics id and, through
   `ContainerView::verify_law_ids`, against recomputed identifiers.
   `read_any` also reads `ALICE_ZIP` files of version 1.0 / 1.1 and refuses
-  field values that were never written. `ContainerView` checks a payload's
+  field values that were never written. `parse_legacy_alice_zip_header` returns the
+  header as `LegacyHeader`; `LegacyHeader::verify_original` checks data offered
+  as the original against `original_size` and, when one is recorded (not all
+  zeros), `original_hash`. `ContainerView` checks a payload's
   hash only when it is read.
 - `tests/container_oracle.rs` (25 tests): bytes and identifiers equal those of
   the independent reference writer `tests/data/container/container_ref.py`;

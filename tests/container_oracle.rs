@@ -684,3 +684,68 @@ fn errors_display_without_panicking() {
         assert!(!e.to_string().is_empty());
     }
 }
+
+// ---------------------------------------------------------------- ALICE_ZIP original_hash
+
+/// The fixtures were written for this original (container_ref.py).
+const LEGACY_ORIGINAL: &[u8] = b"original data";
+
+#[test]
+fn the_legacy_header_exposes_its_fields() {
+    let (h, len) = alice_zip::container::parse_legacy_alice_zip_header(LEGACY_V2).unwrap();
+    assert_eq!(len, 66);
+    assert_eq!((h.major, h.minor), (1, 1));
+    assert_eq!(
+        (h.file_type, h.engine, h.payload_type),
+        (0x01, 3, Some(0x30))
+    );
+    assert_eq!(h.original_size, 13);
+    assert_eq!(h.compressed_size, (LEGACY_V2.len() - 66) as u64);
+    assert_eq!(h.original_hash, Some(sha(LEGACY_ORIGINAL)));
+    let (h1, len1) = alice_zip::container::parse_legacy_alice_zip_header(LEGACY_V1).unwrap();
+    assert_eq!(
+        (len1, h1.payload_type, h1.file_type, h1.engine),
+        (65, None, 0x05, 0)
+    );
+    assert_eq!(h1.original_hash, Some(sha(LEGACY_ORIGINAL)));
+}
+
+#[test]
+fn the_original_is_checked_against_the_stated_hash_and_size() {
+    for fixture in [LEGACY_V1, LEGACY_V2] {
+        let (h, _) = alice_zip::container::parse_legacy_alice_zip_header(fixture).unwrap();
+        assert_eq!(h.verify_original(LEGACY_ORIGINAL), Ok(()));
+        assert_eq!(
+            h.verify_original(b"original datA"),
+            Err(ContainerError::OriginalHash),
+            "same length, other bytes"
+        );
+        assert_eq!(
+            h.verify_original(b"original data!"),
+            Err(ContainerError::OriginalSize {
+                stated: 13,
+                actual: 14
+            })
+        );
+    }
+}
+
+#[test]
+fn an_all_zero_hash_means_the_writer_did_not_record_one() {
+    let mut v = LEGACY_V2.to_vec();
+    v[30..62].fill(0);
+    let (h, _) = alice_zip::container::parse_legacy_alice_zip_header(&v).unwrap();
+    assert_eq!(h.original_hash, None);
+    assert_eq!(
+        h.verify_original(b"original datA"),
+        Ok(()),
+        "only the size is checked"
+    );
+    assert_eq!(
+        h.verify_original(b"short"),
+        Err(ContainerError::OriginalSize {
+            stated: 13,
+            actual: 5
+        })
+    );
+}

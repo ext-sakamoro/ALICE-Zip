@@ -254,6 +254,17 @@ pub enum ContainerError {
         /// The value found.
         value: u8,
     },
+    /// Data offered as the original of an `ALICE_ZIP` file is not as long as
+    /// the header states.
+    OriginalSize {
+        /// `original_size` in the header.
+        stated: u64,
+        /// Length of the data offered.
+        actual: u64,
+    },
+    /// Data offered as the original of an `ALICE_ZIP` file does not match
+    /// the header's `original_hash`.
+    OriginalHash,
 }
 
 impl fmt::Display for ContainerError {
@@ -296,6 +307,13 @@ impl fmt::Display for ContainerError {
             }
             Self::LegacyField { field, value } => {
                 write!(f, "ALICE_ZIP: {field} = {value:#04x} was never written")
+            }
+            Self::OriginalSize { stated, actual } => write!(
+                f,
+                "ALICE_ZIP: the original is {actual} bytes, the header states {stated}"
+            ),
+            Self::OriginalHash => {
+                write!(f, "ALICE_ZIP: the original does not match original_hash")
             }
         }
     }
@@ -836,23 +854,69 @@ pub fn detect(bytes: &[u8]) -> Format {
     }
 }
 
-/// Reads an `ALICE_ZIP` file as a container: the header bytes as
-/// [`Tag::PROV`] and the payload as [`Tag::RAW`], with an all-zero semantics
-/// id.
+/// The header of an `ALICE_ZIP` file (version 1.0 or 1.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LegacyHeader {
+    /// Major version (1).
+    pub major: u8,
+    /// Minor version (0 or 1).
+    pub minor: u8,
+    /// `file_type` (1 to 5).
+    pub file_type: u8,
+    /// Index of the compression engine (0 to 3).
+    pub engine: u8,
+    /// `payload_type`; version 1.0 has no such field.
+    pub payload_type: Option<u8>,
+    /// Length of the original data.
+    pub original_size: u64,
+    /// Length of the payload after the header.
+    pub compressed_size: u64,
+    /// SHA-256 of the original data; `None` when the writer stored all
+    /// zeros, which is how it marks that no hash was recorded.
+    pub original_hash: Option<[u8; 32]>,
+}
+
+impl LegacyHeader {
+    /// Checks data offered as the original: its length against
+    /// `original_size`, and its SHA-256 against `original_hash` when the
+    /// header records one.
+    ///
+    /// The container does not decompress the payload, so it cannot produce
+    /// the original itself; a reader that decompresses passes its result
+    /// here.
+    ///
+    /// # Errors
+    ///
+    /// [`ContainerError::OriginalSize`] or [`ContainerError::OriginalHash`].
+    pub fn verify_original(&self, original: &[u8]) -> Result<(), ContainerError> {
+        let actual = original.len() as u64;
+        if actual != self.original_size {
+            return Err(ContainerError::OriginalSize {
+                stated: self.original_size,
+                actual,
+            });
+        }
+        match self.original_hash {
+            Some(h) if sha256(original) != h => Err(ContainerError::OriginalHash),
+            _ => Ok(()),
+        }
+    }
+}
+
+/// Parses and checks the header of an `ALICE_ZIP` file, returning it and its
+/// length (65 for version 1.0, 66 for version 1.1).
 ///
-/// Only what the writer produced is accepted: version 1.0 (65-byte header)
-/// or 1.1 (66-byte header), a `file_type` of 1 to 5, an engine index of 0 to
-/// 3, a defined `payload_type`, and a payload exactly as long as the header
-/// states. The header's `original_hash` is the hash of the decompressed
-/// data, so it is checked where the payload is decompressed, not here.
+/// Only what the writer produced is accepted: version 1.0 or 1.1, a
+/// `file_type` of 1 to 5, an engine index of 0 to 3 and a defined
+/// `payload_type`. Bytes after the header are not read.
 ///
 /// # Errors
 ///
 /// [`ContainerError::TooShort`], [`ContainerError::BadMagic`],
-/// [`ContainerError::LegacyVersion`], [`ContainerError::LegacyField`] or
-/// [`ContainerError::Layout`] (the payload length differs from the length
-/// the header states).
-pub fn read_legacy_alice_zip(bytes: &[u8]) -> Result<Container, ContainerError> {
+/// [`ContainerError::LegacyVersion`] or [`ContainerError::LegacyField`].
+pub fn parse_legacy_alice_zip_header(
+    bytes: &[u8],
+) -> Result<(LegacyHeader, usize), ContainerError> {
     if bytes.len() < LEGACY_V1_LEN {
         return Err(ContainerError::TooShort);
     }
@@ -880,19 +944,50 @@ pub fn read_legacy_alice_zip(bytes: &[u8]) -> Result<Container, ContainerError> 
             value: bytes[12],
         });
     }
-    let size_at = if header_len == LEGACY_V2_LEN {
+    let (payload_type, sizes_at) = if header_len == LEGACY_V2_LEN {
         if !LEGACY_PAYLOAD_TYPES.contains(&bytes[13]) {
             return Err(ContainerError::LegacyField {
                 field: "payload_type",
                 value: bytes[13],
             });
         }
-        22
+        (Some(bytes[13]), 14)
     } else {
-        21
+        (None, 13)
     };
+    let hash = array32(bytes, sizes_at + 16);
+    Ok((
+        LegacyHeader {
+            major,
+            minor,
+            file_type: bytes[11],
+            engine: bytes[12],
+            payload_type,
+            original_size: u64_at(bytes, sizes_at),
+            compressed_size: u64_at(bytes, sizes_at + 8),
+            original_hash: (hash != [0; 32]).then_some(hash),
+        },
+        header_len,
+    ))
+}
+
+/// Reads an `ALICE_ZIP` file as a container: the header bytes as
+/// [`Tag::PROV`] and the payload as [`Tag::RAW`], with an all-zero semantics
+/// id.
+///
+/// The header is checked as in [`parse_legacy_alice_zip_header`], and the
+/// payload must be exactly as long as the header states. The payload is not
+/// decompressed here, so `original_hash` is not checked here; a reader that
+/// decompresses checks its result with [`LegacyHeader::verify_original`].
+///
+/// # Errors
+///
+/// As [`parse_legacy_alice_zip_header`], and [`ContainerError::Layout`]
+/// (the payload length differs from the length the header states).
+pub fn read_legacy_alice_zip(bytes: &[u8]) -> Result<Container, ContainerError> {
+    let (header, header_len) = parse_legacy_alice_zip_header(bytes)?;
     let payload = &bytes[header_len..];
-    if u64_at(bytes, size_at) != payload.len() as u64 {
+    if header.compressed_size != payload.len() as u64 {
         return Err(ContainerError::Layout);
     }
     let mut c = Container::new([0; 32]);
