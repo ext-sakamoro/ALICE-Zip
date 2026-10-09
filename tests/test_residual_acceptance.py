@@ -22,6 +22,10 @@ EXPECTED = {
 }
 # with signaling NaNs, which a float64 round trip would quiet
 EXPECTED["special"] = EXPECTED["special11"] + [0x7F800001, 0xFF800001]
+for _line in (DATA / "quantized_expected.txt").read_text().splitlines():
+    if _line and not _line.startswith("#"):
+        _name, _bits = _line.split(" | ")
+        EXPECTED[_name] = [int(h, 16) for h in _bits.split()]
 
 
 def rows():
@@ -31,7 +35,7 @@ def rows():
 
 def test_the_python_reader_accepts_exactly_the_files_the_table_lists():
     table = rows()
-    assert len(table) == 34
+    assert len(table) == 36
     for name, writer, _rust, python, values in table:
         try:
             out = ResidualCompressor().decompress_residual(
@@ -41,8 +45,28 @@ def test_the_python_reader_accepts_exactly_the_files_the_table_lists():
             continue
         assert python == "accept", f"{name} ({writer}) was read"
         if values != "-":
-            # compared as returned (no conversion), so the reader's own dtype
-            # handling is what is tested
-            assert out.dtype == np.float32, f"{name} ({writer}): {out.dtype}"
-            got = np.ascontiguousarray(out).ravel().view("<u4").tolist()
+            # returned in the dtype the header records; the stored values are
+            # float32, so a wider dtype converts back to them exactly. A float32
+            # result is compared as returned (no conversion)
+            recorded = ResidualData.from_bytes((DATA / name).read_bytes()).original_dtype
+            assert out.dtype == np.dtype(recorded), f"{name} ({writer}): {out.dtype}"
+            f32 = out if out.dtype == np.float32 else out.astype(np.float32)
+            got = np.ascontiguousarray(f32).ravel().view("<u4").tolist()
             assert got == EXPECTED[values], f"{name} ({writer})"
+
+
+def payload(name):
+    import json
+    import lzma
+    import struct
+    d = (DATA / name).read_bytes()
+    n = struct.unpack("<I", d[:4])[0]
+    return json.loads(d[4:4 + n]), lzma.decompress(d[4 + n:])
+
+
+def test_both_writers_quantize_to_the_same_bytes():
+    # compared before compression (xz output differs between implementations)
+    (hp, py), (hr, rs) = payload("python_quantized.bin"), payload("rust_quantized.bin")
+    assert hp == hr
+    assert py == rs
+

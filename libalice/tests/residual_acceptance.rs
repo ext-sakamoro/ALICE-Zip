@@ -41,6 +41,20 @@ const SPECIAL: [u32; 13] = [
     0xFF80_0001,
 ];
 
+fn quantized_expected(name: &str) -> Vec<u32> {
+    let text = std::fs::read_to_string(dir().join("quantized_expected.txt")).unwrap();
+    let line = text
+        .lines()
+        .find(|l| l.starts_with(&format!("{name} |")))
+        .unwrap();
+    line.split(" | ")
+        .nth(1)
+        .unwrap()
+        .split_whitespace()
+        .map(|h| u32::from_str_radix(h, 16).unwrap())
+        .collect()
+}
+
 fn dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/data/residual")
 }
@@ -63,39 +77,39 @@ fn the_rust_reader_accepts_exactly_the_files_the_table_lists() {
             "{name} ({writer}): {:?}",
             read.as_ref().err()
         );
-        if let (Ok(out), Some(want)) = (
-            read,
-            match values {
-                "values" => Some(&VALUES[..]),
-                "special" => Some(&SPECIAL[..]),
-                "special11" => Some(&SPECIAL11[..]),
-                _ => None,
-            },
-        ) {
+        let want: Option<Vec<u32>> = match values {
+            "values" => Some(VALUES.to_vec()),
+            "special" => Some(SPECIAL.to_vec()),
+            "special11" => Some(SPECIAL11.to_vec()),
+            "quant8" | "quant16" => Some(quantized_expected(values)),
+            _ => None,
+        };
+        if let (Ok(out), Some(want)) = (read, want) {
             let got: Vec<u32> = out.iter().map(|v| v.to_bits()).collect();
             assert_eq!(got, want, "{name} ({writer})");
         }
         compared += 1;
     }
-    assert_eq!(compared, 34, "every row compared");
+    assert_eq!(compared, 36, "every row compared");
 }
 
 #[test]
-fn a_layout_this_reader_cannot_return_is_refused_by_name() {
-    for name in [
-        "python_lzma_float64.bin",
-        "python_lzma_2d.bin",
-        "python_quantized.bin",
-    ] {
-        let bytes = std::fs::read(dir().join(name)).unwrap();
-        assert!(
-            matches!(
-                ResidualData::from_bytes(&bytes).and_then(|r| decompress(&r)),
-                Err(ResidualError::UnsupportedLayout(_))
-            ),
-            "{name}"
-        );
-    }
+fn the_original_shape_and_dtype_are_kept() {
+    let read =
+        |name: &str| ResidualData::from_bytes(&std::fs::read(dir().join(name)).unwrap()).unwrap();
+    let r = read("python_lzma_2d.bin");
+    assert_eq!(
+        (r.shape.clone(), r.dtype.as_str(), r.original_len),
+        (vec![2, 2], "float32", 4)
+    );
+    let r = read("python_lzma_float64.bin");
+    assert_eq!((r.shape.clone(), r.dtype.as_str()), (vec![4], "float64"));
+    // written back with the same header
+    let b = std::fs::read(dir().join("python_lzma_2d.bin")).unwrap();
+    let n = u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize;
+    let out = read("python_lzma_2d.bin").to_bytes();
+    let m = u32::from_le_bytes([out[0], out[1], out[2], out[3]]) as usize;
+    assert_eq!(&out[4..4 + m], &b[4..4 + n]);
 }
 
 #[test]

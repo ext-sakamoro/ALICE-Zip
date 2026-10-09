@@ -28,8 +28,9 @@ SPECIAL = np.array([0x7FC00001, 0x3F800000, 0x7F800000, 0xFF800000, 0x80000000, 
                    dtype="<u4").view("<f4")
 
 
-def write(name, method, data, dtype="float32"):
-    r = ResidualCompressor(method=method).compress_residual(data, original_dtype=dtype)
+def write(name, method, data, dtype="float32", bits=None):
+    r = ResidualCompressor(method=method, quantization_bits=bits).compress_residual(
+        data, original_dtype=dtype)
     (HERE / f"python_{name}.bin").write_bytes(r.to_bytes())
 
 
@@ -41,3 +42,8 @@ for name, method in [("none", M.NONE), ("lzma", M.LZMA), ("delta", M.DELTA)]:
 # originals the Rust reader cannot return (it returns float32 of one dimension)
 write("lzma_float64", M.LZMA, VALUES.astype(np.float64), "float64")
 write("lzma_2d", M.LZMA, VALUES.reshape(2, 2))
+# quantized: 16 bits, and quantization applied under another method (the
+# writer quantizes whenever quantization_bits is set)
+write("quantized16", M.QUANTIZED, VALUES, bits=16)
+write("lzma_q8", M.LZMA, VALUES, bits=8)
+

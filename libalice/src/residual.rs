@@ -222,6 +222,12 @@ pub struct ResidualData {
     pub compressed: Vec<u8>,
     /// Number of `f32` elements in the original (uncompressed) array.
     pub original_len: usize,
+    /// Shape of the original array (its element count is `original_len`);
+    /// the values are returned flat, in the stored order.
+    pub shape: Vec<usize>,
+    /// dtype of the original array as the writer recorded it (one of the
+    /// eleven real numeric dtypes); the values are returned as `f32`.
+    pub dtype: String,
     /// Method-specific auxiliary information.
     pub metadata: ResidualMetadata,
 }
@@ -558,6 +564,8 @@ impl ResidualData {
             method,
             compressed,
             original_len,
+            shape: vec![original_len],
+            dtype: "float32".to_owned(),
             metadata,
         })
     }
@@ -654,6 +662,8 @@ pub fn compress_residual_delta(data: &[f32]) -> ResidualData {
         method,
         compressed,
         original_len: data.len(),
+        shape: vec![data.len()],
+        dtype: "float32".to_owned(),
         metadata: ResidualMetadata::default(),
     }
 }
@@ -821,6 +831,8 @@ pub fn choose_compression(data: &[f32], allow_lossy: bool) -> ResidualData {
             method: ResidualCompressionMethod::None,
             compressed: Vec::new(),
             original_len: 0,
+            shape: vec![0],
+            dtype: "float32".to_owned(),
             metadata: ResidualMetadata::default(),
         };
     }
@@ -844,6 +856,8 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
             method,
             compressed: raw_bytes,
             original_len: data.len(),
+            shape: vec![data.len()],
+            dtype: "float32".to_owned(),
             metadata: ResidualMetadata::default(),
         },
 
@@ -854,6 +868,8 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
                 method,
                 compressed,
                 original_len: data.len(),
+                shape: vec![data.len()],
+                dtype: "float32".to_owned(),
                 metadata: ResidualMetadata::default(),
             }
         }
@@ -869,6 +885,8 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
                 method,
                 compressed,
                 original_len: data.len(),
+                shape: vec![data.len()],
+                dtype: "float32".to_owned(),
                 metadata: ResidualMetadata::default(),
             }
         }
@@ -898,6 +916,8 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
                 method,
                 compressed,
                 original_len: data.len(),
+                shape: vec![data.len()],
+                dtype: "float32".to_owned(),
                 metadata: ResidualMetadata {
                     min_val,
                     scale,

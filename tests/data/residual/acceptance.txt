@@ -7,7 +7,8 @@
 #   values: values / special / special11 = a reader that accepts the file must
 #           return these values bit for bit (the inputs of the writers: special
 #           has 13 values incl. signaling NaNs, special11 the 11 values the
-#           earlier writer was given); - = not compared
+#           earlier writer was given); quant8 / quant16 = the dequantized
+#           values in quantized_expected.txt; - = not compared
 residual_v2.bin                  hand        accept accept -
 residual_v3.bin                  hand        refuse refuse -
 residual_v2_float.bin            hand        refuse refuse -
@@ -20,17 +21,19 @@ python_none.bin                  python      accept accept values
 python_lzma.bin                  python      accept accept values
 python_zlib.bin                  python      accept accept values
 python_delta.bin                 python      accept accept values
-python_quantized.bin             python      refuse accept -
+python_quantized.bin             python      accept accept quant8
 python_none_special.bin          python      accept accept special
 python_lzma_special.bin          python      accept accept special
 python_delta_special.bin         python      accept accept special
-python_lzma_float64.bin          python      refuse accept -
-python_lzma_2d.bin               python      refuse accept -
+python_lzma_float64.bin          python      accept accept values
+python_lzma_2d.bin               python      accept accept values
+python_quantized16.bin           python      accept accept quant16
+python_lzma_q8.bin               python      accept accept quant8
 rust_none.bin                    rust        accept accept values
 rust_lzma.bin                    rust        accept accept values
 rust_zlib.bin                    rust        accept accept values
 rust_delta.bin                   rust        accept accept values
-rust_quantized.bin               rust        accept refuse -
+rust_quantized.bin               rust        accept accept quant8
 rust_none_special.bin            rust        accept accept special
 rust_lzma_special.bin            rust        accept accept special
 rust_delta_special.bin           rust        accept accept special
@@ -38,7 +41,7 @@ rust_legacy_none.bin             rust-legacy accept accept values
 rust_legacy_lzma.bin             rust-legacy accept accept values
 rust_legacy_zlib.bin             rust-legacy accept accept values
 rust_legacy_delta.bin            rust-legacy accept accept values
-rust_legacy_quantized.bin        rust-legacy accept refuse -
+rust_legacy_quantized.bin        rust-legacy accept accept quant8
 rust_legacy_none_special.bin     rust-legacy accept accept special11
 rust_legacy_lzma_special.bin     rust-legacy accept accept special11
 rust_legacy_delta_special.bin    rust-legacy accept accept -
