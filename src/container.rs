@@ -334,6 +334,8 @@ const LEGACY_V2_LEN: usize = 66;
 const LEGACY_MAGIC: &[u8; 9] = b"ALICE_ZIP";
 /// `payload_type` values the `ALICE_ZIP` writer defines.
 const LEGACY_PAYLOAD_TYPES: [u8; 6] = [0x00, 0x10, 0x11, 0x12, 0x20, 0x30];
+/// `payload_type` of the lossless LZMA fallback payload.
+const LEGACY_LZMA_FALLBACK: u8 = 0x30;
 /// Compression engines the `ALICE_ZIP` writer indexes (`0..=3`).
 const LEGACY_ENGINES: u8 = 4;
 
@@ -888,7 +890,7 @@ impl LegacyHeader {
     /// reproduce, so it cannot match by design.
     #[must_use]
     pub fn original_hash_checkable(&self) -> bool {
-        todo!("original_hash_checkable")
+        self.payload_type == Some(LEGACY_LZMA_FALLBACK)
     }
 
     /// Checks data offered as the original: its length against
