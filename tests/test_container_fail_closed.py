@@ -118,7 +118,8 @@ def test_a_procedural_file_is_read_without_checking_the_hash():
 
 def test_a_payload_longer_than_stated_is_refused():
     _, data = lzma_file()
-    with pytest.raises(ValueError):
+    # the length check must refuse it, not a later decoding failure
+    with pytest.raises(ValueError, match="follow the header"):
         ALICEZip().decompress(data + b"\x00")
 
 
@@ -135,3 +136,22 @@ def test_the_writer_output_reads_back_on_this_platform():
         assert h.compressed_size == len(data) - h.header_size()
         assert h.original_hash == hashlib.sha256(np.asarray(
             np.frombuffer(v, dtype=np.uint8) if isinstance(v, bytes) else v).tobytes()).digest()
+
+
+def test_the_file_path_reader_applies_the_same_checks(tmp_path):
+    arr, data = lzma_file()
+    good = tmp_path / "good.alice"
+    good.write_bytes(data)
+    assert np.asarray(ALICEZip().decompress(good)).tobytes() == arr.tobytes()
+    longer = tmp_path / "longer.alice"
+    longer.write_bytes(data + b"\x00")
+    with pytest.raises(ValueError, match="follow the header"):
+        ALICEZip().decompress(longer)
+    wrong = tmp_path / "wrong.alice"
+    wrong.write_bytes(data[:30] + bytes([data[30] ^ 1]) + data[31:])
+    with pytest.raises(ValueError, match="original_hash"):
+        ALICEZip().decompress(wrong)
+    major2 = tmp_path / "major2.alice"
+    major2.write_bytes(MAJOR2)
+    with pytest.raises(ValueError):
+        ALICEZip().decompress(major2)

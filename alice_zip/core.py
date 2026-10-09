@@ -220,15 +220,23 @@ class AliceFileHeader:
         if magic != ALICE_MAGIC:
             raise ValueError(f"Invalid ALICE_ZIP file (magic: {magic})")
 
-        # Check version to determine format
+        # Only versions 1.0 (65-byte header) and 1.1 (66-byte header, with
+        # payload_type) were ever written; anything else is refused rather
+        # than read as one of them. The Rust reader
+        # (alice_zip::container::parse_legacy_alice_zip_header) applies the
+        # same rules.
         ver_maj = data[9]
         ver_min = data[10]
+        if (ver_maj, ver_min) not in ((1, 0), (1, 1)):
+            raise ValueError(f"Unsupported ALICE_ZIP version {ver_maj}.{ver_min} (1.0 and 1.1 exist)")
+        is_v2 = (ver_maj, ver_min) == (1, 1)
+        if is_v2 and len(data) < HEADER_V2_SIZE:
+            raise ValueError(f"Data too short for a version 1.1 header: {len(data)} bytes")
+        engines = list(CompressionEngine)
+        if data[12] >= len(engines):
+            raise ValueError(f"Invalid engine index {data[12]} (0 to {len(engines) - 1} exist)")
 
-        # v2 format: version >= 1.1 uses 66-byte header with payload_type
-        # v1 format: version 1.0 uses 65-byte header without payload_type
-        is_v2 = (ver_maj > 1) or (ver_maj == 1 and ver_min >= 1)
-
-        if is_v2 and len(data) >= HEADER_V2_SIZE:
+        if is_v2:
             # Parse v2 format (66 bytes)
             (magic, ver_maj, ver_min, file_type, engine_idx, payload_type,
              orig_size, comp_size, orig_hash, flags) = struct.unpack(
@@ -239,8 +247,7 @@ class AliceFileHeader:
             try:
                 payload_type_enum = AlicePayloadType(payload_type)
             except ValueError:
-                # Unknown payload type, default to PROCEDURAL
-                payload_type_enum = AlicePayloadType.PROCEDURAL
+                raise ValueError(f"Invalid payload_type 0x{payload_type:02X}") from None
 
             header = cls(
                 magic=magic,
@@ -302,8 +309,30 @@ class AliceFileHeader:
 # ============================================================================
 
 def original_hash_checkable(header: "AliceFileHeader") -> bool:
-    """Whether decompressing the payload reproduces the original exactly."""
-    raise NotImplementedError("STUB: original_hash_checkable not implemented yet")
+    """Whether decompressing the payload reproduces the original exactly, so
+    that original_hash can be checked against the result.
+
+    Only the LZMA fallback payload is lossless. A procedural payload (and every
+    version 1.0 file) stores generator parameters and is regenerated
+    approximately, and the media and texture payloads store parameters too, so
+    for them the hash describes data the reader does not reproduce. Same rule
+    as alice_zip::container::LegacyHeader::original_hash_checkable.
+    """
+    return header.payload_type == AlicePayloadType.LZMA_FALLBACK
+
+
+def _verify_original(header: "AliceFileHeader", result) -> None:
+    """Checks a decompressed lossless payload against original_size and, when
+    one is recorded (not all zeros), original_hash."""
+    if not original_hash_checkable(header):
+        return
+    raw = np.asarray(result).tobytes()
+    if len(raw) != header.original_size:
+        raise ValueError(
+            f"Decompressed data is {len(raw)} bytes, original_size states {header.original_size}"
+        )
+    if header.original_hash != bytes(32) and hashlib.sha256(raw).digest() != header.original_hash:
+        raise ValueError("Decompressed data does not match original_hash")
 
 
 class ALICEZip:
@@ -568,10 +597,10 @@ class ALICEZip:
         header_size = header.header_size()
         expected_payload_size = file_size - header_size
 
-        if header.compressed_size > expected_payload_size:
+        if header.compressed_size != expected_payload_size:
             raise ValueError(
                 f"Header claims {header.compressed_size} bytes payload, "
-                f"but only {expected_payload_size} bytes available"
+                f"but {expected_payload_size} bytes follow the header"
             )
 
         actual_payload_size = header.compressed_size if header.compressed_size > 0 else expected_payload_size
@@ -697,10 +726,10 @@ class ALICEZip:
         header_size = header.header_size()
 
         # Validate header consistency
-        if header.compressed_size > len(data) - header_size:
+        if header.compressed_size != len(data) - header_size:
             raise ValueError(
                 f"Header claims {header.compressed_size} bytes payload, "
-                f"but only {len(data) - header_size} bytes available"
+                f"but {len(data) - header_size} bytes follow the header"
             )
 
         # Extract payload
@@ -714,6 +743,14 @@ class ALICEZip:
 
     def _dispatch_payload(self, header: AliceFileHeader, payload_data: bytes,
                           output_path: Optional[Path]) -> Union[np.ndarray, Any]:
+        """Decompress the payload and, where it is lossless, check the result
+        against the header (see original_hash_checkable)."""
+        result = self._decode_payload(header, payload_data, output_path)
+        _verify_original(header, result)
+        return result
+
+    def _decode_payload(self, header: AliceFileHeader, payload_data: bytes,
+                        output_path: Optional[Path]) -> Union[np.ndarray, Any]:
         """
         Dispatch decompression based on payload type.
 

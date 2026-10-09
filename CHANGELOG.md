@@ -36,6 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - CI: the container oracles run in the `no_std` build on each OS and under
   `wasmtime` on `wasm32-wasip1`; the wasm job fails when the summary reports
   no passed test.
+- `container::LegacyHeader::original_hash_checkable` — ALICE_ZIP の payload を復元すると元データが再現されるか (`original_hash` を照合できるか) LZMA fallback (`0x30`) だけが true Python の `alice_zip.core.original_hash_checkable` と同じ規則で、両方の試験が同じ表 (`tests/container_oracle.rs` の `CHECKABLE`) を読む
+
+### Changed (破壊的変更)
+
+- Python package (`alice_zip.core`) の ALICE_ZIP 読み手は、書き手が出したことのない値を別の値として読まず拒否する (`ValueError`) Rust の `container::parse_legacy_alice_zip_header` と同じ規則
+  - 版 1.0 / 1.1 以外 (major 2 を 1.1 として、minor 2 以上を 1.1 として読んでいた)
+  - 未知の `payload_type` (`PROCEDURAL` として読んでいた)
+  - engine の index が 4 以上 (`IndexError` だった)
+  - 66 byte 未満の 1.1 header (1.0 として読んでいた)
+  - header の `compressed_size` と header の後ろの byte 数が違う file (後ろが長い file を読んでいた)
+- `ALICEZip.decompress` は lossless な payload (LZMA fallback) を復元した後、長さを `original_size` と、記録があれば (全 0 でなければ) SHA-256 を `original_hash` と照合し、違えば `ValueError` procedural / media / texture は生成パラメータから近似で復元するので照合しない (`original_hash_checkable`)
+- 移行: Python package と本 crate の書き手が出した file (版 1.0 / 1.1、定義された値) はこれまでどおり読める 上の値を持つ file はどの書き手も出していないので、読めなくなった file は壊れているか別の形式 書き手の出力は変わらない (同じ入力で同じ bytes、header は参照実装の配置と一致)
 
 ## [0.8.0] - 2026-10-09
 
