@@ -1,2 +1,3 @@
 tests/data/container/*.bin binary
 tests/data/container/*.alice binary
+tests/data/residual/*.bin binary

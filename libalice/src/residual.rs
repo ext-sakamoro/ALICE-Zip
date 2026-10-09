@@ -51,11 +51,16 @@ pub enum ResidualError {
     Io(std::io::Error),
     /// The data is internally inconsistent (e.g., truncated payload).
     Corrupted(String),
+    /// A header `"version"` later than 2, which no writer produced.
+    UnsupportedVersion(u32),
 }
 
 impl std::fmt::Display for ResidualError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::UnsupportedVersion(v) => {
+                write!(f, "unsupported residual header version {v} (1 and 2 exist)")
+            }
             Self::DataTooShort { got, expected } => {
                 write!(
                     f,
