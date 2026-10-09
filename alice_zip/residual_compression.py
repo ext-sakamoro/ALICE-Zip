@@ -35,6 +35,7 @@ class ResidualCompressionMethod(Enum):
     ZLIB = "zlib"           # Good balance
     ZSTD = "zstd"           # Fast, good ratio (requires zstd)
     DELTA = "delta"         # Delta encoding + compression
+    DELTA2 = "delta2"       # Delta encoding that keeps the first value (xz)
     QUANTIZED = "quantized" # Quantize residual before compression
 
 
@@ -627,3 +628,9 @@ def estimate_total_compression(
         'params_fraction': params_size / total_compressed if total_compressed > 0 else 0.0,
         'residual_fraction': residual_size / total_compressed if total_compressed > 0 else 0.0,
     }
+
+
+def decompress_delta_differences(residual_data: "ResidualData") -> np.ndarray:
+    """The stored differences of a delta residual, without reconstructing it."""
+    raise NotImplementedError("STUB: decompress_delta_differences not implemented yet")
+

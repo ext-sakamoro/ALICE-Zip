@@ -51,6 +51,10 @@ pub enum ResidualError {
     Io(std::io::Error),
     /// The data is internally inconsistent (e.g., truncated payload).
     Corrupted(String),
+    /// A `"delta"` residual without `base_value`: the writer dropped the
+    /// first value, so the data cannot be reconstructed; recompress from the
+    /// original.
+    DeltaWithoutBase,
     /// A header `"version"` later than 2, which no writer produced.
     UnsupportedVersion(u32),
 }
@@ -82,6 +86,10 @@ impl std::fmt::Display for ResidualError {
             }
             Self::Io(e) => write!(f, "I/O error: {e}"),
             Self::Corrupted(msg) => write!(f, "corrupted data: {msg}"),
+            Self::DeltaWithoutBase => write!(
+                f,
+                "delta residual without its base value: recompress from the original"
+            ),
         }
     }
 }
@@ -117,8 +125,13 @@ pub enum ResidualCompressionMethod {
     Lzma,
     /// zlib — good balance between speed and ratio.
     Zlib,
-    /// Delta encoding followed by LZMA compression.
+    /// Delta encoding followed by LZMA compression, written by earlier
+    /// releases. Readable only when the header records `base_value` (the
+    /// earlier Rust writer); the earlier Python writer lost the first value.
     Delta,
+    /// Delta encoding whose first delta is the first value, xz-compressed
+    /// (the format the Python writer emits).
+    Delta2,
     /// Quantization (8-bit by default) followed by LZMA compression.
     Quantized,
 }
@@ -132,6 +145,7 @@ impl ResidualCompressionMethod {
             Self::Lzma => "lzma",
             Self::Zlib => "zlib",
             Self::Delta => "delta",
+            Self::Delta2 => "delta2",
             Self::Quantized => "quantized",
         }
     }
@@ -146,6 +160,7 @@ impl ResidualCompressionMethod {
             "lzma" => Some(Self::Lzma),
             "zlib" => Some(Self::Zlib),
             "delta" => Some(Self::Delta),
+            "delta2" => Some(Self::Delta2),
             "quantized" => Some(Self::Quantized),
             _ => None,
         }
@@ -709,7 +724,9 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
             }
         }
 
-        ResidualCompressionMethod::Delta => compress_residual_delta(data),
+        ResidualCompressionMethod::Delta | ResidualCompressionMethod::Delta2 => {
+            compress_residual_delta(data)
+        }
 
         ResidualCompressionMethod::Quantized => {
             // Use the existing compress_residual_quantized function which
@@ -776,6 +793,7 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
         }
 
         ResidualCompressionMethod::Delta => Ok(decompress_residual_delta(rd)),
+        ResidualCompressionMethod::Delta2 => todo!("Delta2 decode"),
 
         ResidualCompressionMethod::Quantized => {
             let result = crate::compression::decompress_residual_quantized(&rd.compressed)?;
@@ -942,6 +960,7 @@ mod tests {
             ResidualCompressionMethod::Lzma => true,
             ResidualCompressionMethod::Zlib => true,
             ResidualCompressionMethod::Delta => true,
+            ResidualCompressionMethod::Delta2 => true,
             ResidualCompressionMethod::Quantized => true,
         };
     }
