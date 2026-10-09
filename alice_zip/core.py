@@ -301,6 +301,11 @@ class AliceFileHeader:
 # Main ALICE_Zip Class (Core - Decompression Only)
 # ============================================================================
 
+def original_hash_checkable(header: "AliceFileHeader") -> bool:
+    """Whether decompressing the payload reproduces the original exactly."""
+    raise NotImplementedError("STUB: original_hash_checkable not implemented yet")
+
+
 class ALICEZip:
     """
     ALICE_Zip compression/decompression engine (Core/MIT version).
