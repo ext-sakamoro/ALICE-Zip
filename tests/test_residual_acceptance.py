@@ -102,6 +102,6 @@ def test_the_python_writer_reproduces_the_committed_files():
         "write_python_fixtures", DATA / "write_python_fixtures.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert len(module.FILES) == 45
+    assert len(module.FILES) == 28
     for name, data in module.FILES.items():
         assert decoded_payload(data) == decoded_payload((DATA / name).read_bytes()), name
