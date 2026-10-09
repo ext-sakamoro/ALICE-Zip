@@ -54,6 +54,9 @@ pub enum ResidualError {
     /// A residual layout this reader does not read: a `quant_bits` other than
     /// 8, 16 or 32.
     UnsupportedLayout(String),
+    /// Values that are NaN or infinite cannot be quantized (the codes span
+    /// the finite range from the minimum to the maximum).
+    NotFinite,
     /// A `"delta"` residual without `base_value`: the writer dropped the
     /// first value, so the data cannot be reconstructed; recompress from the
     /// original.
@@ -90,6 +93,7 @@ impl std::fmt::Display for ResidualError {
             Self::Io(e) => write!(f, "I/O error: {e}"),
             Self::Corrupted(msg) => write!(f, "corrupted data: {msg}"),
             Self::UnsupportedLayout(msg) => write!(f, "unsupported residual layout: {msg}"),
+            Self::NotFinite => write!(f, "values that are not finite cannot be quantized"),
             Self::DeltaWithoutBase => write!(
                 f,
                 "delta residual without its base value: recompress from the original"
@@ -952,7 +956,7 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
 
         ResidualCompressionMethod::Quantized => {
             // the Python writer's quantized form (8 bits), xz-compressed
-            let q = xz_compress(&quantize_python(data, 8));
+            let q = quantize_python(data, 8).ok().and_then(|q| xz_compress(&q));
             let (method, compressed) = first_encoding(vec![(method, q)], raw_bytes);
             ResidualData {
                 method,
@@ -1017,7 +1021,7 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
 /// replaced by 1, `(v - min) / range * (levels - 1)` in `f32`, rounded half
 /// to even and clipped to the code range.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn quantize_python(data: &[f32], bits: u8) -> Vec<u8> {
+fn quantize_python(data: &[f32], bits: u8) -> Result<Vec<u8>, ResidualError> {
     let min = data.iter().copied().fold(f32::INFINITY, f32::min);
     let max = data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
     let mut scale = max - min;
@@ -1038,7 +1042,7 @@ fn quantize_python(data: &[f32], bits: u8) -> Vec<u8> {
             _ => out.extend_from_slice(&(code as u32).to_le_bytes()),
         }
     }
-    out
+    Ok(out)
 }
 
 /// Inverts [`quantize_python`] as the Python reader does:
@@ -1088,34 +1092,32 @@ mod tests {
     // Delta round-trip
     // ------------------------------------------------------------------
 
-    /// Writes the files of this crate's residual writer into
-    /// `tests/data/residual/` (run on purpose: `cargo test --lib -- --ignored
-    /// write_rust_writer_fixtures`, with `ALICE_RESIDUAL_PREFIX` naming them).
-    #[test]
-    #[ignore = "writes fixtures; run on purpose"]
-    fn write_rust_writer_fixtures() {
+    const SPECIAL_BITS: [u32; 13] = [
+        0x7FC0_0001,
+        0x3F80_0000,
+        0x7F80_0000,
+        0xFF80_0000,
+        0x8000_0000,
+        0x0000_0000,
+        0x0000_0001,
+        0x7F7F_FFFF,
+        0xFFFF_FFFF,
+        0x3200_0000,
+        0x4CBE_BC20,
+        0x7F80_0001, // signaling NaN
+        0xFF80_0001,
+    ];
+    const DTYPES: [&str; 11] = [
+        "float16", "float32", "float64", "int8", "int16", "int32", "int64", "uint8", "uint16",
+        "uint32", "uint64",
+    ];
+
+    /// The files of this crate's residual writer, by name without prefix.
+    fn rust_writer_files() -> Vec<(String, Vec<u8>)> {
         use ResidualCompressionMethod as M;
-        let prefix = std::env::var("ALICE_RESIDUAL_PREFIX").unwrap_or_else(|_| "rust".to_owned());
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/data/residual");
         let values = [5.0f32, 5.5, 6.0, 4.0];
-        let special: Vec<f32> = [
-            0x7FC0_0001u32,
-            0x3F80_0000,
-            0x7F80_0000,
-            0xFF80_0000,
-            0x8000_0000,
-            0x0000_0000,
-            0x0000_0001,
-            0x7F7F_FFFF,
-            0xFFFF_FFFF,
-            0x3200_0000,
-            0x4CBE_BC20,
-            0x7F80_0001, // signaling NaN
-            0xFF80_0001,
-        ]
-        .into_iter()
-        .map(f32::from_bits)
-        .collect();
+        let special: Vec<f32> = SPECIAL_BITS.into_iter().map(f32::from_bits).collect();
+        let mut files = Vec::new();
         for (name, method) in [
             ("none", M::None),
             ("lzma", M::Lzma),
@@ -1123,24 +1125,110 @@ mod tests {
             ("delta", M::Delta),
             ("quantized", M::Quantized),
         ] {
-            let rd = compress_with_method(&values, method);
-            std::fs::write(dir.join(format!("{prefix}_{name}.bin")), rd.to_bytes()).unwrap();
+            files.push((
+                name.to_owned(),
+                compress_with_method(&values, method).to_bytes(),
+            ));
         }
         // codes on .5 with an even integer below (round half to even)
         let ties = [0.0f32, 2.5, 4.5, 255.0];
-        let rd = compress_with_method(&ties, M::Quantized);
-        std::fs::write(
-            dir.join(format!("{prefix}_quantized_ties.bin")),
-            rd.to_bytes(),
-        )
-        .unwrap();
+        files.push((
+            "quantized_ties".to_owned(),
+            compress_with_method(&ties, M::Quantized).to_bytes(),
+        ));
         for (name, method) in [("none", M::None), ("lzma", M::Lzma), ("delta", M::Delta)] {
-            let rd = compress_with_method(&special, method);
-            std::fs::write(
-                dir.join(format!("{prefix}_{name}_special.bin")),
-                rd.to_bytes(),
-            )
-            .unwrap();
+            files.push((
+                format!("{name}_special"),
+                compress_with_method(&special, method).to_bytes(),
+            ));
+        }
+        // the residual of an original of each dtype: stored as float32 as it is
+        let wide = [-36.54f32, 300.5, 5.5, -129.75];
+        for dt in DTYPES {
+            let mut rd = compress_with_method(&wide, M::Lzma);
+            rd.dtype = dt.to_owned();
+            files.push((format!("dtype_{dt}"), rd.to_bytes()));
+        }
+        // 32-bit codes; 1.0 lands on 4294967295, which float32 cannot hold
+        let q32 = [0.0f32, 1.0, 0.5, 0.25];
+        let rd = ResidualData {
+            method: M::Quantized,
+            compressed: xz_compress(&quantize_python(&q32, 32).unwrap()).unwrap(),
+            original_len: 4,
+            shape: vec![4],
+            dtype: "float32".to_owned(),
+            metadata: ResidualMetadata {
+                quant_bits: Some(32),
+                ..ResidualMetadata::default()
+            },
+        };
+        files.push(("quantized32".to_owned(), rd.to_bytes()));
+        files
+    }
+
+    fn fixture_dir() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/data/residual")
+    }
+
+    /// Writes the files of this crate's residual writer into
+    /// `tests/data/residual/` (run on purpose: `cargo test --lib -- --ignored
+    /// write_rust_writer_fixtures`, with `ALICE_RESIDUAL_PREFIX` naming them).
+    #[test]
+    #[ignore = "writes fixtures; run on purpose"]
+    fn write_rust_writer_fixtures() {
+        let prefix = std::env::var("ALICE_RESIDUAL_PREFIX").unwrap_or_else(|_| "rust".to_owned());
+        for (name, bytes) in rust_writer_files() {
+            std::fs::write(fixture_dir().join(format!("{prefix}_{name}.bin")), bytes).unwrap();
+        }
+    }
+
+    #[test]
+    fn the_writer_reproduces_the_committed_files() {
+        // the files the other reader is tested against are this writer's
+        // current output, byte for byte
+        let files = rust_writer_files();
+        for (name, bytes) in &files {
+            let path = fixture_dir().join(format!("rust_{name}.bin"));
+            let committed = std::fs::read(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
+            assert!(
+                committed == *bytes,
+                "rust_{name}.bin differs from the writer's output"
+            );
+        }
+        assert_eq!(files.len(), 21, "every writer file compared");
+    }
+
+    #[test]
+    fn thirty_two_bit_codes_are_computed_without_float32_rounding() {
+        // oracle: exact rationals, (v - min) / scale * (2^32 - 1) rounded half to
+        // even: 1.0 -> 4294967295, 0.5 -> 2147483647.5 -> 2147483648,
+        // 0.25 -> 1073741823.75 -> 1073741824
+        let q = quantize_python(&[0.0, 1.0, 0.5, 0.25], 32).unwrap();
+        let codes: Vec<u32> = q[16..]
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        assert_eq!(codes, [0, 4_294_967_295, 2_147_483_648, 1_073_741_824]);
+    }
+
+    #[test]
+    fn values_that_are_not_finite_are_not_quantized() {
+        let special: Vec<f32> = SPECIAL_BITS.into_iter().map(f32::from_bits).collect();
+        for data in [
+            special,
+            vec![1.0, f32::NAN, 2.0],
+            vec![1.0, f32::INFINITY, 2.0],
+        ] {
+            assert!(matches!(
+                quantize_python(&data, 8),
+                Err(ResidualError::NotFinite)
+            ));
+            // a writer asked to quantize keeps such values bit for bit instead
+            let rd = compress_with_method(&data, ResidualCompressionMethod::Quantized);
+            assert_ne!(rd.method, ResidualCompressionMethod::Quantized);
+            let back = decompress(&ResidualData::from_bytes(&rd.to_bytes()).unwrap()).unwrap();
+            let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+            assert_eq!(bits(&back), bits(&data));
         }
     }
 

@@ -22,6 +22,8 @@ EXPECTED = {
 }
 # with signaling NaNs, which a float64 round trip would quiet
 EXPECTED["special"] = EXPECTED["special11"] + [0x7F800001, 0xFF800001]
+# the residual values of the dtype_* files (float32 whatever the original's dtype)
+EXPECTED["wide"] = np.array([-36.54, 300.5, 5.5, -129.75], dtype="<f4").view("<u4").tolist()
 for _line in (DATA / "quantized_expected.txt").read_text().splitlines():
     if _line and not _line.startswith("#"):
         _name, _bits = _line.split(" | ")
@@ -35,7 +37,7 @@ def rows():
 
 def test_the_python_reader_accepts_exactly_the_files_the_table_lists():
     table = rows()
-    assert len(table) == 39
+    assert len(table) == 63
     for name, writer, _rust, python, values in table:
         try:
             out = ResidualCompressor().decompress_residual(
@@ -45,13 +47,10 @@ def test_the_python_reader_accepts_exactly_the_files_the_table_lists():
             continue
         assert python == "accept", f"{name} ({writer}) was read"
         if values != "-":
-            # returned in the dtype the header records; the stored values are
-            # float32, so a wider dtype converts back to them exactly. A float32
-            # result is compared as returned (no conversion)
-            recorded = ResidualData.from_bytes((DATA / name).read_bytes()).original_dtype
-            assert out.dtype == np.dtype(recorded), f"{name} ({writer}): {out.dtype}"
-            f32 = out if out.dtype == np.float32 else out.astype(np.float32)
-            got = np.ascontiguousarray(f32).ravel().view("<u4").tolist()
+            # float32 whatever dtype the header records: the dtype is the
+            # original's, applied only when the original is reconstructed
+            assert out.dtype == np.float32, f"{name} ({writer}): {out.dtype}"
+            got = np.ascontiguousarray(out).ravel().view("<u4").tolist()
             assert got == EXPECTED[values], f"{name} ({writer})"
 
 
@@ -66,10 +65,13 @@ def payload(name):
 
 def test_both_writers_quantize_to_the_same_bytes():
     # compared before compression (xz output differs between implementations)
-    for name in ("quantized", "quantized_ties"):
+    for name in ("quantized", "quantized_ties", "quantized32"):
         (hp, py), (hr, rs) = payload(f"python_{name}.bin"), payload(f"rust_{name}.bin")
         assert hp == hr, name
         assert py == rs, name
     # round half to even: codes 0, 2, 4, 255
     assert payload("python_quantized_ties.bin")[1][16:] == bytes([0, 2, 4, 255])
 
+    # 32 bits: 1.0 is the top code, 0.5 and 0.25 rounded half to even
+    codes = np.frombuffer(payload("python_quantized32.bin")[1][16:], dtype="<u4").tolist()
+    assert codes == [0, 4294967295, 2147483648, 1073741824]

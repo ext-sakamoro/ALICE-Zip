@@ -8,7 +8,9 @@
 #           return these values bit for bit (the inputs of the writers: special
 #           has 13 values incl. signaling NaNs, special11 the 11 values the
 #           earlier writer was given); quant8 / quant16 = the dequantized
-#           values in quantized_expected.txt; - = not compared
+#           values in quantized_expected.txt (quant32 too); wide = the
+#           residual values of the dtype_* files, returned as float32 whatever
+#           the dtype of the original; - = not compared
 residual_v2.bin                  hand        accept accept -
 residual_v3.bin                  hand        refuse refuse -
 residual_v2_float.bin            hand        refuse refuse -
@@ -48,3 +50,27 @@ rust_legacy_quantized.bin        rust-legacy accept accept quant8
 rust_legacy_none_special.bin     rust-legacy accept accept special11
 rust_legacy_lzma_special.bin     rust-legacy accept accept special11
 rust_legacy_delta_special.bin    rust-legacy accept accept -
+python_dtype_float16.bin         python      accept accept wide
+python_dtype_float32.bin         python      accept accept wide
+python_dtype_float64.bin         python      accept accept wide
+python_dtype_int8.bin            python      accept accept wide
+python_dtype_int16.bin           python      accept accept wide
+python_dtype_int32.bin           python      accept accept wide
+python_dtype_int64.bin           python      accept accept wide
+python_dtype_uint8.bin           python      accept accept wide
+python_dtype_uint16.bin          python      accept accept wide
+python_dtype_uint32.bin          python      accept accept wide
+python_dtype_uint64.bin          python      accept accept wide
+python_quantized32.bin           python      accept accept quant32
+rust_dtype_float16.bin           rust        accept accept wide
+rust_dtype_float32.bin           rust        accept accept wide
+rust_dtype_float64.bin           rust        accept accept wide
+rust_dtype_int8.bin              rust        accept accept wide
+rust_dtype_int16.bin             rust        accept accept wide
+rust_dtype_int32.bin             rust        accept accept wide
+rust_dtype_int64.bin             rust        accept accept wide
+rust_dtype_uint8.bin             rust        accept accept wide
+rust_dtype_uint16.bin            rust        accept accept wide
+rust_dtype_uint32.bin            rust        accept accept wide
+rust_dtype_uint64.bin            rust        accept accept wide
+rust_quantized32.bin             rust        accept accept quant32

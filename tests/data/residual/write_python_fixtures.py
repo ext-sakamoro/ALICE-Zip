@@ -51,3 +51,15 @@ write("lzma_q8", M.LZMA, VALUES, bits=8)
 TIES = np.array([0.0, 2.5, 4.5, 255.0], dtype=np.float32)
 write("quantized_ties", M.QUANTIZED, TIES)
 
+# residuals of originals of every dtype the writer records: the residual is a
+# float difference, so values outside an integer dtype's range and fractions
+# are stored as they are (the dtype is that of the original, applied when the
+# original is reconstructed)
+WIDE = np.array([-36.54, 300.5, 5.5, -129.75], dtype=np.float32)
+DTYPES = ["float16", "float32", "float64", "int8", "int16", "int32", "int64",
+          "uint8", "uint16", "uint32", "uint64"]
+for dt in DTYPES:
+    write(f"dtype_{dt}", M.LZMA, WIDE, dt)
+# 32-bit codes: 1.0 lands on the top code 4294967295, which float32 cannot hold
+Q32 = np.array([0.0, 1.0, 0.5, 0.25], dtype=np.float32)
+write("quantized32", M.QUANTIZED, Q32, bits=32)
