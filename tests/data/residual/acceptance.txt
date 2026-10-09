@@ -1,0 +1,12 @@
+# Which reader accepts which fixture (read by libalice/tests/residual_acceptance.rs
+# and tests/test_residual_acceptance.py). Columns: file, rust, python.
+residual_v2.bin                  accept accept
+residual_v3.bin                  refuse refuse
+residual_v2_float.bin            refuse refuse
+residual_v2_string.bin           refuse refuse
+residual_delta_python_legacy.bin refuse refuse
+residual_delta_rust_legacy.bin   accept accept
+residual_delta2.bin              accept accept
+residual_float32_1d.bin          accept accept
+residual_float64_1d.bin          refuse accept
+residual_float32_2d.bin          refuse accept

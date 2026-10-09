@@ -51,3 +51,15 @@ _common = {"original_len": 4, "shape": [4], "dtype": "float32", "quant_bits": No
 _write("delta_python_legacy", {"method": "delta", **_common}, _deltas(0.0, lzma.FORMAT_XZ))
 _write("delta_rust_legacy", {"method": "delta", "base_value": 5.0, **_common}, _deltas(5.0, lzma.FORMAT_ALONE))
 _write("delta2", {"method": "delta2", **_common}, _deltas(5.0, lzma.FORMAT_XZ))
+
+# residuals the Rust reader does not support yet (it returns float32 values
+# of one dimension): the payload is float32 either way (the Python writer
+# always stores '<f4'), "dtype" is the dtype of the original data and "shape"
+# its shape. The Python reader reads them; the Rust reader refuses them by name
+_raw32 = lzma.compress(struct.pack("<4f", *VALUES))
+_write("float64_1d", {"method": "lzma", "original_len": 4, "shape": [4], "dtype": "float64",
+                      "quant_bits": None, "version": 2}, _raw32)
+_write("float32_2d", {"method": "lzma", "original_len": 4, "shape": [2, 2], "dtype": "float32",
+                      "quant_bits": None, "version": 2}, _raw32)
+_write("float32_1d", {"method": "lzma", "original_len": 4, "shape": [4], "dtype": "float32",
+                      "quant_bits": None, "version": 2}, _raw32)
