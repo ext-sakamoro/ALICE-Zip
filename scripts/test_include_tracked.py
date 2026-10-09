@@ -44,6 +44,15 @@ class IncludeTracked(unittest.TestCase):
         d = repo({"tests/a.rs": b"fn main() {}", "tests/b.rs": b'include_bytes!("no.bin");'}, ["tests/a.rs"])
         self.assertEqual(include_tracked.check(d), (0, []))
 
+    def test_a_path_on_the_next_line_is_read(self):
+        src = b'const A: &[u8] = include_bytes!(\n    "data/x.alice"\n);\nconst B: &str =\n    include_str!("data/y.txt");'
+        d = repo({"tests/a.rs": src, "tests/data/x.alice": b"\0", "tests/data/y.txt": b"y"},
+                 ["tests/a.rs", "tests/data/y.txt"])
+        compared, problems = include_tracked.check(d)
+        self.assertEqual(compared, 2)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("tests/a.rs:1: tests/data/x.alice is untracked", problems[0])
+
     def test_zero_includes_fail_the_command(self):
         d = repo({"src/a.rs": b"fn main() {}"}, ["src/a.rs"])
         sys.argv = ["include_tracked.py", str(d)]

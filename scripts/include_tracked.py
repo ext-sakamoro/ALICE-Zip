@@ -35,18 +35,19 @@ def check(root: Path):
         if not rel.endswith(".rs"):
             continue
         text = (root / rel).read_text(encoding="utf-8", errors="replace")
-        for lineno, line in enumerate(text.splitlines(), 1):
-            for m in INCLUDE.finditer(line):
-                compared += 1
-                target = (root / rel).parent / m.group(1)
-                try:
-                    target_rel = target.resolve().relative_to(root.resolve()).as_posix()
-                except ValueError:
-                    problems.append(f"{rel}:{lineno}: {m.group(1)} is outside the repository")
-                    continue
-                if target_rel not in files:
-                    state = "untracked" if target.exists() else "missing"
-                    problems.append(f"{rel}:{lineno}: {target_rel} is {state}")
+        # over the whole text: the macro and its path may be on different lines
+        for m in INCLUDE.finditer(text):
+            lineno = text.count("\n", 0, m.start()) + 1
+            compared += 1
+            target = (root / rel).parent / m.group(1)
+            try:
+                target_rel = target.resolve().relative_to(root.resolve()).as_posix()
+            except ValueError:
+                problems.append(f"{rel}:{lineno}: {m.group(1)} is outside the repository")
+                continue
+            if target_rel not in files:
+                state = "untracked" if target.exists() else "missing"
+                problems.append(f"{rel}:{lineno}: {target_rel} is {state}")
     return compared, problems
 
 

@@ -58,9 +58,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      # the target comes from rust-toolchain.toml (the pinned toolchain cargo
+      # uses); `targets:` here would add it to stable only
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
