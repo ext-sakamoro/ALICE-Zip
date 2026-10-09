@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `container` — a container that holds several payloads, each identified by
+  its SHA-256: a 56-byte header (8-byte magic starting with a non-ASCII byte,
+  major / minor version, semantics id), a section table (tag, critical flag,
+  offset, length, SHA-256) and a trailing SHA-256 of the whole file.
+  `Container::id` hashes the header and the table with domain separation.
+  Readers refuse another major version, an unknown critical section, any
+  reserved bit, a gap or extra byte, and a trailer or payload that does not
+  match; unknown non-critical sections are kept. `SREF` sections refer to
+  sections by SHA-256 (a missing one is refused), `LIDS` sections list law
+  identifiers checked against the header's semantics id and, through
+  `ContainerView::verify_law_ids`, against recomputed identifiers.
+  `read_any` also reads `ALICE_ZIP` files of version 1.0 / 1.1 and refuses
+  field values that were never written. `ContainerView` checks a payload's
+  hash only when it is read.
+- `tests/container_oracle.rs` (25 tests): bytes and identifiers equal those of
+  the independent reference writer `tests/data/container/container_ref.py`;
+  every single-bit change of a fixture is refused by the check its position
+  belongs to; degenerate input returns the stated error.
+- `examples/container_roundtrip.rs`.
+- CI: the container oracles run in the `no_std` build on each OS and under
+  `wasmtime` on `wasm32-wasip1`; the wasm job fails when the summary reports
+  no passed test.
+
 ## [0.8.0] - 2026-10-09
 
 ### Added

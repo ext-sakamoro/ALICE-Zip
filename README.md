@@ -274,6 +274,49 @@ in the result at the lower end of the range, so folding the two would hand one
 identifier to laws that compute different bits.
 <!-- claim-test: negative_zero_is_observable_in_evaluation_so_it_changes_the_id -->
 
+### Container with content hashes (`container` module)
+
+`container::Container` holds several payloads in one file and identifies each
+by its SHA-256. A section carries the bytes of an existing format unchanged,
+so the inner format keeps its own version; the container fixes only the
+header, the section table and the integrity of the file.
+
+- **Identifier**: `Container::id` is SHA-256 over the header and the section
+  table (which holds every payload's SHA-256), with domain separation and
+  length prefixes in the same encoding as `law::SignalLaw::law_id`.
+- **Integrity**: the last 32 bytes are the SHA-256 of everything before them.
+  Readers always check it. A payload's own SHA-256 is checked when the payload
+  is read, so `ContainerView` can return one section without hashing the
+  others again.
+- **Versions**: a major version other than 1 is refused; any minor version is
+  read. A section with an unknown tag is refused if it is marked critical and
+  kept unchanged otherwise, so writing back what was read gives the same bytes.
+- **References**: an `SREF` section names other sections by SHA-256, so a
+  payload used several times is stored once and a reference to a missing
+  section is refused. An `LIDS` section lists law identifiers, which are
+  compared with the semantics id in the header and, through
+  `ContainerView::verify_law_ids`, with identifiers recomputed from the
+  payloads.
+- **Earlier files**: `container::read_any` also reads an `ALICE_ZIP` file of
+  version 1.0 or 1.1 (header and payload as two sections) and refuses values
+  that were never written.
+
+<!-- claim-test: every_single_bit_flip_is_refused_by_the_expected_check -->
+Changing any single bit of a container is refused (checked for every bit of a
+four-section fixture), and the bytes and identifiers equal those of an
+independent reference writer on Linux, macOS, Windows and `wasm32-wasip1`
+(`tests/container_oracle.rs`, `tests/data/container/container_ref.py`).
+
+```rust
+use alice_zip::container::{read_any, Container, Tag};
+
+let mut c = Container::new([0; 32]);
+c.push(Tag::RAW, true, b"payload".to_vec());
+let bytes = c.to_bytes();
+assert_eq!(read_any(&bytes)?, c);
+# Ok::<(), alice_zip::container::ContainerError>(())
+```
+
 ## Benchmarks
 
 100,000 `f32` samples (400,000 bytes), deflate level 9, reproduced by

@@ -230,6 +230,43 @@ byte 配置は `law_id` の doc に書き、CI が対応 target すべてで再�
 浮動小数は生の bit で入り、`-0.0` は `+0.0` に畳まない 1 次の係数が負なら、定数項の零の符号が範囲の下端の結果に現れるので、畳むと評価の異なる法則に同じ識別子を与えることになる
 <!-- claim-test: negative_zero_is_observable_in_evaluation_so_it_changes_the_id -->
 
+### 内容ハッシュつきコンテナ (`container` module)
+
+`container::Container` は複数の payload を 1 つの file にまとめ、それぞれを
+SHA-256 で識別する section は既存の形式の bytes をそのまま運ぶので、中身の
+形式は自分の版を持ち続ける コンテナが決めるのは header / section 表 / file の
+整合性だけ
+
+- **識別子**: `Container::id` は header と section 表 (各 payload の SHA-256 を
+  含む) の SHA-256 domain 分離と長さ前置は `law::SignalLaw::law_id` と同じ符号化
+- **整合性**: 末尾 32 byte はそれより前の全 byte の SHA-256 で、読み手は必ず
+  検証する 各 payload の SHA-256 は読む時に検証するので、`ContainerView` は
+  他の section を hash し直さずに 1 つだけ返せる
+- **版**: major が 1 以外は拒否、minor は何でも読む 未知の tag の section は
+  critical なら拒否、そうでなければそのまま保持するので、読んで書き戻すと同じ
+  bytes になる
+- **参照**: `SREF` section は他の section を SHA-256 で指すので、何度使う
+  payload も 1 回だけ置かれ、無い section への参照は拒否される `LIDS`
+  section は法則の識別子を並べ、header の semantics id と、
+  `ContainerView::verify_law_ids` を通して payload から再計算した識別子と照合する
+- **以前の file**: `container::read_any` は版 1.0 / 1.1 の `ALICE_ZIP` file も
+  読み (header と payload の 2 section)、書かれたことのない値は拒否する
+
+<!-- claim-test: every_single_bit_flip_is_refused_by_the_expected_check -->
+コンテナのどの 1 bit を変えても拒否される (4 section の fixture の全 bit で確認)
+bytes と識別子は独立の参照実装と Linux / macOS / Windows / `wasm32-wasip1` で
+一致する (`tests/container_oracle.rs`、`tests/data/container/container_ref.py`)
+
+```rust
+use alice_zip::container::{read_any, Container, Tag};
+
+let mut c = Container::new([0; 32]);
+c.push(Tag::RAW, true, b"payload".to_vec());
+let bytes = c.to_bytes();
+assert_eq!(read_any(&bytes)?, c);
+# Ok::<(), alice_zip::container::ContainerError>(())
+```
+
 ## ベンチマーク
 
 100,000 個の `f32` サンプル (400,000 バイト)、deflate level 9

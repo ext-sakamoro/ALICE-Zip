@@ -43,6 +43,36 @@ jobs:
       # platform. Every one of these runs has to produce the same digests.
       - name: Determinism golden (no_std build, same digests as the std build)
         run: cargo test --test determinism_golden --no-default-features
+      # The container's bytes and identifiers are compared with fixtures
+      # written by an independent reference (tests/data/container/), on each
+      # OS and in the no_std build.
+      - name: Container (no_std build, same bytes and identifiers)
+        run: cargo test --test container_oracle --no-default-features
+      - name: Container example (reads back, resolves references, refuses a changed byte)
+        run: cargo run --example container_roundtrip
+
+  wasm:
+    name: wasm32-wasip1 (container, same bytes and identifiers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasmtime
+      # A run that executes no test must not pass: the summary line is read
+      # (escape sequences removed) and must report at least one passed test.
+      - name: Container oracles under wasmtime
+        shell: bash
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime
+        run: |
+          set -o pipefail
+          cargo test --target wasm32-wasip1 --test container_oracle 2>&1 | tee wasm-test.log
+          sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' wasm-test.log | grep -E 'test result: ok\. [1-9][0-9]* passed'
 
   clippy:
     name: Clippy (-D warnings)
