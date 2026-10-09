@@ -383,16 +383,22 @@ class ResidualCompressor:
 
     def decompress_residual(self, residual_data: ResidualData) -> np.ndarray:
         """
-        Decompress residual data, returned in the dtype the writer recorded.
+        Decompress residual data.
+
+        The residual is a float difference (original - generated), returned as
+        float32 whatever dtype the header records: that dtype is the
+        original's, applied by `reconstruct` (rounded half to even and
+        saturated to its range). Casting the residual to an integer dtype here
+        would truncate it.
 
         Args:
             residual_data: Compressed residual data
 
         Returns:
-            Decompressed residual array
+            Decompressed residual array (float32)
         """
         out = np.asarray(self._decode_residual(residual_data))
-        return out.astype(np.dtype(residual_data.original_dtype), copy=False)
+        return out.astype(np.float32, copy=False)
 
     def _decode_residual(self, residual_data: ResidualData) -> np.ndarray:
         """Decompress residual data (dtype as the method produces it)."""
@@ -492,6 +498,13 @@ class ResidualCompressor:
         Returns:
             Packed bytes: 16-byte header + quantized payload
         """
+        # computed in float64 whatever the input dtype: in float32 the top
+        # 32-bit code 2^32 - 1 rounds to 2^32, outside uint32
+        residual = np.asarray(residual, dtype=np.float64)
+        if not np.all(np.isfinite(residual)):
+            # the codes span the finite range from the minimum to the maximum
+            raise ValueError("values that are not finite cannot be quantized")
+
         # Normalize to [0, 1]
         min_val = residual.min()
         max_val = residual.max()
@@ -503,9 +516,9 @@ class ResidualCompressor:
 
         normalized = (residual - min_val) / scale
 
-        # Quantize
-        levels = 2 ** bits
-        quantized = np.clip(np.round(normalized * (levels - 1)), 0, levels - 1)
+        # Quantize (round half to even, as numpy.round)
+        top = float(2 ** bits - 1)
+        quantized = np.clip(np.round(normalized * top), 0.0, top)
 
         # Pack into bytes
         if bits == 8:

@@ -239,7 +239,9 @@ pub struct ResidualData {
     /// the values are returned flat, in the stored order.
     pub shape: Vec<usize>,
     /// dtype of the original array as the writer recorded it (one of the
-    /// eleven real numeric dtypes); the values are returned as `f32`.
+    /// eleven real numeric dtypes). The residual is a float difference and is
+    /// returned as `f32` whatever this dtype is; the dtype applies only when
+    /// the original is rebuilt from the generated values and the residual.
     pub dtype: String,
     /// Method-specific auxiliary information.
     pub metadata: ResidualMetadata,
@@ -1016,24 +1018,29 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
 }
 
 /// The quantized form the Python writer emits: `min: f64 · scale: f64`
-/// followed by the codes (`bits` wide, little endian). Computed as numpy
-/// does for a float32 array: minimum and range in `f32`, a range below 1e-10
-/// replaced by 1, `(v - min) / range * (levels - 1)` in `f32`, rounded half
-/// to even and clipped to the code range.
+/// followed by the codes (`bits` wide, little endian). Computed in `f64` as
+/// the Python writer does: minimum and range, a range below 1e-10 replaced by
+/// 1, `(v - min) / range * (levels - 1)` rounded half to even and clipped to
+/// the code range. Values that are NaN or infinite give `NotFinite`.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn quantize_python(data: &[f32], bits: u8) -> Result<Vec<u8>, ResidualError> {
-    let min = data.iter().copied().fold(f32::INFINITY, f32::min);
-    let max = data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    // the codes span the finite range from the minimum to the maximum
+    if !data.iter().all(|v| v.is_finite()) {
+        return Err(ResidualError::NotFinite);
+    }
+    // computed in f64: in f32 the top 32-bit code 2^32 - 1 rounds to 2^32
+    let min = data.iter().map(|&v| f64::from(v)).fold(f64::INFINITY, f64::min);
+    let max = data.iter().map(|&v| f64::from(v)).fold(f64::NEG_INFINITY, f64::max);
     let mut scale = max - min;
-    if f64::from(scale) < 1e-10 {
+    if scale < 1e-10 {
         scale = 1.0;
     }
-    let top = (u64::MAX >> (64 - u32::from(bits))) as f32;
+    let top = (u64::MAX >> (64 - u32::from(bits))) as f64;
     let mut out = Vec::with_capacity(16 + data.len() * usize::from(bits / 8));
-    out.extend_from_slice(&f64::from(min).to_le_bytes());
-    out.extend_from_slice(&f64::from(scale).to_le_bytes());
+    out.extend_from_slice(&min.to_le_bytes());
+    out.extend_from_slice(&scale.to_le_bytes());
     for &v in data {
-        let code = (((v - min) / scale) * top)
+        let code = (((f64::from(v) - min) / scale) * top)
             .round_ties_even()
             .clamp(0.0, top);
         match bits {
