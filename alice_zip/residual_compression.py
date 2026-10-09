@@ -128,8 +128,15 @@ class ResidualData:
                     # Use standard json.loads - header size already validated
                     header = json.loads(header_json)
 
-                    # v2 format has 'version' field
-                    if header.get('version', 1) >= 2:
+                    # v2 format has 'version' field; only versions 1 and 2
+                    # were written, so a later one is refused rather than
+                    # read as version 2 (same rule as the Rust reader)
+                    version = header.get('version', 1)
+                    if isinstance(version, int) and version > 2:
+                        raise ValueError(
+                            f"Unsupported residual header version {version} (1 and 2 exist)"
+                        )
+                    if version == 2:
                         compressed_data = data[4+header_len_v2:]
                         return cls._create_from_header(header, compressed_data)
                 except (UnicodeDecodeError, json.JSONDecodeError):

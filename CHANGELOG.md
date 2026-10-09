@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - engine の index が 4 以上 (`IndexError` だった)
   - 66 byte 未満の 1.1 header (1.0 として読んでいた)
   - header の `compressed_size` と header の後ろの byte 数が違う file (後ろが長い file を読んでいた)
+- Python package の `residual_compression.ResidualData.from_bytes` は JSON header の `"version"` が 3 以上なら `ValueError` (version 2 として読んでいた) libalice の Rust 版と同じ規則で、両方の試験が同じ fixture (`tests/data/residual/`) を読む
 - `ALICEZip.decompress` は lossless な payload (LZMA fallback) を復元した後、長さを `original_size` と、記録があれば (全 0 でなければ) SHA-256 を `original_hash` と照合し、違えば `ValueError` procedural / media / texture は生成パラメータから近似で復元するので照合しない (`original_hash_checkable`)
 - 移行: Python package と本 crate の書き手が出した file (版 1.0 / 1.1、定義された値) はこれまでどおり読める 上の値を持つ file はどの書き手も出していないので、読めなくなった file は壊れているか別の形式 書き手の出力は変わらない (同じ入力で同じ bytes、header は参照実装の配置と一致)
 

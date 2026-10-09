@@ -262,7 +262,8 @@ impl ResidualData {
     /// - **v1** (legacy): 2-byte `header_len` (LE u16) + JSON + payload
     ///
     /// v1 is detected by the absence of a `"version"` field (or `version < 2`)
-    /// in the parsed JSON after a successful v2 parse attempt.
+    /// in the parsed JSON after a successful v2 parse attempt. A `"version"`
+    /// later than 2 is refused with [`ResidualError::UnsupportedVersion`].
     pub fn from_bytes(data: &[u8]) -> Result<Self, ResidualError> {
         if data.len() < 4 {
             return Err(ResidualError::DataTooShort {
@@ -279,12 +280,16 @@ impl ResidualData {
             if v2_end <= data.len() {
                 if let Ok(json_str) = std::str::from_utf8(&data[4..v2_end]) {
                     if let Ok(parsed) = Self::parse_json_header(json_str) {
-                        if parsed
+                        let version = parsed
                             .get("version")
                             .and_then(|v| v.parse::<u32>().ok())
-                            .unwrap_or(1)
-                            >= 2
-                        {
+                            .unwrap_or(1);
+                        // only versions 1 and 2 were written; a later one is
+                        // refused rather than read as version 2
+                        if version > 2 {
+                            return Err(ResidualError::UnsupportedVersion(version));
+                        }
+                        if version == 2 {
                             let compressed = data[v2_end..].to_vec();
                             return Self::from_header_map(&parsed, compressed);
                         }
