@@ -51,6 +51,10 @@ pub enum ResidualError {
     Io(std::io::Error),
     /// The data is internally inconsistent (e.g., truncated payload).
     Corrupted(String),
+    /// A residual this reader cannot return as it was: it returns
+    /// one-dimensional `f32` values, so an original of another dtype or of
+    /// more than one dimension (the Python writer records both) is refused.
+    UnsupportedLayout(String),
     /// A `"delta"` residual without `base_value`: the writer dropped the
     /// first value, so the data cannot be reconstructed; recompress from the
     /// original.
@@ -86,6 +90,7 @@ impl std::fmt::Display for ResidualError {
             }
             Self::Io(e) => write!(f, "I/O error: {e}"),
             Self::Corrupted(msg) => write!(f, "corrupted data: {msg}"),
+            Self::UnsupportedLayout(msg) => write!(f, "unsupported residual layout: {msg}"),
             Self::DeltaWithoutBase => write!(
                 f,
                 "delta residual without its base value: recompress from the original"
@@ -294,6 +299,7 @@ impl ResidualData {
             let v2_end = 4 + header_len_v2;
             if v2_end <= data.len() {
                 if let Ok(json_str) = std::str::from_utf8(&data[4..v2_end]) {
+                    Self::check_supported_layout(json_str)?;
                     if let Ok(parsed) = Self::parse_json_header(json_str) {
                         // the writers emit `"version":2`: only a bare JSON
                         // integer is a version (the Python reader takes only
@@ -378,6 +384,33 @@ impl ResidualData {
     /// String values have their surrounding quotes stripped. Numeric and boolean
     /// values are kept as-is. Nested objects/arrays are not supported (not needed
     /// for our header format).
+    /// Refuses a header whose original this reader cannot return: a
+    /// `"dtype"` other than `float32` or a `"shape"` of more than one
+    /// dimension. Checked on the raw text, before the flat parser (which
+    /// splits on commas and cannot read a list of several dimensions).
+    fn check_supported_layout(json: &str) -> Result<(), ResidualError> {
+        if let Some(dtype) = Self::raw_json_value(json, "dtype") {
+            let dtype = dtype.trim_matches('"');
+            if dtype != "float32" {
+                return Err(ResidualError::UnsupportedLayout(format!(
+                    "dtype {dtype} (this reader returns float32)"
+                )));
+            }
+        }
+        if let Some(start) = json.find("\"shape\"") {
+            let rest = &json[start..];
+            if let (Some(open), Some(close)) = (rest.find('['), rest.find(']')) {
+                if open < close && rest[open + 1..close].contains(',') {
+                    return Err(ResidualError::UnsupportedLayout(format!(
+                        "shape {} (this reader returns one dimension)",
+                        &rest[open..=close]
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// The value text of `key` in a flat JSON object as written (a string
     /// keeps its quotes), or `None` when the key is absent.
     fn raw_json_value<'j>(json: &'j str, key: &str) -> Option<&'j str> {
@@ -901,7 +934,10 @@ mod tests {
             first_encoding(vec![(M::Zlib, None), (M::Lzma, None)], raw.clone()),
             (M::None, raw.clone())
         );
-        assert_eq!(first_encoding(vec![(M::Zlib, Some(vec![7]))], raw), (M::Zlib, vec![7]));
+        assert_eq!(
+            first_encoding(vec![(M::Zlib, Some(vec![7]))], raw),
+            (M::Zlib, vec![7])
+        );
     }
 
     #[test]
@@ -971,7 +1007,10 @@ mod tests {
         // base_value key, as the Python writer emits it)
         assert_eq!(recovered.method, ResidualCompressionMethod::Delta2);
         assert_eq!(recovered.original_len, 200);
-        assert_eq!(decompress(&recovered).expect("decode"), decompress(&rd).expect("decode"));
+        assert_eq!(
+            decompress(&recovered).expect("decode"),
+            decompress(&rd).expect("decode")
+        );
     }
 
     #[test]

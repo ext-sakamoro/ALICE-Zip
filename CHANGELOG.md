@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Python package の ResidualData の delta は、先頭の差分を 0 にしていたため先頭の値を失い、全体がその値だけずれて戻っていた ([5.0, 5.5, 6.0, 4.0] → [0.0, 0.5, 1.0, -1.0]) 書き手は新しい method `delta2` (先頭の差分 = 先頭の値、xz) で書く 旧 `delta` は `base_value` の記録があれば (Rust の旧 writer) 読み、無ければ `ValueError` (復元できないので元データから圧縮し直す) 差分だけが要る場合は `decompress_delta_differences` で取り出せる
 - ResidualData の JSON header の `"version"` は整数だけを版として受け付け、float (`2.0`) や文字列 (`"2"`) は拒否する (Python は `ValueError`、Rust は `ResidualError::InvalidHeader`) 書き手は整数で書く これまで Python は `2.0` を、Rust は `"2"` を版 2 として読み、両者の判定が分かれていた
 - Python package の procedural payload の復元が、書き手が payload に記録した dtype で返る 4 つの生成器 (Perlin / Fourier / sine / polynomial) が結果を常に float32 に変換していたので、float64 の入力が float32 で返り、byte 数が header の `original_size` の半分になっていた 形式は変わらない (dtype は以前から payload の `params.dtype` にある) payload の dtype は書き手が記録しうる実数の 11 種 (`float16/32/64`、`int8〜64`、`uint8〜64`) だけを受け付け、それ以外 (complex、文字列型、未知の名前) は `ValueError` 復元した byte 数が header の `original_size` と違えば、procedural でも `ValueError`
 
