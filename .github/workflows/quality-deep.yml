@@ -74,6 +74,23 @@ jobs:
           rc=$?
           set -e
           case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
+          # the weekly shard always has some mutant to test (unlike the PR in-diff job,
+          # where a docs-only diff legitimately has 0); a shard this commits to covering
+          # must not read "no output" and stay green (cargo-mutants --output <dir> creates
+          # <dir>/mutants.out, not files directly in <dir>)
+          if [ ! -f mutants.out/mutants.out/outcomes.json ]; then
+            echo "::error::shard ${{ matrix.shard }}/8: no mutants.out/mutants.out/outcomes.json (compared nothing)"
+            exit 1
+          fi
+          tested=$(python3 -c '
+          import json
+          s = json.load(open("mutants.out/mutants.out/outcomes.json")).get("summary", {})
+          print(s.get("caught", 0) + s.get("missed", 0) + s.get("timeout", 0))
+          ')
+          if [ "$tested" -eq 0 ]; then
+            echo "::error::shard ${{ matrix.shard }}/8: 0 mutants tested (caught+missed+timeout == 0, compared nothing)"
+            exit 1
+          fi
       - name: Summary
         if: always()
         run: |
