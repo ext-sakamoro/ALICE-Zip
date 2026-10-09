@@ -132,7 +132,13 @@ class ResidualData:
                     # were written, so a later one is refused rather than
                     # read as version 2 (same rule as the Rust reader)
                     version = header.get('version', 1)
-                    if isinstance(version, int) and version > 2:
+                    # the writers emit an integer; a float or a string is
+                    # refused (the Rust reader takes only a bare integer too)
+                    if isinstance(version, bool) or not isinstance(version, int):
+                        raise ValueError(
+                            f"Residual header version must be a JSON integer, got {version!r}"
+                        )
+                    if version > 2:
                         raise ValueError(
                             f"Unsupported residual header version {version} (1 and 2 exist)"
                         )
