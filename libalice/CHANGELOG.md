@@ -2,6 +2,27 @@
 
 All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Breaking:** `format::AliceFileHeader::from_bytes` refuses what the writer never
+  produced, instead of reading it as something else. It now checks the header with the
+  core crate's `container::parse_legacy_alice_zip_header`, so both crates have one
+  reader for these files:
+  - a version other than 1.0 or 1.1 → `FormatError::UnsupportedVersion` (a major
+    version of 2 was read as 1.1, a minor version of 2 or more as 1.1)
+  - an unknown `payload_type` → `FormatError::InvalidPayloadType` (was read as
+    `Procedural`)
+  - an engine index outside 0 to 3 → `FormatError::InvalidEngine`
+  - a version 1.1 header shorter than 66 bytes → `FormatError::TooShort` (was parsed
+    as a version 1.0 header)
+
+  Files written by the Python package or by this crate (versions 1.0 and 1.1 with
+  defined field values) read as before. Migration: a caller that matches on
+  `FormatError` exhaustively adds the two new variants; a caller that relied on
+  unknown `payload_type` values falling back to `Procedural` has to treat the error,
+  since such a file was not written by any released writer.
+
 ## [2.7.0] - 2026-10-09
 
 ### Added

@@ -37,9 +37,11 @@
 //!
 //! # Version Detection
 //!
-//! A header is v2 when `version_major > 1 || (version_major == 1 && version_minor >= 1)`.
-//! Readers must accept both v1 and v2; unknown `payload_type` values fall back to
-//! `AlicePayloadType::Procedural`.
+//! Version 1.0 is the 65-byte v1 layout and version 1.1 the 66-byte v2 layout;
+//! no other version was ever written. [`AliceFileHeader::from_bytes`] checks a
+//! header with the core crate's `container::parse_legacy_alice_zip_header`
+//! (one reader for both crates) and refuses any other version, a `file_type`
+//! outside 1 to 5, an engine index outside 0 to 3 and an unknown `payload_type`.
 //!
 //! # Author
 //! Moroya Sakamoto
@@ -216,6 +218,36 @@ pub enum FormatError {
     },
     /// An engine index past the four engines the writer indexes (0 to 3).
     InvalidEngine(u8),
+}
+
+impl FormatError {
+    /// The error the core reader's refusal corresponds to.
+    fn from_container(e: &alice_zip::container::ContainerError, data: &[u8]) -> Self {
+        use alice_zip::container::ContainerError as C;
+        match *e {
+            C::TooShort => Self::TooShort {
+                expected: if data.len() < HEADER_V1_SIZE {
+                    HEADER_V1_SIZE
+                } else {
+                    HEADER_V2_SIZE
+                },
+                got: data.len(),
+            },
+            C::LegacyVersion { major, minor } => Self::UnsupportedVersion { major, minor },
+            C::LegacyField {
+                field: "file_type",
+                value,
+            } => Self::InvalidFileType(value),
+            C::LegacyField {
+                field: "payload_type",
+                value,
+            } => Self::InvalidPayloadType(value),
+            C::LegacyField { value, .. } => Self::InvalidEngine(value),
+            // the header reader returns no other error; a magic mismatch is
+            // the only remaining case
+            _ => Self::InvalidMagic,
+        }
+    }
 }
 
 impl fmt::Display for FormatError {
@@ -403,48 +435,33 @@ impl AliceFileHeader {
     // Deserialisation
     // -----------------------------------------------------------------------
 
-    /// Deserialise a header from raw bytes with **automatic v1/v2 detection**.
+    /// Deserialise a header from raw bytes.
     ///
-    /// * V1 (65 bytes) — `version 1.0`; `payload_type` is inferred as
+    /// * Version 1.0 — the 65-byte v1 layout; `payload_type` is
     ///   `Procedural`.
-    /// * V2 (66 bytes) — `version >= 1.1`; contains an explicit
-    ///   `payload_type` byte; unknown values are treated as `Procedural`.
+    /// * Version 1.1 — the 66-byte v2 layout with a `payload_type` byte.
     ///
-    /// Only the first `HEADER_V{1,2}_SIZE` bytes are consumed; any extra
-    /// trailing bytes are ignored (forward-compatibility policy).
+    /// The header is checked by the core crate's
+    /// `container::parse_legacy_alice_zip_header`, the same reader the
+    /// container uses for these files. Only the header bytes are consumed;
+    /// the payload that follows is not read.
     ///
     /// # Errors
     ///
     /// Returns [`FormatError`] if:
-    /// - `data` is shorter than `HEADER_V1_SIZE` (65 bytes)
+    /// - `data` is shorter than the header of its version (65 or 66 bytes)
     /// - the magic bytes do not match `b"ALICE_ZIP"`
-    /// - `file_type` contains an unrecognised discriminant
+    /// - the version is not 1.0 or 1.1
+    /// - `file_type`, the engine index or `payload_type` holds a value the
+    ///   writer never produced
     pub fn from_bytes(data: &[u8]) -> Result<Self, FormatError> {
-        // Minimum length check
-        if data.len() < HEADER_V1_SIZE {
-            return Err(FormatError::TooShort {
-                expected: HEADER_V1_SIZE,
-                got: data.len(),
-            });
-        }
-
-        // Magic check (bytes 0..9)
-        let magic_bytes: [u8; 9] = data[0..9].try_into().unwrap(); // length guaranteed
-        if &magic_bytes != ALICE_MAGIC {
-            return Err(FormatError::InvalidMagic);
-        }
-
-        let version_major = data[9];
-        let version_minor = data[10];
-
-        // Determine format version.
-        // v2: major > 1 OR (major == 1 AND minor >= 1)
-        let is_v2 = (version_major > 1) || (version_major == 1 && version_minor >= 1);
-
-        if is_v2 && data.len() >= HEADER_V2_SIZE {
-            Self::parse_v2(data, version_major, version_minor, magic_bytes)
+        let (_, header_len) = alice_zip::container::parse_legacy_alice_zip_header(data)
+            .map_err(|e| FormatError::from_container(&e, data))?;
+        let magic: [u8; 9] = data[0..9].try_into().expect("checked by the core reader");
+        if header_len == HEADER_V2_SIZE {
+            Self::parse_v2(data, data[9], data[10], magic)
         } else {
-            Self::parse_v1(data, version_major, version_minor, magic_bytes)
+            Self::parse_v1(data, data[9], data[10], magic)
         }
     }
 
@@ -459,8 +476,8 @@ impl AliceFileHeader {
         let file_type = AliceFileType::from_u8(data[11])?;
         // Byte 12: engine_index
         let engine_index = data[12];
-        // Byte 13: payload_type (lenient — unknown → Procedural)
-        let payload_type = AlicePayloadType::from_u8_lenient(data[13]);
+        // Byte 13: payload_type (already checked by the core reader)
+        let payload_type = AlicePayloadType::from_u8_strict(data[13])?;
 
         // Bytes 14..22: original_size (u64 LE)
         let original_size =
@@ -825,10 +842,11 @@ mod tests {
 
     #[test]
     fn test_v2_with_trailing_bytes_ignored() {
-        // Extra bytes after a v2 buffer must not cause an error.
+        // Extra bytes after a v2 buffer (the payload) must not cause an
+        // error. Version 1.1: 1.2 was never written and is refused.
         let mut buf = build_v2_bytes(
             1,
-            2,
+            1,
             AliceFileType::Text.to_u8(),
             0,
             AlicePayloadType::LzmaFallback.to_u8(),
