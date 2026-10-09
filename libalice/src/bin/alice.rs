@@ -121,17 +121,20 @@ enum CompressionMode {
     Lossless = 20,    // Full precision residual
 }
 
-impl From<u8> for CompressionMode {
-    fn from(v: u8) -> Self {
+impl TryFrom<u8> for CompressionMode {
+    type Error = String;
+
+    /// A mode the command never wrote is an error, not raw LZMA.
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
         match v {
-            0 => CompressionMode::RawLzma,
-            1 => CompressionMode::Polynomial,
-            2 => CompressionMode::Fourier,
-            3 => CompressionMode::Perlin,
-            10 => CompressionMode::Quantized8,
-            11 => CompressionMode::Quantized16,
-            20 => CompressionMode::Lossless,
-            _ => CompressionMode::RawLzma,
+            0 => Ok(CompressionMode::RawLzma),
+            1 => Ok(CompressionMode::Polynomial),
+            2 => Ok(CompressionMode::Fourier),
+            3 => Ok(CompressionMode::Perlin),
+            10 => Ok(CompressionMode::Quantized8),
+            11 => Ok(CompressionMode::Quantized16),
+            20 => Ok(CompressionMode::Lossless),
+            _ => Err(format!("unknown .alz mode {v}")),
         }
     }
 }
@@ -173,18 +176,28 @@ impl AlzHeader {
         bytes
     }
 
-    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+    /// Parses a header, refusing a version or mode this command never wrote.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < 32 {
-            return None;
+            return Err(format!(
+                "too short for an .alz header: {} bytes",
+                bytes.len()
+            ));
         }
         if bytes[0..4] != MAGIC {
-            return None;
+            return Err("not an .alz file (magic)".to_owned());
+        }
+        if bytes[4] != FORMAT_VERSION {
+            return Err(format!(
+                "unsupported .alz version {} (version {FORMAT_VERSION} exists)",
+                bytes[4]
+            ));
         }
 
-        Some(AlzHeader {
+        Ok(AlzHeader {
             magic: [bytes[0], bytes[1], bytes[2], bytes[3]],
             version: bytes[4],
-            mode: CompressionMode::from(bytes[5]),
+            mode: CompressionMode::try_from(bytes[5])?,
             dtype: bytes[6],
             ndim: bytes[7],
             shape: [
@@ -308,7 +321,7 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
     println!("Input: {} ({} bytes)", input.display(), data.len());
 
     // Parse header
-    let header = AlzHeader::from_bytes(&data).ok_or("Invalid .alz file: bad header")?;
+    let header = AlzHeader::from_bytes(&data).map_err(|e| format!("Invalid .alz file: {e}"))?;
 
     let payload = &data[32..];
 
@@ -372,8 +385,8 @@ fn cmd_info(file: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 
     if header_bytes[0..4] == MAGIC {
         // Valid .alz file
-        let header = AlzHeader::from_bytes(&header_bytes)
-            .ok_or("Invalid .alz file: failed to parse header")?;
+        let header =
+            AlzHeader::from_bytes(&header_bytes).map_err(|e| format!("Invalid .alz file: {e}"))?;
 
         println!("ALICE-Zip File Information");
         println!("==========================");
