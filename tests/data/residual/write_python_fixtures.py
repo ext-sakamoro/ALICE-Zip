@@ -20,8 +20,11 @@ from alice_zip.residual_compression import ResidualCompressionMethod as M, Resid
 
 HERE = Path(__file__).resolve().parent
 VALUES = np.array([5.0, 5.5, 6.0, 4.0], dtype=np.float32)
+# includes signaling NaNs (0x7F800001, 0xFF800001): a float64 round trip
+# quiets them, so they show whether a reader returns the stored bits
 SPECIAL = np.array([0x7FC00001, 0x3F800000, 0x7F800000, 0xFF800000, 0x80000000, 0x00000000,
-                    0x00000001, 0x7F7FFFFF, 0xFFFFFFFF, 0x32000000, 0x4CBEBC20],
+                    0x00000001, 0x7F7FFFFF, 0xFFFFFFFF, 0x32000000, 0x4CBEBC20,
+                    0x7F800001, 0xFF800001],
                    dtype="<u4").view("<f4")
 
 

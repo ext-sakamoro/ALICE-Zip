@@ -10,7 +10,7 @@ use std::path::Path;
 use alice_core::residual::{decompress, ResidualData, ResidualError};
 
 const VALUES: [u32; 4] = [0x40A0_0000, 0x40B0_0000, 0x40C0_0000, 0x4080_0000];
-const SPECIAL: [u32; 11] = [
+const SPECIAL11: [u32; 11] = [
     0x7FC0_0001,
     0x3F80_0000,
     0x7F80_0000,
@@ -22,6 +22,23 @@ const SPECIAL: [u32; 11] = [
     0xFFFF_FFFF,
     0x3200_0000,
     0x4CBE_BC20,
+];
+
+/// `SPECIAL11` with two signaling NaNs (what the current writers were given).
+const SPECIAL: [u32; 13] = [
+    0x7FC0_0001,
+    0x3F80_0000,
+    0x7F80_0000,
+    0xFF80_0000,
+    0x8000_0000,
+    0x0000_0000,
+    0x0000_0001,
+    0x7F7F_FFFF,
+    0xFFFF_FFFF,
+    0x3200_0000,
+    0x4CBE_BC20,
+    0x7F80_0001,
+    0xFF80_0001,
 ];
 
 fn dir() -> std::path::PathBuf {
@@ -51,6 +68,7 @@ fn the_rust_reader_accepts_exactly_the_files_the_table_lists() {
             match values {
                 "values" => Some(&VALUES[..]),
                 "special" => Some(&SPECIAL[..]),
+                "special11" => Some(&SPECIAL11[..]),
                 _ => None,
             },
         ) {
@@ -59,7 +77,7 @@ fn the_rust_reader_accepts_exactly_the_files_the_table_lists() {
         }
         compared += 1;
     }
-    assert_eq!(compared, 33, "every row compared");
+    assert_eq!(compared, 34, "every row compared");
 }
 
 #[test]
@@ -99,5 +117,14 @@ fn this_crate_writes_the_canonical_header() {
     );
     assert!(header("rust_quantized.bin").starts_with(
         r#"{"method":"quantized","shape":[4],"dtype":"float32","quant_bits":8,"version":2,"#
+    ));
+}
+
+#[test]
+fn shape_and_original_len_that_disagree_are_refused() {
+    let bytes = std::fs::read(dir().join("residual_shape_len_mismatch.bin")).unwrap();
+    assert!(matches!(
+        ResidualData::from_bytes(&bytes),
+        Err(ResidualError::InvalidHeader(m)) if m.contains("disagree")
     ));
 }

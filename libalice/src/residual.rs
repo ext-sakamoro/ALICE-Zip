@@ -998,6 +998,8 @@ mod tests {
             0xFFFF_FFFF,
             0x3200_0000,
             0x4CBE_BC20,
+            0x7F80_0001, // signaling NaN
+            0xFF80_0001,
         ]
         .into_iter()
         .map(f32::from_bits)
