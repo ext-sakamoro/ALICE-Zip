@@ -1017,6 +1017,100 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
     }
 }
 
+/// The original rebuilt from `generated` and the residual, as the
+/// little-endian bytes of the dtype the header records.
+///
+/// Each value is `generated + residual` in `f64`, then:
+/// - an integer dtype refuses NaN (`Corrupted`), and otherwise rounds half to
+///   even and saturates to the dtype's range, infinities included (Rust's
+///   float-to-integer `as` saturates, so the 64-bit bounds need no special
+///   case);
+/// - a float dtype is rounded once to it, an overflow giving an infinity.
+///
+/// The Python `ResidualCompressor.reconstruct` follows the same rule; both are
+/// held to tests/data/residual/reconstruct_vectors.txt.
+///
+/// # Errors
+///
+/// The errors of [`decompress`], `Corrupted` when `generated` and the residual
+/// differ in length or an integer original would be NaN, and `InvalidHeader`
+/// for a dtype outside the eleven the writers record.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+pub fn reconstruct_bytes(generated: &[f64], rd: &ResidualData) -> Result<Vec<u8>, ResidualError> {
+    let residual = decompress(rd)?;
+    if residual.len() != generated.len() {
+        return Err(ResidualError::Corrupted(format!(
+            "{} generated values for {} residual values",
+            generated.len(),
+            residual.len()
+        )));
+    }
+    let width = match rd.dtype.as_str() {
+        "int8" | "uint8" => 1,
+        "float16" | "int16" | "uint16" => 2,
+        "float32" | "int32" | "uint32" => 4,
+        "float64" | "int64" | "uint64" => 8,
+        other => {
+            return Err(ResidualError::InvalidHeader(format!(
+                "unsupported dtype {other}"
+            )))
+        }
+    };
+    let mut out = Vec::with_capacity(generated.len() * width);
+    for (&g, &r) in generated.iter().zip(&residual) {
+        let s = g + f64::from(r);
+        let dtype = rd.dtype.as_str();
+        if dtype.contains("int") && s.is_nan() {
+            return Err(ResidualError::Corrupted(
+                "NaN where the original is an integer".to_owned(),
+            ));
+        }
+        let n = s.round_ties_even();
+        match dtype {
+            "float16" => out.extend_from_slice(&f64_to_f16_bits(s).to_le_bytes()),
+            "float32" => out.extend_from_slice(&(s as f32).to_le_bytes()),
+            "float64" => out.extend_from_slice(&s.to_le_bytes()),
+            "int8" => out.extend_from_slice(&(n as i8).to_le_bytes()),
+            "int16" => out.extend_from_slice(&(n as i16).to_le_bytes()),
+            "int32" => out.extend_from_slice(&(n as i32).to_le_bytes()),
+            "int64" => out.extend_from_slice(&(n as i64).to_le_bytes()),
+            "uint8" => out.push(n as u8),
+            "uint16" => out.extend_from_slice(&(n as u16).to_le_bytes()),
+            "uint32" => out.extend_from_slice(&(n as u32).to_le_bytes()),
+            _ => out.extend_from_slice(&(n as u64).to_le_bytes()),
+        }
+    }
+    Ok(out)
+}
+
+/// `x` rounded once (half to even) to an IEEE half: an overflow is an
+/// infinity, a NaN the quiet NaN with `x`'s sign.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn f64_to_f16_bits(x: f64) -> u16 {
+    let sign = if x.is_sign_negative() { 0x8000 } else { 0 };
+    let a = x.abs();
+    if a.is_nan() {
+        return sign | 0x7E00;
+    }
+    // 65520 is halfway between 65504 (the largest half) and 65536
+    if a >= 65520.0 {
+        return sign | 0x7C00;
+    }
+    // below 2^-14 the half is subnormal: a multiple of 2^-24 (scaling by a
+    // power of two is exact, so the only rounding is round_ties_even)
+    if a < 2f64.powi(-14) {
+        return sign | (a * 2f64.powi(24)).round_ties_even() as u16;
+    }
+    let exp = ((a.to_bits() >> 52) & 0x7FF) as i32 - 1023;
+    let mut m = (a * 2f64.powi(10 - exp)).round_ties_even() as u16; // 1024..=2048
+    let mut e = exp + 15;
+    if m == 2048 {
+        m = 1024;
+        e += 1;
+    }
+    sign | ((e as u16) << 10) | (m - 1024)
+}
+
 /// The quantized form the Python writer emits: `min: f64 · scale: f64`
 /// followed by the codes (`bits` wide, little endian). Computed in `f64` as
 /// the Python writer does: minimum and range, a range below 1e-10 replaced by

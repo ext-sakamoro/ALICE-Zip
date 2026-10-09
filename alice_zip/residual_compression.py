@@ -475,12 +475,11 @@ class ResidualCompressor:
         target_dtype = np.dtype(residual_data.original_dtype)
 
         if np.issubdtype(target_dtype, np.integer):
-            # Clip and round for integer types
-            info = np.iinfo(target_dtype)
-            reconstructed = np.clip(reconstructed, info.min, info.max)
-            reconstructed = np.round(reconstructed)
+            return _to_integer(reconstructed, target_dtype)
 
-        return reconstructed.astype(target_dtype)
+        # a float dtype: rounded once; an overflow is an infinity
+        with np.errstate(over="ignore"):
+            return reconstructed.astype(target_dtype)
 
     def _quantize_residual(self, residual: np.ndarray, bits: int) -> bytes:
         """
@@ -708,6 +707,28 @@ def decompress_delta_differences(residual_data: "ResidualData") -> np.ndarray:
         raise ValueError(f"Not a delta residual: {residual_data.method.value}")
     raw = lzma.decompress(residual_data.compressed_data)
     return np.frombuffer(raw, dtype='<f4').reshape(residual_data.original_shape)
+
+
+def _to_integer(values: np.ndarray, dtype: np.dtype) -> np.ndarray:
+    """float64 values as `dtype`: NaN is refused, the rest rounded half to even
+    and saturated to the dtype's range (infinities too).
+
+    Saturation is decided in the integer domain: the float of a 64-bit maximum
+    is 2^63 (2^64), one above it, so clipping to it and casting is outside the
+    range and its result depends on the platform."""
+    if np.isnan(values).any():
+        raise ValueError("NaN where the original is an integer")
+    r = np.round(values)
+    info = np.iinfo(dtype)
+    high = r >= float(info.max)
+    low = r <= float(info.min)
+    out = np.empty(r.shape, dtype=dtype)
+    out[high] = info.max
+    out[low] = info.min
+    mid = ~(high | low)
+    # strictly between the two floats, so inside the range and cast exactly
+    out[mid] = r[mid].astype(dtype)
+    return out
 
 
 def _bit_delta_encode(values: np.ndarray) -> bytes:
