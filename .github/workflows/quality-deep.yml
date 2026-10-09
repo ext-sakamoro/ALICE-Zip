@@ -84,7 +84,8 @@ jobs:
           fi
           tested=$(python3 -c '
           import json
-          s = json.load(open("mutants.out/mutants.out/outcomes.json")).get("summary", {})
+          d = json.load(open("mutants.out/mutants.out/outcomes.json"))
+          s = d.get("summary", d)
           print(s.get("caught", 0) + s.get("missed", 0) + s.get("timeout", 0))
           ')
           if [ "$tested" -eq 0 ]; then
