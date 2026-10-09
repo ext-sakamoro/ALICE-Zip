@@ -207,6 +207,15 @@ pub enum FormatError {
     InvalidFileType(u8),
     /// An unrecognised `AlicePayloadType` discriminant was found (strict mode).
     InvalidPayloadType(u8),
+    /// A version the writer never produced (only 1.0 and 1.1 exist).
+    UnsupportedVersion {
+        /// Major version found.
+        major: u8,
+        /// Minor version found.
+        minor: u8,
+    },
+    /// An engine index past the four engines the writer indexes (0 to 3).
+    InvalidEngine(u8),
 }
 
 impl fmt::Display for FormatError {
@@ -223,6 +232,10 @@ impl fmt::Display for FormatError {
             Self::InvalidPayloadType(v) => {
                 write!(f, "invalid AlicePayloadType discriminant: 0x{v:02X}")
             }
+            Self::UnsupportedVersion { major, minor } => {
+                write!(f, "unsupported version {major}.{minor} (1.0 and 1.1 exist)")
+            }
+            Self::InvalidEngine(v) => write!(f, "invalid engine index: {v} (0 to 3 exist)"),
         }
     }
 }
