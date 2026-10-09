@@ -30,8 +30,7 @@ for version, name in ((2, "v2"), (3, "v3"), (2.0, "v2_float"), ("2", "v2_string"
 #   delta_rust_legacy: the earlier Rust writer (first delta = the first value,
 #     "base_value" recorded, LZMA "alone" format as lzma-rs writes it) -> both
 #     readers read it
-#   delta2: the current writers (method "delta2", first delta = first value,
-#     xz format as Python's lzma.compress writes it)
+#   bitdelta: the current writers (written below)
 import lzma  # noqa: E402
 
 VALUES = [5.0, 5.5, 6.0, 4.0]

@@ -39,6 +39,15 @@ class ResidualCompressionMethod(Enum):
     QUANTIZED = "quantized" # Quantize residual before compression
 
 
+# dtypes the writer records for the original of a residual (the real numeric
+# dtypes); anything else is refused when a header is read
+_WRITER_DTYPES = frozenset({
+    "float16", "float32", "float64",
+    "int8", "int16", "int32", "int64",
+    "uint8", "uint16", "uint32", "uint64",
+})
+
+
 @dataclass
 class ResidualData:
     """Encapsulates compressed residual data"""
@@ -203,6 +212,11 @@ class ResidualData:
         except ValueError:
             raise ValueError(f"Unknown compression method: {header['method']}")
 
+        # the writer records the dtype of the original; only the real numeric
+        # dtypes it can record are accepted
+        if not isinstance(header['dtype'], str) or header['dtype'] not in _WRITER_DTYPES:
+            raise ValueError(f"Unsupported dtype {header['dtype']!r} in the residual header")
+
         # Validate shape
         shape = header['shape']
         if not isinstance(shape, (list, tuple)):
@@ -320,7 +334,8 @@ class ResidualCompressor:
         elif self.method == ResidualCompressionMethod.ZSTD:
             compressed = self._compress_zstd(residual_bytes)
         elif self.method in (ResidualCompressionMethod.DELTA, ResidualCompressionMethod.BITDELTA):
-            # always written as delta2: the first delta is the first value
+            # always written as bitdelta: integer differences of the f32 bit
+            # patterns, so every value comes back bit for bit
             compressed = self._compress_delta(residual)
         elif self.method == ResidualCompressionMethod.QUANTIZED:
             compressed = lzma.compress(residual_bytes, preset=self.lzma_preset)
@@ -348,7 +363,7 @@ class ResidualCompressor:
 
     def decompress_residual(self, residual_data: ResidualData) -> np.ndarray:
         """
-        Decompress residual data.
+        Decompress residual data, returned in the dtype the writer recorded.
 
         Args:
             residual_data: Compressed residual data
@@ -356,6 +371,11 @@ class ResidualCompressor:
         Returns:
             Decompressed residual array
         """
+        out = np.asarray(self._decode_residual(residual_data))
+        return out.astype(np.dtype(residual_data.original_dtype), copy=False)
+
+    def _decode_residual(self, residual_data: ResidualData) -> np.ndarray:
+        """Decompress residual data (dtype as the method produces it)."""
         method = residual_data.method
         compressed = residual_data.compressed_data
         shape = residual_data.original_shape
@@ -370,7 +390,7 @@ class ResidualCompressor:
         elif method == ResidualCompressionMethod.ZSTD:
             raw_bytes = self._decompress_zstd(compressed)
         elif method == ResidualCompressionMethod.BITDELTA:
-            return self._decompress_delta(compressed, shape)
+            return self._decompress_bitdelta(compressed, shape)
         elif method == ResidualCompressionMethod.DELTA:
             # an earlier Rust file recorded base_value and kept the first value
             # as the first delta; an earlier Python file did neither and
@@ -510,17 +530,15 @@ class ResidualCompressor:
         return residual
 
     def _compress_delta(self, residual: np.ndarray) -> bytes:
-        """Delta encoding + LZMA compression"""
-        # Flatten and compute deltas (use little-endian for cross-platform compatibility)
-        flat = residual.astype('<f4').flatten()
-        # the first delta is the first value itself, so it is kept
-        deltas = np.diff(flat, prepend=np.float32(0)).astype('<f4')
+        """bitdelta stream of the float32 values, xz-compressed"""
+        return lzma.compress(_bit_delta_encode(residual), preset=self.lzma_preset)
 
-        # LZMA compress deltas
-        return lzma.compress(deltas.tobytes(), preset=self.lzma_preset)
+    def _decompress_bitdelta(self, data: bytes, shape: Tuple[int, ...]) -> np.ndarray:
+        """float32 values of a bitdelta residual, bit for bit"""
+        return _bit_delta_decode(lzma.decompress(data)).reshape(shape)
 
     def _decompress_delta(self, data: bytes, shape: Tuple[int, ...]) -> np.ndarray:
-        """Decompress delta-encoded residual"""
+        """Earlier float-difference delta (as the earlier Rust writer stored it)"""
         raw = lzma.decompress(data)
         # Use little-endian '<f4' for cross-platform binary compatibility
         deltas = np.frombuffer(raw, dtype='<f4')
@@ -658,11 +676,20 @@ def decompress_delta_differences(residual_data: "ResidualData") -> np.ndarray:
 
 
 def _bit_delta_encode(values: np.ndarray) -> bytes:
-    """The bitdelta stream of float32 values (before compression)."""
-    raise NotImplementedError("STUB: _bit_delta_encode not implemented yet")
+    """The bitdelta stream of float32 values (before compression): the
+    difference of consecutive bit patterns as wrapping uint32, little endian,
+    the first difference being the first pattern. Integer arithmetic, so every
+    value (NaN payloads, subnormals, +-0, infinities) comes back bit for bit.
+    Same stream as the Rust writer (tests/data/residual/bitdelta_streams.txt)."""
+    bits = np.ascontiguousarray(np.asarray(values, dtype='<f4')).view('<u4').ravel()
+    out = np.empty_like(bits)
+    out[:1] = bits[:1]
+    out[1:] = bits[1:] - bits[:-1]  # uint32 arithmetic wraps
+    return out.astype('<u4').tobytes()
 
 
 def _bit_delta_decode(stream: bytes) -> np.ndarray:
-    """float32 values from a bitdelta stream."""
-    raise NotImplementedError("STUB: _bit_delta_decode not implemented yet")
+    """float32 values from a bitdelta stream (inverts _bit_delta_encode)."""
+    d = np.frombuffer(stream, dtype='<u4')
+    return np.cumsum(d, dtype=np.uint32).astype('<u4').view('<f4')
 

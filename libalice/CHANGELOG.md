@@ -15,7 +15,7 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 - 移行: `FormatError` / `ResidualError` を網羅的に match している呼び出し側は新しい variant (`UnsupportedVersion` / `InvalidEngine`) を足す 未知の `payload_type` が `Procedural` に落ちることに頼っていた呼び出し側はエラーとして扱う (そうした file はどの書き手も出していない) Python package と本 crate が書いた file (版 1.0 / 1.1、定義された値) はこれまでどおり読める
 
 ### Fixed
-- `residual` の delta は新しい method `Delta2` (`"delta2"`、先頭の差分 = 先頭の値、xz) で書く 旧 `"delta"` は `base_value` があれば読み、無ければ `ResidualError::DeltaWithoutBase` (Python の旧 writer は先頭の値を失っていた) `decompress_residual_delta` は `Result` を返す (復元に失敗すると圧縮前の byte を値として読んでいた)
+- `residual` の delta は新しい method `BitDelta` (`"bitdelta"`) で書く: 隣り合う f32 の bit パターンの差を wrapping な u32 で持ち (先頭は先頭の bit パターン)、xz で圧縮する どの値も bit 単位で戻る (ランダムな bit パターン 10,000 個と NaN / 非正規化数 / ±0 / 無限大の往復の試験) 差分の列は Python の書き手と byte 単位で一致する (`tests/data/residual/bitdelta_streams.txt`) 旧 `"delta"` は `base_value` があれば読み、無ければ `ResidualError::DeltaWithoutBase` (Python の旧 writer は先頭の値を失っていた) `decompress_residual_delta` は `Result` を返す (復元に失敗すると圧縮前の byte を値として読んでいた)
 - 残差の LZMA は xz (Python の `lzma.compress` の既定) と LZMA alone (本 crate の旧 writer) を先頭の magic で判別して読む
 - 残差の書き手は、圧縮に失敗して別の方式に落ちた時に実際に使った方式を記録する (zlib / lzma / quantized の失敗で、method と中身が食い違う file を書いていた) 全部失敗すれば `None` の生の float
 - 元データの dtype が float32 以外、または shape が 1 次元でない residual (Python の書き手が記録する) は `ResidualError::UnsupportedLayout` で拒否する この読み手は 1 次元の float32 しか返せないため どちらの読み手がどの file を受け付けるかは `tests/data/residual/acceptance.txt` に表で持ち、Rust と Python の両方の試験が読む

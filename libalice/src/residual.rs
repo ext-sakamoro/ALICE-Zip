@@ -568,53 +568,65 @@ fn first_encoding(
         .unwrap_or((ResidualCompressionMethod::None, raw))
 }
 
-/// Compress `data` using delta encoding followed by xz.
+/// The bitdelta stream of `data`: the difference of consecutive `f32` bit
+/// patterns as wrapping `u32`, little endian, the first difference being the
+/// first pattern. Integer arithmetic, so every value (NaN payloads,
+/// subnormals, ±0, infinities) comes back bit for bit.
+fn bit_delta_encode(data: &[f32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(data.len() * 4);
+    let mut prev = 0u32;
+    for v in data {
+        let b = v.to_bits();
+        out.extend_from_slice(&b.wrapping_sub(prev).to_le_bytes());
+        prev = b;
+    }
+    out
+}
+
+/// Inverts [`bit_delta_encode`].
+fn bit_delta_decode(stream: &[u8]) -> Vec<f32> {
+    let mut acc = 0u32;
+    stream
+        .chunks_exact(4)
+        .map(|c| {
+            acc = acc.wrapping_add(u32::from_le_bytes([c[0], c[1], c[2], c[3]]));
+            f32::from_bits(acc)
+        })
+        .collect()
+}
+
+/// Compress `data` as a bitdelta stream (see
+/// [`ResidualCompressionMethod::BitDelta`]) followed by xz.
 ///
-/// The delta stream is constructed as:
-/// ```text
-/// delta[0] = data[0]
-/// delta[i] = data[i] - data[i-1]   for i > 0
-/// ```
-/// Each element is stored as a little-endian `f32`. The result is recorded
-/// as [`ResidualCompressionMethod::BitDelta`], or as `None` with the raw floats
-/// if xz fails.
+/// Recorded as [`ResidualCompressionMethod::BitDelta`], or as `None` with the
+/// raw floats if xz fails.
 #[must_use]
 pub fn compress_residual_delta(data: &[f32]) -> ResidualData {
-    let base_value = data.first().copied().unwrap_or(0.0);
-
-    // Build delta array (first element as its own delta, so it is kept).
-    let mut deltas: Vec<u8> = Vec::with_capacity(data.len() * 4);
-    let mut prev = 0.0f32;
-    for &v in data {
-        let d = v - prev;
-        deltas.extend_from_slice(&d.to_le_bytes());
-        prev = v;
-    }
-
     let raw: Vec<u8> = data.iter().flat_map(|&v| v.to_le_bytes()).collect();
     let (method, compressed) = first_encoding(
-        vec![(ResidualCompressionMethod::BitDelta, xz_compress(&deltas))],
+        vec![(
+            ResidualCompressionMethod::BitDelta,
+            xz_compress(&bit_delta_encode(data)),
+        )],
         raw,
     );
-
     ResidualData {
         method,
         compressed,
         original_len: data.len(),
-        metadata: ResidualMetadata {
-            base_value,
-            ..ResidualMetadata::default()
-        },
+        metadata: ResidualMetadata::default(),
     }
 }
 
-/// Decompress a delta-encoded `ResidualData` (`Delta` or `Delta2`) back to
-/// `Vec<f32>`.
+/// Decompress a delta-encoded `ResidualData` back to `Vec<f32>`:
+/// [`ResidualCompressionMethod::BitDelta`] bit for bit, or the earlier
+/// [`ResidualCompressionMethod::Delta`] (float differences, as that writer
+/// stored them).
 ///
 /// # Errors
 ///
 /// [`ResidualError::Corrupted`] if the method is not a delta method, the
-/// stream does not decompress, or it does not hold `original_len` floats.
+/// stream does not decompress, or it does not hold `original_len` values.
 pub fn decompress_residual_delta(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
     if !matches!(
         rd.method,
@@ -632,6 +644,9 @@ pub fn decompress_residual_delta(rd: &ResidualData) -> Result<Vec<f32>, Residual
             raw.len(),
             rd.original_len * 4
         )));
+    }
+    if rd.method == ResidualCompressionMethod::BitDelta {
+        return Ok(bit_delta_decode(&raw));
     }
     let mut out = Vec::with_capacity(rd.original_len);
     let mut acc = 0.0f32;
@@ -922,6 +937,37 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[test]
+    fn the_bitdelta_streams_equal_the_shared_reference() {
+        // written by tests/data/residual/make_fixtures.py with integer
+        // arithmetic only; the Python encoder is held to the same file
+        let table = include_str!("../../tests/data/residual/bitdelta_streams.txt");
+        let mut compared = 0;
+        for line in table
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+        {
+            let cols: Vec<&str> = line.split(" | ").collect();
+            let values: Vec<f32> = cols[1]
+                .split_whitespace()
+                .map(|h| f32::from_bits(u32::from_str_radix(h, 16).unwrap()))
+                .collect();
+            let stream: Vec<u8> = (0..cols[2].len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&cols[2][i..i + 2], 16).unwrap())
+                .collect();
+            assert_eq!(bit_delta_encode(&values), stream, "{}", cols[0]);
+            let back: Vec<u32> = bit_delta_decode(&stream)
+                .iter()
+                .map(|v| v.to_bits())
+                .collect();
+            let want: Vec<u32> = values.iter().map(|v| v.to_bits()).collect();
+            assert_eq!(back, want, "{}", cols[0]);
+            compared += 1;
+        }
+        assert_eq!(compared, 5);
+    }
+
+    #[test]
     fn a_failed_encoder_records_the_method_that_produced_the_bytes() {
         use ResidualCompressionMethod as M;
         let raw = vec![1, 2, 3, 4];
@@ -1004,8 +1050,8 @@ mod tests {
         let bytes = rd.to_bytes();
         let recovered = ResidualData::from_bytes(&bytes).expect("from_bytes failed");
 
-        // delta2 keeps the first value inside the delta stream (no
-        // base_value key, as the Python writer emits it)
+        // bitdelta keeps every value inside the stream (no base_value key,
+        // as the Python writer emits it)
         assert_eq!(recovered.method, ResidualCompressionMethod::BitDelta);
         assert_eq!(recovered.original_len, 200);
         assert_eq!(

@@ -46,6 +46,7 @@ dependencies = [
  "alice-det-math",
  "alice-zip",
  "clap",
+ "lzma-rs",
  "memmap2",
  "rand",
  "rand_chacha",
