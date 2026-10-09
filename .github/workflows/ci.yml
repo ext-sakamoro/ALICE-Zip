@@ -184,6 +184,13 @@ jobs:
       # ⚠️ marker 0 件でも fail する (空振りを成功と読ませない)
       - name: claim-test marker が実在の試験を指しているか
         run: python3 scripts/claim_check.py
+      # include_bytes! / include_str! の参照先が追跡されているか (ignore に当たった
+      # fixture は手元では compile できても clean な checkout では compile できない)
+      # ⚠️ 比較 0 件でも fail する
+      - name: include の参照先が git で追跡されているか
+        run: |
+          python3 scripts/test_include_tracked.py
+          python3 scripts/include_tracked.py
 
   libalice:
     name: libalice (CLI / FFI crate)
