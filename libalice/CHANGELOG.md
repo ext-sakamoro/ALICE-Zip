@@ -5,6 +5,7 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 ## [Unreleased]
 
 ### Changed (破壊的変更)
+- `residual::ResidualData::to_bytes` の header を Python の書き手の鍵 (`method` / `shape` / `dtype` / `quant_bits` / `version`) で書く (`original_len` は書かない) 読み手は `shape` からも、旧来の `original_len` からも長さを取る (両方あって食い違えば `InvalidHeader`) Python の書き手の量子化 file (`min_val` を持たない) は payload の形式が違うので、対応するまで `ResidualError::UnsupportedLayout` で拒否する 移行: 旧 header の file はそのまま読める 旧版の本 crate は新しい header (`original_len` 無し) を `MissingField` で読めない
 - `format::AliceFileHeader::from_bytes` は core crate の `container::parse_legacy_alice_zip_header` で header を検査してから読む (読み手を 1 箇所にする) 書き手が出したことのない値は別の値として読まず拒否する
   - 版 1.0 / 1.1 以外 → `FormatError::UnsupportedVersion` (major 2 を 1.1 として読んでいた)
   - 未知の `payload_type` → `FormatError::InvalidPayloadType` (`Procedural` として読んでいた)

@@ -200,11 +200,25 @@ class ResidualData:
     @classmethod
     def _create_from_header(cls, header: Dict[str, Any], compressed_data: bytes) -> 'ResidualData':
         """Create instance from parsed header."""
+        # the Rust writer before the header keys were aligned recorded only
+        # "original_len" (one dimension of float32)
+        if 'shape' not in header and 'original_len' in header:
+            n = header['original_len']
+            if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+                raise ValueError(f"Invalid original_len: {n!r}")
+            header = {**header, 'shape': [n], 'dtype': header.get('dtype', 'float32')}
+
         # Validate required fields
         required = ['method', 'shape', 'dtype']
         for field in required:
             if field not in header:
                 raise ValueError(f"Missing required field: {field}")
+
+        # the Rust writer's quantized payload (its residual container, with
+        # min_val / scale / bits in the header) is not this reader's format;
+        # refused rather than misread until it is supported
+        if header['method'] == ResidualCompressionMethod.QUANTIZED.value and 'min_val' in header:
+            raise ValueError("Quantized residual of the Rust writer (not supported yet)")
 
         # Validate method
         try:

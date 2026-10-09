@@ -79,3 +79,25 @@ fn a_layout_this_reader_cannot_return_is_refused_by_name() {
         );
     }
 }
+
+#[test]
+fn this_crate_writes_the_canonical_header() {
+    // the Python writer's keys, in its order; the quantized container adds its
+    // own parameters after them
+    let header = |name: &str| {
+        let b = std::fs::read(dir().join(name)).unwrap();
+        let n = u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize;
+        String::from_utf8(b[4..4 + n].to_vec()).unwrap()
+    };
+    assert_eq!(
+        header("rust_none.bin"),
+        r#"{"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":2}"#
+    );
+    assert_eq!(
+        header("rust_delta.bin"),
+        r#"{"method":"bitdelta","shape":[4],"dtype":"float32","quant_bits":null,"version":2}"#
+    );
+    assert!(header("rust_quantized.bin").starts_with(
+        r#"{"method":"quantized","shape":[4],"dtype":"float32","quant_bits":8,"version":2,"#
+    ));
+}

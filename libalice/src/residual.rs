@@ -248,9 +248,17 @@ impl ResidualData {
         // Build the JSON header using a plain HashMap to avoid pulling in a
         // heavyweight serialiser dependency (serde_json may not be available).
         // We construct the JSON string manually for portability.
+        // the header keys of the Python writer (the canonical form): the
+        // values are float32 of one dimension, so shape is [original_len]
         let mut fields: Vec<String> = Vec::new();
         fields.push(format!(r#""method":"{}""#, self.method.as_str()));
-        fields.push(format!(r#""original_len":{}"#, self.original_len));
+        fields.push(format!(r#""shape":[{}]"#, self.original_len));
+        fields.push(r#""dtype":"float32""#.to_owned());
+        if self.method == ResidualCompressionMethod::Quantized {
+            fields.push(format!(r#""quant_bits":{}"#, self.metadata.bits));
+        } else {
+            fields.push(r#""quant_bits":null"#.to_owned());
+        }
         fields.push(r#""version":2"#.to_owned());
 
         match self.method {
@@ -480,12 +488,44 @@ impl ResidualData {
         let method = ResidualCompressionMethod::parse(method_str)
             .ok_or_else(|| ResidualError::UnknownMethod(method_str.clone()))?;
 
-        // Required field: original_len
-        let original_len = map
+        // the length: "shape" (the canonical key, one dimension here; more
+        // were refused before parsing) or "original_len" (this crate's
+        // writer before the keys were aligned)
+        let from_shape = map
+            .get("shape")
+            .map(|v| {
+                v.trim()
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|e| ResidualError::InvalidHeader(format!("invalid shape {v}: {e}")))
+            })
+            .transpose()?;
+        let from_len = map
             .get("original_len")
-            .ok_or_else(|| ResidualError::MissingField("original_len".to_owned()))?
-            .parse::<usize>()
-            .map_err(|e| ResidualError::InvalidHeader(format!("invalid original_len: {e}")))?;
+            .map(|v| {
+                v.parse::<usize>()
+                    .map_err(|e| ResidualError::InvalidHeader(format!("invalid original_len: {e}")))
+            })
+            .transpose()?;
+        let original_len = match (from_shape, from_len) {
+            (Some(a), Some(b)) if a != b => {
+                return Err(ResidualError::InvalidHeader(format!(
+                    "shape [{a}] and original_len {b} disagree"
+                )))
+            }
+            (Some(n), _) | (None, Some(n)) => n,
+            (None, None) => return Err(ResidualError::MissingField("shape".to_owned())),
+        };
+        // the Python writer's quantized payload (min/scale doubles + codes)
+        // is not this crate's quantized container; until it is supported it
+        // is refused rather than misread (this crate's writer records min_val)
+        if method == ResidualCompressionMethod::Quantized && !map.contains_key("min_val") {
+            return Err(ResidualError::UnsupportedLayout(
+                "quantized residual of the Python writer (not supported yet)".to_owned(),
+            ));
+        }
 
         // Optional / method-specific fields.
         let mut metadata = ResidualMetadata::default();
