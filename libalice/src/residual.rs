@@ -469,9 +469,15 @@ impl ResidualData {
         }
 
         if method == ResidualCompressionMethod::Delta {
-            if let Some(v) = map.get("base_value") {
-                metadata.base_value = v.parse().unwrap_or(0.0);
-            }
+            // the earlier Rust writer recorded base_value and kept the first
+            // value as the first delta; the earlier Python writer did neither,
+            // so its files cannot be reconstructed
+            let v = map
+                .get("base_value")
+                .ok_or(ResidualError::DeltaWithoutBase)?;
+            metadata.base_value = v
+                .parse()
+                .map_err(|e| ResidualError::InvalidHeader(format!("invalid base_value: {e}")))?;
         }
 
         Ok(Self {
@@ -487,19 +493,62 @@ impl ResidualData {
 // Delta compression
 // ============================================================================
 
-/// Compress `data` using delta encoding followed by LZMA.
+/// First bytes of an xz stream; an LZMA stream without them is read as the
+/// "alone" format the earlier Rust writer used.
+const XZ_MAGIC: [u8; 6] = [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00];
+
+/// Decompresses an xz stream (what the Python writer emits) or an LZMA
+/// "alone" stream (what the earlier Rust writer emitted), told apart by the
+/// xz magic.
+fn lzma_or_xz_decompress(bytes: &[u8]) -> Result<Vec<u8>, ResidualError> {
+    if bytes.starts_with(&XZ_MAGIC) {
+        let mut out = Vec::new();
+        lzma_rs::xz_decompress(&mut std::io::Cursor::new(bytes), &mut out)
+            .map_err(|e| ResidualError::Corrupted(format!("xz: {e}")))?;
+        Ok(out)
+    } else {
+        crate::compression::lzma_decompress(bytes)
+            .map_err(|e| ResidualError::Corrupted(format!("lzma: {e}")))
+    }
+}
+
+/// Compresses with xz, the format the Python writer emits.
+fn xz_compress(bytes: &[u8]) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    lzma_rs::xz_compress(&mut std::io::Cursor::new(bytes), &mut out).ok()?;
+    Some(out)
+}
+
+/// The first encoding that succeeded, with the method that decodes it.
+///
+/// Falls back to the raw little-endian floats under `None`, so the recorded
+/// method always matches the bytes (an encoder failure never leaves bytes of
+/// one method labelled as another).
+fn first_encoding(
+    attempts: Vec<(ResidualCompressionMethod, Option<Vec<u8>>)>,
+    raw: Vec<u8>,
+) -> (ResidualCompressionMethod, Vec<u8>) {
+    attempts
+        .into_iter()
+        .find_map(|(m, bytes)| bytes.map(|b| (m, b)))
+        .unwrap_or((ResidualCompressionMethod::None, raw))
+}
+
+/// Compress `data` using delta encoding followed by xz.
 ///
 /// The delta stream is constructed as:
 /// ```text
 /// delta[0] = data[0]
 /// delta[i] = data[i] - data[i-1]   for i > 0
 /// ```
-/// Each element is stored as a little-endian `f32`.
+/// Each element is stored as a little-endian `f32`. The result is recorded
+/// as [`ResidualCompressionMethod::Delta2`], or as `None` with the raw floats
+/// if xz fails.
 #[must_use]
 pub fn compress_residual_delta(data: &[f32]) -> ResidualData {
     let base_value = data.first().copied().unwrap_or(0.0);
 
-    // Build delta array (prepend first element as its own delta).
+    // Build delta array (first element as its own delta, so it is kept).
     let mut deltas: Vec<u8> = Vec::with_capacity(data.len() * 4);
     let mut prev = 0.0f32;
     for &v in data {
@@ -508,12 +557,14 @@ pub fn compress_residual_delta(data: &[f32]) -> ResidualData {
         prev = v;
     }
 
-    // LZMA compress the raw delta bytes.
-    let compressed =
-        crate::compression::lzma_compress(&deltas, 6).unwrap_or_else(|_| deltas.clone()); // fallback: store uncompressed
+    let raw: Vec<u8> = data.iter().flat_map(|&v| v.to_le_bytes()).collect();
+    let (method, compressed) = first_encoding(
+        vec![(ResidualCompressionMethod::Delta2, xz_compress(&deltas))],
+        raw,
+    );
 
     ResidualData {
-        method: ResidualCompressionMethod::Delta,
+        method,
         compressed,
         original_len: data.len(),
         metadata: ResidualMetadata {
@@ -523,31 +574,38 @@ pub fn compress_residual_delta(data: &[f32]) -> ResidualData {
     }
 }
 
-/// Decompress a delta-encoded `ResidualData` back to `Vec<f32>`.
+/// Decompress a delta-encoded `ResidualData` (`Delta` or `Delta2`) back to
+/// `Vec<f32>`.
 ///
-/// Panics if `rd.method` is not `Delta` (callers are responsible for routing).
-#[must_use]
-pub fn decompress_residual_delta(rd: &ResidualData) -> Vec<f32> {
-    debug_assert_eq!(
+/// # Errors
+///
+/// [`ResidualError::Corrupted`] if the method is not a delta method, the
+/// stream does not decompress, or it does not hold `original_len` floats.
+pub fn decompress_residual_delta(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
+    if !matches!(
         rd.method,
-        ResidualCompressionMethod::Delta,
-        "decompress_residual_delta called with non-Delta method"
-    );
-
-    // LZMA decompress.
-    let raw = crate::compression::lzma_decompress(&rd.compressed)
-        .unwrap_or_else(|_| rd.compressed.clone());
-
-    // Reconstruct from cumulative sum of deltas.
-    let mut result = Vec::with_capacity(raw.len() / 4);
-    let mut acc = 0.0f32;
-    for chunk in raw.chunks_exact(4) {
-        let d = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-        acc += d;
-        result.push(acc);
+        ResidualCompressionMethod::Delta | ResidualCompressionMethod::Delta2
+    ) {
+        return Err(ResidualError::Corrupted(format!(
+            "decompress_residual_delta called with {}",
+            rd.method.as_str()
+        )));
     }
-
-    result
+    let raw = lzma_or_xz_decompress(&rd.compressed)?;
+    if raw.len() != rd.original_len * 4 {
+        return Err(ResidualError::Corrupted(format!(
+            "delta stream holds {} bytes, expected {}",
+            raw.len(),
+            rd.original_len * 4
+        )));
+    }
+    let mut out = Vec::with_capacity(rd.original_len);
+    let mut acc = 0.0f32;
+    for c in raw.chunks_exact(4) {
+        acc += f32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+        out.push(acc);
+    }
+    Ok(out)
 }
 
 // ============================================================================
@@ -701,7 +759,8 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
         },
 
         ResidualCompressionMethod::Lzma => {
-            let compressed = crate::compression::lzma_compress(&raw_bytes, 6).unwrap_or(raw_bytes);
+            let lz = crate::compression::lzma_compress(&raw_bytes, 6).ok();
+            let (method, compressed) = first_encoding(vec![(method, lz)], raw_bytes);
             ResidualData {
                 method,
                 compressed,
@@ -711,11 +770,12 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
         }
 
         ResidualCompressionMethod::Zlib => {
-            let compressed =
-                crate::compression::zlib_compress(&raw_bytes, 6).unwrap_or_else(|_| {
-                    crate::compression::lzma_compress(&raw_bytes, 6)
-                        .unwrap_or_else(|_| raw_bytes.clone())
-                });
+            let z = crate::compression::zlib_compress(&raw_bytes, 6).ok();
+            let lz = crate::compression::lzma_compress(&raw_bytes, 6).ok();
+            let (method, compressed) = first_encoding(
+                vec![(method, z), (ResidualCompressionMethod::Lzma, lz)],
+                raw_bytes,
+            );
             ResidualData {
                 method,
                 compressed,
@@ -736,10 +796,15 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
             // We also populate ResidualMetadata for symmetry with the
             // Python implementation.
             let (_, min_val, scale) = crate::compression::quantize_8bit(data);
-            let compressed = crate::compression::compress_residual_quantized(data, 8, 6)
-                .unwrap_or_else(|_| {
-                    crate::compression::lzma_compress(&raw_bytes, 6).unwrap_or(raw_bytes)
-                });
+            let q = crate::compression::compress_residual_quantized(data, 8, 6).ok();
+            let lz = q
+                .is_none()
+                .then(|| crate::compression::lzma_compress(&raw_bytes, 6).ok())
+                .flatten();
+            let (method, compressed) = first_encoding(
+                vec![(method, q), (ResidualCompressionMethod::Lzma, lz)],
+                raw_bytes,
+            );
             ResidualData {
                 method,
                 compressed,
@@ -775,7 +840,7 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
         }
 
         ResidualCompressionMethod::Lzma => {
-            let raw = crate::compression::lzma_decompress(&rd.compressed)?;
+            let raw = lzma_or_xz_decompress(&rd.compressed)?;
             let result: Vec<f32> = raw
                 .chunks_exact(4)
                 .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
@@ -792,8 +857,9 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
             Ok(result)
         }
 
-        ResidualCompressionMethod::Delta => Ok(decompress_residual_delta(rd)),
-        ResidualCompressionMethod::Delta2 => todo!("Delta2 decode"),
+        ResidualCompressionMethod::Delta | ResidualCompressionMethod::Delta2 => {
+            decompress_residual_delta(rd)
+        }
 
         ResidualCompressionMethod::Quantized => {
             let result = crate::compression::decompress_residual_quantized(&rd.compressed)?;
@@ -822,14 +888,31 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[test]
+    fn a_failed_encoder_records_the_method_that_produced_the_bytes() {
+        use ResidualCompressionMethod as M;
+        let raw = vec![1, 2, 3, 4];
+        // the wanted method failed, the next one succeeded: its name is kept
+        assert_eq!(
+            first_encoding(vec![(M::Zlib, None), (M::Lzma, Some(vec![9]))], raw.clone()),
+            (M::Lzma, vec![9])
+        );
+        // everything failed: the raw floats, recorded as None
+        assert_eq!(
+            first_encoding(vec![(M::Zlib, None), (M::Lzma, None)], raw.clone()),
+            (M::None, raw.clone())
+        );
+        assert_eq!(first_encoding(vec![(M::Zlib, Some(vec![7]))], raw), (M::Zlib, vec![7]));
+    }
+
+    #[test]
     fn test_delta_roundtrip() {
         let data = test_signal(1000);
         let rd = compress_residual_delta(&data);
 
-        assert_eq!(rd.method, ResidualCompressionMethod::Delta);
+        assert_eq!(rd.method, ResidualCompressionMethod::Delta2);
         assert_eq!(rd.original_len, 1000);
 
-        let restored = decompress_residual_delta(&rd);
+        let restored = decompress_residual_delta(&rd).expect("delta round trip");
 
         assert_eq!(restored.len(), data.len());
         for (a, b) in data.iter().zip(restored.iter()) {
@@ -846,7 +929,7 @@ mod tests {
     fn test_delta_roundtrip_empty() {
         let data: Vec<f32> = Vec::new();
         let rd = compress_residual_delta(&data);
-        let restored = decompress_residual_delta(&rd);
+        let restored = decompress_residual_delta(&rd).expect("delta round trip");
         assert!(restored.is_empty());
     }
 
@@ -854,7 +937,7 @@ mod tests {
     fn test_delta_roundtrip_single() {
         let data = vec![42.5f32];
         let rd = compress_residual_delta(&data);
-        let restored = decompress_residual_delta(&rd);
+        let restored = decompress_residual_delta(&rd).expect("delta round trip");
         assert_eq!(restored.len(), 1);
         assert!((restored[0] - 42.5).abs() < 1e-4);
     }
@@ -884,9 +967,11 @@ mod tests {
         let bytes = rd.to_bytes();
         let recovered = ResidualData::from_bytes(&bytes).expect("from_bytes failed");
 
-        assert_eq!(recovered.method, ResidualCompressionMethod::Delta);
+        // delta2 keeps the first value inside the delta stream (no
+        // base_value key, as the Python writer emits it)
+        assert_eq!(recovered.method, ResidualCompressionMethod::Delta2);
         assert_eq!(recovered.original_len, 200);
-        assert!((recovered.metadata.base_value - rd.metadata.base_value).abs() < 1e-6);
+        assert_eq!(decompress(&recovered).expect("decode"), decompress(&rd).expect("decode"));
     }
 
     #[test]

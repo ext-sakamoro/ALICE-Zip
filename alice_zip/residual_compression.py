@@ -48,6 +48,9 @@ class ResidualData:
     original_dtype: str
     compression_ratio: float
     quantization_bits: Optional[int] = None  # For QUANTIZED method
+    # "base_value" of an earlier Rust "delta" file (its first delta is the
+    # first value); an earlier Python "delta" file has none and lost it
+    base_value: Optional[float] = None
 
     # Maximum header size - prevents DoS via malformed header_len
     # 10MB is generous for JSON metadata; larger payloads should use binary format
@@ -213,7 +216,8 @@ class ResidualData:
             original_shape=tuple(shape),
             original_dtype=str(header['dtype']),
             compression_ratio=0.0,  # Not stored, recalculated if needed
-            quantization_bits=header.get('quant_bits')
+            quantization_bits=header.get('quant_bits'),
+            base_value=header.get('base_value'),
         )
 
 
@@ -315,7 +319,8 @@ class ResidualCompressor:
             compressed = zlib.compress(residual_bytes, level=self.zlib_level)
         elif self.method == ResidualCompressionMethod.ZSTD:
             compressed = self._compress_zstd(residual_bytes)
-        elif self.method == ResidualCompressionMethod.DELTA:
+        elif self.method in (ResidualCompressionMethod.DELTA, ResidualCompressionMethod.DELTA2):
+            # always written as delta2: the first delta is the first value
             compressed = self._compress_delta(residual)
         elif self.method == ResidualCompressionMethod.QUANTIZED:
             compressed = lzma.compress(residual_bytes, preset=self.lzma_preset)
@@ -329,8 +334,11 @@ class ResidualCompressor:
             f"({compression_ratio:.2f}x) using {self.method.value}"
         )
 
+        method = self.method
+        if method == ResidualCompressionMethod.DELTA:
+            method = ResidualCompressionMethod.DELTA2
         return ResidualData(
-            method=self.method,
+            method=method,
             compressed_data=compressed,
             original_shape=residual.shape,
             original_dtype=original_dtype,
@@ -361,7 +369,17 @@ class ResidualCompressor:
             raw_bytes = zlib.decompress(compressed)
         elif method == ResidualCompressionMethod.ZSTD:
             raw_bytes = self._decompress_zstd(compressed)
+        elif method == ResidualCompressionMethod.DELTA2:
+            return self._decompress_delta(compressed, shape)
         elif method == ResidualCompressionMethod.DELTA:
+            # an earlier Rust file recorded base_value and kept the first value
+            # as the first delta; an earlier Python file did neither and
+            # cannot be reconstructed (decompress_delta_differences returns its
+            # differences on request)
+            if residual_data.base_value is None:
+                raise ValueError(
+                    "delta residual without its base value: recompress from the original"
+                )
             return self._decompress_delta(compressed, shape)
         elif method == ResidualCompressionMethod.QUANTIZED:
             raw_bytes = lzma.decompress(compressed)
@@ -495,7 +513,8 @@ class ResidualCompressor:
         """Delta encoding + LZMA compression"""
         # Flatten and compute deltas (use little-endian for cross-platform compatibility)
         flat = residual.astype('<f4').flatten()
-        deltas = np.diff(flat, prepend=flat[0])
+        # the first delta is the first value itself, so it is kept
+        deltas = np.diff(flat, prepend=np.float32(0)).astype('<f4')
 
         # LZMA compress deltas
         return lzma.compress(deltas.tobytes(), preset=self.lzma_preset)
@@ -632,5 +651,8 @@ def estimate_total_compression(
 
 def decompress_delta_differences(residual_data: "ResidualData") -> np.ndarray:
     """The stored differences of a delta residual, without reconstructing it."""
-    raise NotImplementedError("STUB: decompress_delta_differences not implemented yet")
+    if residual_data.method not in (ResidualCompressionMethod.DELTA, ResidualCompressionMethod.DELTA2):
+        raise ValueError(f"Not a delta residual: {residual_data.method.value}")
+    raw = lzma.decompress(residual_data.compressed_data)
+    return np.frombuffer(raw, dtype='<f4').reshape(residual_data.original_shape)
 
