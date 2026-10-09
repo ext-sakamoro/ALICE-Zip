@@ -106,3 +106,15 @@ def test_a_dtype_the_writer_never_records_is_refused_when_read():
     bad = raw.replace(b'"dtype":"float32"', b'"dtype":"complex"')
     with pytest.raises(ValueError, match="dtype"):
         ResidualData.from_bytes(bad)
+
+
+@pytest.mark.parametrize("method", [ResidualCompressionMethod.NONE, ResidualCompressionMethod.LZMA,
+                                    ResidualCompressionMethod.ZLIB])
+def test_stored_float32_values_come_back_bit_for_bit(method):
+    # a float64 round trip in the reader would quiet signaling NaNs (about 2
+    # in 1000 random bit patterns are signaling NaNs)
+    v = np.random.default_rng(11).integers(0, 2**32, size=10_000, dtype=np.uint32).view("<f4")
+    c = ResidualCompressor(method=method)
+    out = c.decompress_residual(ResidualData.from_bytes(c.compress_residual(v).to_bytes()))
+    assert out.dtype == np.float32
+    assert out.view("<u4").tolist() == v.view("<u4").tolist()

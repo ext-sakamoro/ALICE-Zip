@@ -208,6 +208,13 @@ class ResidualData:
                 raise ValueError(f"Invalid original_len: {n!r}")
             header = {**header, 'shape': [n], 'dtype': header.get('dtype', 'float32')}
 
+        if 'shape' in header and 'original_len' in header:
+            n = int(np.prod(header['shape'])) if isinstance(header['shape'], (list, tuple)) else None
+            if n != header['original_len']:
+                raise ValueError(
+                    f"shape {header['shape']} and original_len {header['original_len']} disagree"
+                )
+
         # Validate required fields
         required = ['method', 'shape', 'dtype']
         for field in required:
@@ -429,9 +436,9 @@ class ResidualCompressor:
                 raw_bytes, shape, residual_data.quantization_bits
             )
         else:
-            # Use little-endian '<f4' for cross-platform binary compatibility
-            residual = np.frombuffer(raw_bytes, dtype='<f4').reshape(shape)
-            return residual.astype(np.float64)
+            # the stored float32 values as they are: a float64 round trip
+            # would quiet signaling NaNs (the bits would not be the stored ones)
+            return np.frombuffer(raw_bytes, dtype='<f4').reshape(shape).copy()
 
     def reconstruct(
         self,
@@ -557,9 +564,9 @@ class ResidualCompressor:
         # Use little-endian '<f4' for cross-platform binary compatibility
         deltas = np.frombuffer(raw, dtype='<f4')
 
-        # Reconstruct from deltas
-        flat = np.cumsum(deltas)
-        return flat.reshape(shape).astype(np.float64)
+        # Reconstruct from deltas, accumulating in float32 as that writer did
+        flat = np.cumsum(deltas, dtype=np.float32)
+        return flat.reshape(shape)
 
     def _compress_zstd(self, data: bytes) -> bytes:
         """Compress with zstd (if available)"""
