@@ -463,6 +463,9 @@ step "ci.yml / test: Container (no_std build, same bytes and identifiers)"
 step "ci.yml / test: Container example (reads back, resolves references, refuses a changed byte)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo run --example container_roundtrip )
 
+step "ci.yml / test: Feature-gated suites run on this OS"
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; set -o pipefail; for t in residual_container_oracle container_oracle; do cargo test --features "$ALL_FEATURES" --test "$t" 2>&1 | tee "${CARGO_TARGET_DIR:-target}/gated-$t.log"; sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "${CARGO_TARGET_DIR:-target}/gated-$t.log" | grep -E 'test result: ok\. [1-9][0-9]* passed'; done )
+
 step "ci.yml / wasm: Container oracles under wasmtime"
 rustup target list --installed | grep -q '^wasm32-wasip1$' || rustup target add wasm32-wasip1
 command -v wasmtime >/dev/null || { echo "wasmtime is required for the wasm32-wasip1 step"; exit 1; }
