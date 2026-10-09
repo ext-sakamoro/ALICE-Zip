@@ -134,9 +134,10 @@ pub enum ResidualCompressionMethod {
     /// releases. Readable only when the header records `base_value` (the
     /// earlier Rust writer); the earlier Python writer lost the first value.
     Delta,
-    /// Delta encoding whose first delta is the first value, xz-compressed
-    /// (the format the Python writer emits).
-    Delta2,
+    /// Differences of consecutive `f32` bit patterns as wrapping `u32` (the
+    /// first is the first pattern), xz-compressed (the format the Python
+    /// writer emits).
+    BitDelta,
     /// Quantization (8-bit by default) followed by LZMA compression.
     Quantized,
 }
@@ -150,7 +151,7 @@ impl ResidualCompressionMethod {
             Self::Lzma => "lzma",
             Self::Zlib => "zlib",
             Self::Delta => "delta",
-            Self::Delta2 => "delta2",
+            Self::BitDelta => "bitdelta",
             Self::Quantized => "quantized",
         }
     }
@@ -165,7 +166,7 @@ impl ResidualCompressionMethod {
             "lzma" => Some(Self::Lzma),
             "zlib" => Some(Self::Zlib),
             "delta" => Some(Self::Delta),
-            "delta2" => Some(Self::Delta2),
+            "bitdelta" => Some(Self::BitDelta),
             "quantized" => Some(Self::Quantized),
             _ => None,
         }
@@ -575,7 +576,7 @@ fn first_encoding(
 /// delta[i] = data[i] - data[i-1]   for i > 0
 /// ```
 /// Each element is stored as a little-endian `f32`. The result is recorded
-/// as [`ResidualCompressionMethod::Delta2`], or as `None` with the raw floats
+/// as [`ResidualCompressionMethod::BitDelta`], or as `None` with the raw floats
 /// if xz fails.
 #[must_use]
 pub fn compress_residual_delta(data: &[f32]) -> ResidualData {
@@ -592,7 +593,7 @@ pub fn compress_residual_delta(data: &[f32]) -> ResidualData {
 
     let raw: Vec<u8> = data.iter().flat_map(|&v| v.to_le_bytes()).collect();
     let (method, compressed) = first_encoding(
-        vec![(ResidualCompressionMethod::Delta2, xz_compress(&deltas))],
+        vec![(ResidualCompressionMethod::BitDelta, xz_compress(&deltas))],
         raw,
     );
 
@@ -617,7 +618,7 @@ pub fn compress_residual_delta(data: &[f32]) -> ResidualData {
 pub fn decompress_residual_delta(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
     if !matches!(
         rd.method,
-        ResidualCompressionMethod::Delta | ResidualCompressionMethod::Delta2
+        ResidualCompressionMethod::Delta | ResidualCompressionMethod::BitDelta
     ) {
         return Err(ResidualError::Corrupted(format!(
             "decompress_residual_delta called with {}",
@@ -817,7 +818,7 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
             }
         }
 
-        ResidualCompressionMethod::Delta | ResidualCompressionMethod::Delta2 => {
+        ResidualCompressionMethod::Delta | ResidualCompressionMethod::BitDelta => {
             compress_residual_delta(data)
         }
 
@@ -890,7 +891,7 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
             Ok(result)
         }
 
-        ResidualCompressionMethod::Delta | ResidualCompressionMethod::Delta2 => {
+        ResidualCompressionMethod::Delta | ResidualCompressionMethod::BitDelta => {
             decompress_residual_delta(rd)
         }
 
@@ -945,7 +946,7 @@ mod tests {
         let data = test_signal(1000);
         let rd = compress_residual_delta(&data);
 
-        assert_eq!(rd.method, ResidualCompressionMethod::Delta2);
+        assert_eq!(rd.method, ResidualCompressionMethod::BitDelta);
         assert_eq!(rd.original_len, 1000);
 
         let restored = decompress_residual_delta(&rd).expect("delta round trip");
@@ -1005,7 +1006,7 @@ mod tests {
 
         // delta2 keeps the first value inside the delta stream (no
         // base_value key, as the Python writer emits it)
-        assert_eq!(recovered.method, ResidualCompressionMethod::Delta2);
+        assert_eq!(recovered.method, ResidualCompressionMethod::BitDelta);
         assert_eq!(recovered.original_len, 200);
         assert_eq!(
             decompress(&recovered).expect("decode"),
@@ -1084,7 +1085,7 @@ mod tests {
             ResidualCompressionMethod::Lzma => true,
             ResidualCompressionMethod::Zlib => true,
             ResidualCompressionMethod::Delta => true,
-            ResidualCompressionMethod::Delta2 => true,
+            ResidualCompressionMethod::BitDelta => true,
             ResidualCompressionMethod::Quantized => true,
         };
     }

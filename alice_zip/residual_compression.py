@@ -35,7 +35,7 @@ class ResidualCompressionMethod(Enum):
     ZLIB = "zlib"           # Good balance
     ZSTD = "zstd"           # Fast, good ratio (requires zstd)
     DELTA = "delta"         # Delta encoding + compression
-    DELTA2 = "delta2"       # Delta encoding that keeps the first value (xz)
+    BITDELTA = "bitdelta"   # Differences of f32 bit patterns as wrapping u32 (xz)
     QUANTIZED = "quantized" # Quantize residual before compression
 
 
@@ -319,7 +319,7 @@ class ResidualCompressor:
             compressed = zlib.compress(residual_bytes, level=self.zlib_level)
         elif self.method == ResidualCompressionMethod.ZSTD:
             compressed = self._compress_zstd(residual_bytes)
-        elif self.method in (ResidualCompressionMethod.DELTA, ResidualCompressionMethod.DELTA2):
+        elif self.method in (ResidualCompressionMethod.DELTA, ResidualCompressionMethod.BITDELTA):
             # always written as delta2: the first delta is the first value
             compressed = self._compress_delta(residual)
         elif self.method == ResidualCompressionMethod.QUANTIZED:
@@ -336,7 +336,7 @@ class ResidualCompressor:
 
         method = self.method
         if method == ResidualCompressionMethod.DELTA:
-            method = ResidualCompressionMethod.DELTA2
+            method = ResidualCompressionMethod.BITDELTA
         return ResidualData(
             method=method,
             compressed_data=compressed,
@@ -369,7 +369,7 @@ class ResidualCompressor:
             raw_bytes = zlib.decompress(compressed)
         elif method == ResidualCompressionMethod.ZSTD:
             raw_bytes = self._decompress_zstd(compressed)
-        elif method == ResidualCompressionMethod.DELTA2:
+        elif method == ResidualCompressionMethod.BITDELTA:
             return self._decompress_delta(compressed, shape)
         elif method == ResidualCompressionMethod.DELTA:
             # an earlier Rust file recorded base_value and kept the first value
@@ -651,8 +651,18 @@ def estimate_total_compression(
 
 def decompress_delta_differences(residual_data: "ResidualData") -> np.ndarray:
     """The stored differences of a delta residual, without reconstructing it."""
-    if residual_data.method not in (ResidualCompressionMethod.DELTA, ResidualCompressionMethod.DELTA2):
+    if residual_data.method not in (ResidualCompressionMethod.DELTA, ResidualCompressionMethod.BITDELTA):
         raise ValueError(f"Not a delta residual: {residual_data.method.value}")
     raw = lzma.decompress(residual_data.compressed_data)
     return np.frombuffer(raw, dtype='<f4').reshape(residual_data.original_shape)
+
+
+def _bit_delta_encode(values: np.ndarray) -> bytes:
+    """The bitdelta stream of float32 values (before compression)."""
+    raise NotImplementedError("STUB: _bit_delta_encode not implemented yet")
+
+
+def _bit_delta_decode(stream: bytes) -> np.ndarray:
+    """float32 values from a bitdelta stream."""
+    raise NotImplementedError("STUB: _bit_delta_decode not implemented yet")
 
