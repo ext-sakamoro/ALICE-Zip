@@ -1029,8 +1029,14 @@ fn quantize_python(data: &[f32], bits: u8) -> Result<Vec<u8>, ResidualError> {
         return Err(ResidualError::NotFinite);
     }
     // computed in f64: in f32 the top 32-bit code 2^32 - 1 rounds to 2^32
-    let min = data.iter().map(|&v| f64::from(v)).fold(f64::INFINITY, f64::min);
-    let max = data.iter().map(|&v| f64::from(v)).fold(f64::NEG_INFINITY, f64::max);
+    let min = data
+        .iter()
+        .map(|&v| f64::from(v))
+        .fold(f64::INFINITY, f64::min);
+    let max = data
+        .iter()
+        .map(|&v| f64::from(v))
+        .fold(f64::NEG_INFINITY, f64::max);
     let mut scale = max - min;
     if scale < 1e-10 {
         scale = 1.0;
