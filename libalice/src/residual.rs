@@ -280,10 +280,26 @@ impl ResidualData {
             if v2_end <= data.len() {
                 if let Ok(json_str) = std::str::from_utf8(&data[4..v2_end]) {
                     if let Ok(parsed) = Self::parse_json_header(json_str) {
-                        let version = parsed
-                            .get("version")
-                            .and_then(|v| v.parse::<u32>().ok())
-                            .unwrap_or(1);
+                        // the writers emit `"version":2`: only a bare JSON
+                        // integer is a version (the Python reader takes only
+                        // an int too); a float or a string is refused
+                        let version = match Self::raw_json_value(json_str, "version") {
+                            None => 1,
+                            Some(raw)
+                                if !raw.is_empty() && raw.bytes().all(|b| b.is_ascii_digit()) =>
+                            {
+                                raw.parse::<u32>().map_err(|_| {
+                                    ResidualError::InvalidHeader(format!(
+                                        "version {raw} is out of range"
+                                    ))
+                                })?
+                            }
+                            Some(raw) => {
+                                return Err(ResidualError::InvalidHeader(format!(
+                                    "version must be a JSON integer, got {raw}"
+                                )))
+                            }
+                        };
                         // only versions 1 and 2 were written; a later one is
                         // refused rather than read as version 2
                         if version > 2 {
@@ -347,6 +363,16 @@ impl ResidualData {
     /// String values have their surrounding quotes stripped. Numeric and boolean
     /// values are kept as-is. Nested objects/arrays are not supported (not needed
     /// for our header format).
+    /// The value text of `key` in a flat JSON object as written (a string
+    /// keeps its quotes), or `None` when the key is absent.
+    fn raw_json_value<'j>(json: &'j str, key: &str) -> Option<&'j str> {
+        let inner = json.trim().strip_prefix('{')?.strip_suffix('}')?;
+        inner.split(',').find_map(|pair| {
+            let (k, v) = pair.split_once(':')?;
+            (k.trim().trim_matches('"') == key).then(|| v.trim())
+        })
+    }
+
     fn parse_json_header(json: &str) -> Result<HashMap<String, String>, String> {
         let json = json.trim();
         if !json.starts_with('{') || !json.ends_with('}') {

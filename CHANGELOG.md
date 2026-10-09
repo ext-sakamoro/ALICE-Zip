@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- ResidualData の JSON header の `"version"` は整数だけを版として受け付け、float (`2.0`) や文字列 (`"2"`) は拒否する (Python は `ValueError`、Rust は `ResidualError::InvalidHeader`) 書き手は整数で書く これまで Python は `2.0` を、Rust は `"2"` を版 2 として読み、両者の判定が分かれていた
 - Python package の procedural payload の復元が、書き手が payload に記録した dtype で返る 4 つの生成器 (Perlin / Fourier / sine / polynomial) が結果を常に float32 に変換していたので、float64 の入力が float32 で返り、byte 数が header の `original_size` の半分になっていた 形式は変わらない (dtype は以前から payload の `params.dtype` にある) payload の dtype は書き手が記録しうる実数の 11 種 (`float16/32/64`、`int8〜64`、`uint8〜64`) だけを受け付け、それ以外 (complex、文字列型、未知の名前) は `ValueError` 復元した byte 数が header の `original_size` と違えば、procedural でも `ValueError`
 
 ### Added

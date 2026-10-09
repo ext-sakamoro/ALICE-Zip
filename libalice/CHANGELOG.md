@@ -14,6 +14,9 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 - `alice decompress` / `alice info` は `.alz` header の版が 1 以外、または mode が未知の file をエラーにする (版を読み飛ばし、未知の mode を raw LZMA として読んでいた)
 - 移行: `FormatError` / `ResidualError` を網羅的に match している呼び出し側は新しい variant (`UnsupportedVersion` / `InvalidEngine`) を足す 未知の `payload_type` が `Procedural` に落ちることに頼っていた呼び出し側はエラーとして扱う (そうした file はどの書き手も出していない) Python package と本 crate が書いた file (版 1.0 / 1.1、定義された値) はこれまでどおり読める
 
+### Fixed
+- `residual::ResidualData::from_bytes` は `"version"` が JSON の整数でなければ (float `2.0`、文字列 `"2"`) `ResidualError::InvalidHeader` 文字列の `"2"` を版 2 として読んでいた Python 版と同じ規則
+
 ## [2.7.0] - 2026-10-09
 
 ### Added
