@@ -14,10 +14,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PAYLOAD = zlib.compress(struct.pack("<2f", 0.5, -1.25))
 
-for version in (2, 3):
+# version as the writers emit it (an integer) and in two spellings no writer
+# emits: a float and a string; both readers must refuse the latter two
+for version, name in ((2, "v2"), (3, "v3"), (2.0, "v2_float"), ("2", "v2_string")):
     header = json.dumps(
         {"method": "zlib", "original_len": 2, "shape": [2], "dtype": "float32",
          "quant_bits": None, "version": version},
         separators=(",", ":"),
     ).encode()
-    (HERE / f"residual_v{version}.bin").write_bytes(struct.pack("<I", len(header)) + header + PAYLOAD)
+    (HERE / f"residual_{name}.bin").write_bytes(struct.pack("<I", len(header)) + header + PAYLOAD)

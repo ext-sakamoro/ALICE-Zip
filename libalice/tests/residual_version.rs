@@ -23,3 +23,27 @@ fn a_later_version_is_refused_instead_of_being_read_as_version_2() {
         Err(ResidualError::UnsupportedVersion(3))
     ));
 }
+
+#[test]
+fn a_version_written_as_a_float_or_a_string_is_refused() {
+    // writers emit "version":2; the Python reader takes only a JSON integer
+    // too (tests/test_residual_version.py)
+    for (name, bytes) in [
+        (
+            "float",
+            &include_bytes!("../../tests/data/residual/residual_v2_float.bin")[..],
+        ),
+        (
+            "string",
+            &include_bytes!("../../tests/data/residual/residual_v2_string.bin")[..],
+        ),
+    ] {
+        assert!(
+            matches!(
+                ResidualData::from_bytes(bytes),
+                Err(ResidualError::InvalidHeader(_))
+            ),
+            "{name}"
+        );
+    }
+}
