@@ -31,8 +31,9 @@ from alice_zip.residual_compression import ResidualCompressionMethod
 def photo_like_image(size: int = 256) -> np.ndarray:
     """A deterministic photograph-like grayscale image: smooth shading, a few
     edges and fine texture (the test needs no network and no image file).
-    Rounded before the cast, so a last-place difference of the platform's
-    sin / cos does not change a pixel (pinned by its SHA-256 below)."""
+    Rounded before the cast and pinned by its SHA-256 below; the nearest value
+    is 5e-6 from a rounding tie, so a last-place difference of the platform's
+    sin / cos does not reach a pixel here."""
     rng = np.random.default_rng(123)
     y, x = np.mgrid[0:size, 0:size] / size
     shading = 120 + 80 * np.sin(3 * x + 1) * np.cos(2 * y)
@@ -265,31 +266,6 @@ def test_adaptive_fallback():
     print(f"Compression ratio >= 1.0x: {ratio_above_one}")
 
     assert adaptive_is_better
-
-
-if __name__ == "__main__":
-    print("ALICE-Zip Real Image Test")
-    print("=" * 70)
-    print("Testing with real images and adaptive fallback\n")
-
-    results = []
-    results.append(("Grayscale Gradient", test_grayscale_gradient()))
-    results.append(("Noisy Texture", test_noisy_texture()))
-    results.append(("Real Image", test_real_image()))
-    results.append(("Adaptive Fallback", test_adaptive_fallback()))
-
-    print("\n" + "=" * 70)
-    print("SUMMARY")
-    print("=" * 70)
-    all_passed = True
-    for name, passed in results:
-        status = "PASS" if passed else "FAIL"
-        print(f"  {name}: {status}")
-        if not passed:
-            all_passed = False
-
-    print("\n" + ("ALL TESTS PASSED" if all_passed else "SOME TESTS FAILED"))
-    sys.exit(0 if all_passed else 1)
 
 
 PHOTO_LIKE_SHA256 = "0bce69979fa8e648abc344fbc2f23a642281364646d38c5fb198ce98b77b07b1"

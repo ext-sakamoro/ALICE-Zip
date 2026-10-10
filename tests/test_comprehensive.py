@@ -256,22 +256,3 @@ def print_summary(results):
         print("SOME TESTS FAILED - Review above results")
 
     return all_passed
-
-
-if __name__ == "__main__":
-    print("ALICE-Zip Comprehensive Test Suite")
-    print("=" * 70)
-    print("Testing compression across various data types\n")
-
-    results = [
-        ("Smooth Gradient", test_smooth_gradient()),
-        ("Pure Sine Wave", test_pure_sine_wave()),
-        ("Polynomial Data", test_polynomial_data()),
-        ("Signal + Noise", test_signal_with_noise()),
-        ("Random Noise (Adaptive)", test_random_noise()),
-        ("Multi-frequency", test_mixed_frequency()),
-        ("Edge Cases", test_edge_cases()),
-    ]
-
-    success = print_summary(results)
-    sys.exit(0 if success else 1)

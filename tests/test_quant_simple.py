@@ -4,6 +4,7 @@ Simple 8-bit Quantization Test (1D data only, no Perlin)
 """
 
 import numpy as np
+import pytest
 import sys
 from pathlib import Path
 # Resolve the repository root from this file so the tests run anywhere
@@ -24,60 +25,46 @@ def psnr(orig, recon):
     return 20 * np.log10(rng / np.sqrt(mse)) if rng > 0 else float('inf')
 
 
-def run_test(name, data):
-    print(f"\n{name}")
-    print(f"  Original: {data.nbytes:,} bytes")
-
-    # Force LZMA to avoid slow Perlin fitting
+def compress_both(data):
+    """The input compressed losslessly and with an 8-bit residual."""
     d32 = ProceduralCompressionDesigner()
-    r32 = d32.compress(data, enable_lossless=True, quantize_residual=None,
-                       force_engine=CompressionEngine.FUNCTION_FITTER)
-
+    r32 = d32.compress(data, enable_lossless=True)
     d8 = ProceduralCompressionDesigner()
-    r8 = d8.compress(data, enable_lossless=True, quantize_residual=8,
-                     force_engine=CompressionEngine.FUNCTION_FITTER)
-
-    rec32 = d32.decompress(r32)
-    rec8 = d8.decompress(r8)
-
-    p32 = psnr(data, rec32)
-    p8 = psnr(data, rec8)
-
-    print(f"  32-bit: {r32.total_compressed_size:,}B, PSNR={'inf' if p32==float('inf') else f'{p32:.1f}dB'}")
-    print(f"  8-bit:  {r8.total_compressed_size:,}B, PSNR={p8:.1f}dB")
-
-    if r32.total_compressed_size > r8.total_compressed_size:
-        reduction = (r32.total_compressed_size - r8.total_compressed_size) / r32.total_compressed_size * 100
-        print(f"  Savings: {reduction:.0f}%")
-
-    return p8 > 30
+    r8 = d8.compress(data, enable_lossless=True, quantize_residual=8)
+    return np.asarray(d32.decompress(r32)), np.asarray(d8.decompress(r8)), r8
 
 
-if __name__ == "__main__":
-    print("=" * 60)
-    print("8-bit Quantization Test")
-    print("=" * 60)
-
-    np.random.seed(42)
-    results = []
-
-    # Test 1: Polynomial + noise
+def cases():
+    rng = np.random.default_rng(42)
     x = np.linspace(0, 10, 2000)
-    data = (x**2 + np.random.randn(2000) * 10).astype(np.float32)
-    results.append(run_test("Polynomial + Noise (2000 pts)", data))
+    t1 = np.linspace(0, 10 * np.pi, 3000)
+    t2 = np.linspace(0, 2 * np.pi, 2000)
+    return {
+        "polynomial_noise": (x ** 2 + rng.normal(0, 10, 2000)).astype(np.float32),
+        "sine_noise": (np.sin(t1) * 100 + rng.normal(0, 5, 3000)).astype(np.float32),
+        "multi_frequency_noise": (50 * np.sin(3 * t2) + 30 * np.sin(7 * t2)
+                                  + rng.normal(0, 5, 2000)).astype(np.float32),
+    }
 
-    # Test 2: Sine + noise
-    t = np.linspace(0, 10*np.pi, 3000)
-    data = (np.sin(t) * 100 + np.random.randn(3000) * 5).astype(np.float32)
-    results.append(run_test("Sine + Noise (3000 pts)", data))
 
-    # Test 3: Multi-frequency
-    t = np.linspace(0, 2*np.pi, 2000)
-    data = (50*np.sin(3*t) + 30*np.sin(7*t) + np.random.randn(2000) * 5).astype(np.float32)
-    results.append(run_test("Multi-freq + Noise (2000 pts)", data))
+# the engine the designer picks for each input: the noisy polynomial and
+# multi-frequency signals fall back to LZMA (exact even with quantize_residual)
+ENGINE = {
+    "polynomial_noise": CompressionEngine.FALLBACK_LZMA,
+    "sine_noise": CompressionEngine.PROCEDURAL,
+    "multi_frequency_noise": CompressionEngine.FALLBACK_LZMA,
+}
 
-    print("\n" + "=" * 60)
-    print("RESULT:", "ALL PASS" if all(results) else "SOME FAIL")
-    print("=" * 60)
 
-    sys.exit(0 if all(results) else 1)
+@pytest.mark.parametrize("name", list(cases()))
+def test_the_lossless_result_is_exact_and_the_8_bit_one_is_close(name):
+    data = cases()[name]
+    rec32, rec8, r8 = compress_both(data)
+    assert rec32.dtype == data.dtype and rec32.tobytes() == data.tobytes()
+    assert r8.engine_used == ENGINE[name]
+    if r8.engine_used == CompressionEngine.PROCEDURAL:
+        # an 8-bit residual is lossy but close
+        assert not r8.is_lossless
+        assert psnr(data, rec8) > 30
+    else:
+        assert r8.is_lossless and rec8.tobytes() == data.tobytes()

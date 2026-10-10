@@ -187,29 +187,3 @@ def test_lossy_vs_lossless():
     print(f"  Exact: {np.allclose(data, recon_lossless, atol=1e-5)}")
 
     assert result_lossless.is_lossless
-
-
-if __name__ == "__main__":
-    print("ALICE-Zip Residual Compression Test")
-    print("===================================")
-    print("Testing TRUE LOSSLESS reconstruction:")
-    print("  Original = Generated(params) + Decompress(residual)\n")
-
-    results = []
-    results.append(("Perlin Noise", test_perlin_noise_lossless()))
-    results.append(("Polynomial", test_polynomial_lossless()))
-    results.append(("Fourier", test_fourier_lossless()))
-    results.append(("Lossy vs Lossless", test_lossy_vs_lossless()))
-
-    print("\n" + "=" * 60)
-    print("SUMMARY")
-    print("=" * 60)
-    all_passed = True
-    for name, passed in results:
-        status = "PASS" if passed else "FAIL"
-        print(f"  {name}: {status}")
-        if not passed:
-            all_passed = False
-
-    print("\n" + ("ALL TESTS PASSED" if all_passed else "SOME TESTS FAILED"))
-    sys.exit(0 if all_passed else 1)

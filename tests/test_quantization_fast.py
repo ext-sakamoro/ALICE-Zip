@@ -157,34 +157,3 @@ def test_comparison_matrix():
         print(f"{bits_str:<10} {r.total_compressed_size:,}B{'':<5} {r.effective_ratio:.2f}x{'':<5} {psnr_str:<15}")
 
     print("-" * 50)
-
-
-if __name__ == "__main__":
-    print("ALICE-Zip 8-bit Quantization Test (Fast)")
-    print("=" * 70)
-
-    results = []
-    results.append(("Polynomial", test_polynomial_quantization()))
-    results.append(("Sine Wave", test_sine_quantization()))
-    results.append(("2D Texture", test_2d_texture_quantization()))
-    results.append(("Comparison Matrix", test_comparison_matrix()))
-
-    print("\n" + "=" * 70)
-    print("SUMMARY")
-    print("=" * 70)
-
-    all_passed = True
-    for name, passed in results:
-        status = "PASS" if passed else "FAIL"
-        print(f"  {name}: {status}")
-        if not passed:
-            all_passed = False
-
-    print("\n" + "-" * 70)
-    if all_passed:
-        print("8-bit quantization: ~75% size reduction with PSNR > 40dB")
-        print("Ideal for: Images, audio, sensor data")
-    else:
-        print("Some tests failed")
-
-    sys.exit(0 if all_passed else 1)

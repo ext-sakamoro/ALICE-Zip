@@ -251,34 +251,3 @@ def test_comparison_table():
     print("\nNote: PSNR > 40dB = Excellent, > 30dB = Good, > 20dB = Acceptable")
 
     assert all_passed
-
-
-if __name__ == "__main__":
-    print("ALICE-Zip 8-bit Residual Quantization Test")
-    print("=" * 70)
-    print("Comparing TRUE LOSSLESS (32-bit) vs NEAR-LOSSLESS (8-bit)\n")
-
-    results = []
-    results.append(("Polynomial+Noise", test_polynomial_with_noise()))
-    results.append(("Texture Pattern", test_texture_pattern()))
-    results.append(("Audio Signal", test_audio_signal()))
-    results.append(("Comparison Table", test_comparison_table()))
-
-    print("\n" + "=" * 70)
-    print("SUMMARY")
-    print("=" * 70)
-    all_passed = True
-    for name, passed in results:
-        status = "PASS" if passed else "FAIL"
-        print(f"  {name}: {status}")
-        if not passed:
-            all_passed = False
-
-    print("\n" + "-" * 70)
-    if all_passed:
-        print("8-bit quantization achieves excellent compression with minimal quality loss!")
-        print("Recommended for: Images, audio, sensor data, any signal with noise floor")
-    else:
-        print("Some quality degradation detected - review PSNR values")
-
-    sys.exit(0 if all_passed else 1)
