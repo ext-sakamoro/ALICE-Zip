@@ -460,7 +460,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Initial crates.io release: `lz77`, `dictionary`, `entropy`, `bpe`, `error`,
   `prelude` (split from a single `lib.rs`, 102 tests)
 
-[Unreleased]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.5.0...v0.5.1
