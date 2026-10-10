@@ -8,6 +8,7 @@ use alice_core::residual::{ResidualCompressionMethod, ResidualData, ResidualErro
 
 const V2: &[u8] = include_bytes!("../../tests/data/residual/residual_v2.bin");
 const V3: &[u8] = include_bytes!("../../tests/data/residual/residual_v3.bin");
+const V4: &[u8] = include_bytes!("../../tests/data/residual/residual_v4.bin");
 
 #[test]
 fn version_2_is_read() {
@@ -19,8 +20,17 @@ fn version_2_is_read() {
 #[test]
 fn a_later_version_is_refused_instead_of_being_read_as_version_2() {
     assert!(matches!(
+        ResidualData::from_bytes(V4),
+        Err(ResidualError::UnsupportedVersion(4))
+    ));
+}
+
+#[test]
+fn version_3_without_exceptions_is_refused() {
+    // version 3 is a file with exceptions (tests/test_residual_exceptions.py)
+    assert!(matches!(
         ResidualData::from_bytes(V3),
-        Err(ResidualError::UnsupportedVersion(3))
+        Err(ResidualError::MissingField(f)) if f == "exceptions"
     ));
 }
 

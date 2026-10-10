@@ -22,7 +22,13 @@ def test_version_2_is_read():
 
 
 def test_a_later_version_is_refused_instead_of_being_read_as_version_2():
-    with pytest.raises(ValueError, match="version 3"):
+    with pytest.raises(ValueError, match="version 4"):
+        ResidualData.from_bytes((DATA / "residual_v4.bin").read_bytes())
+
+
+def test_version_3_without_exceptions_is_refused():
+    # version 3 is a file with exceptions (tests/test_residual_exceptions.py)
+    with pytest.raises(ValueError, match="version 3 needs"):
         ResidualData.from_bytes((DATA / "residual_v3.bin").read_bytes())
 
 

@@ -31,7 +31,10 @@ fn hex(s: &str) -> Vec<u8> {
 fn cases() -> BTreeMap<String, (Vec<u8>, Vec<f64>)> {
     let text = std::fs::read_to_string(dir().join("exception_cases.txt")).unwrap();
     let mut out: BTreeMap<String, (Vec<u8>, Vec<f64>)> = BTreeMap::new();
-    for line in text.lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
+    for line in text
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.is_empty())
+    {
         let c: Vec<&str> = line.split_whitespace().collect();
         let e = out.entry(c[0].to_owned()).or_default();
         e.0.extend(hex(c[1]));
@@ -48,7 +51,7 @@ fn the_shared_cases_come_back_bit_for_bit() {
         for method in [M::None, M::Lzma, M::Zlib, M::BitDelta] {
             let rd = compress_original(original, dtype, generated, method).unwrap();
             let read = ResidualData::from_bytes(&rd.to_bytes()).unwrap();
-            assert!(!read.exception_positions.is_empty(), "{dtype}");
+            assert!(!read.metadata.exception_positions.is_empty(), "{dtype}");
             assert_eq!(
                 reconstruct_bytes(generated, &read).unwrap(),
                 *original,
@@ -65,7 +68,11 @@ fn both_writers_files_rebuild_the_original() {
         for writer in ["python", "rust"] {
             let bytes = std::fs::read(dir().join(format!("{writer}_exc_{dtype}.bin"))).unwrap();
             let rd = ResidualData::from_bytes(&bytes).unwrap();
-            assert_eq!(reconstruct_bytes(&generated, &rd).unwrap(), original, "{writer} {dtype}");
+            assert_eq!(
+                reconstruct_bytes(&generated, &rd).unwrap(),
+                original,
+                "{writer} {dtype}"
+            );
             compared += 1;
         }
     }
@@ -82,12 +89,18 @@ fn finite_data_the_rule_rebuilds_keeps_version_2() {
     let b = rd.to_bytes();
     let n = u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize;
     let h = String::from_utf8(b[4..4 + n].to_vec()).unwrap();
-    assert!(h.contains("\"version\":2") && !h.contains("exceptions"), "{h}");
+    assert!(
+        h.contains("\"version\":2") && !h.contains("exceptions"),
+        "{h}"
+    );
 }
 
 #[test]
 fn quantized_cannot_keep_exceptions() {
-    let original: Vec<u8> = [1.0f32, f32::NAN].iter().flat_map(|v| v.to_le_bytes()).collect();
+    let original: Vec<u8> = [1.0f32, f32::NAN]
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .collect();
     assert!(matches!(
         compress_original(&original, "float32", &[1.0, 1.0], M::Quantized),
         Err(ResidualError::NotLossless)

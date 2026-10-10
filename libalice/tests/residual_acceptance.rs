@@ -97,7 +97,7 @@ fn the_rust_reader_accepts_exactly_the_files_the_table_lists() {
         }
         compared += 1;
     }
-    assert_eq!(compared, 102, "every row compared");
+    assert_eq!(compared, 103, "every row compared");
 }
 
 #[test]
