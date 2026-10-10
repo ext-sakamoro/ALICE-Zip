@@ -357,3 +357,60 @@ _exc("exc_quantized", {"exceptions": 1, "method": "quantized", "quant_bits": 8},
 # a well-formed one: positions 1 and 3 hold NaN and -inf bits
 _exc("exc_ok", {"exceptions": 2}, [1, 3], [b"\x01\x00\xc0\x7f", b"\x00\x00\x80\xff"],
      residual=[5.0, 0.0, 6.0, 0.0])
+
+
+# ---------------------------------------------------------------------------
+# Header values of the wrong JSON type: every numeric field must be a bare
+# JSON integer (or a number where the writers write one), never a string, a
+# boolean, a float form (8.0, 8e0) or a negative where a count is meant.
+# Both readers refuse every one of these files (written raw so the JSON text
+# is exactly as given).
+def _raw(name, header_text, payload):
+    h = header_text.encode()
+    (HERE / f"residual_{name}.bin").write_bytes(struct.pack("<I", len(h)) + h + payload)
+
+
+_P4 = struct.pack("<4f", *VALUES)
+_BASE = '{"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":2}'
+_EXC_BLOCK = struct.pack("<4f", 5.0, 0.0, 6.0, 0.0) + struct.pack("<QQ", 1, 3) + \
+    b"\x01\x00\xc0\x7f" + b"\x00\x00\x80\xff"
+_EXC = '{"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":3,"exceptions":2}'
+_LEN = '{"method":"none","original_len":4,"dtype":"float32","quant_bits":null,"version":2}'
+TYPE_CASES = {
+    "version": (_BASE, '"version":2', ['"version":2.0', '"version":2e0', '"version":true',
+                                        '"version":-2', '"version":"2"'], _P4),
+    "shape": (_BASE, '"shape":[4]', ['"shape":["4"]', '"shape":[4.0]', '"shape":[true]',
+                                     '"shape":[-4]', '"shape":[4e0]', '"shape":"4"', '"shape":4'], _P4),
+    "quant_bits": (_BASE, '"quant_bits":null', ['"quant_bits":"8"', '"quant_bits":8.0',
+                                                '"quant_bits":true', '"quant_bits":-8',
+                                                '"quant_bits":8e0'], _P4),
+    "original_len": (_LEN, '"original_len":4', ['"original_len":"4"', '"original_len":4.0',
+                                                '"original_len":true', '"original_len":-4',
+                                                '"original_len":4e0'], _P4),
+    "exceptions": (_EXC, '"exceptions":2', ['"exceptions":"2"', '"exceptions":2.0',
+                                            '"exceptions":true', '"exceptions":-2',
+                                            '"exceptions":2e0'], _EXC_BLOCK),
+    "method": (_BASE, '"method":"none"', ['"method":5', '"method":true', '"method":null'], _P4),
+    "dtype": (_BASE, '"dtype":"float32"', ['"dtype":5', '"dtype":true', '"dtype":null'], _P4),
+}
+TYPE_FILES = []
+for _field, (_text, _good, _bad, _payload) in TYPE_CASES.items():
+    assert _good in _text
+    for _i, _b in enumerate(_bad):
+        _name = f"type_{_field}_{_i}"
+        _raw(_name, _text.replace(_good, _b), _payload)
+        TYPE_FILES.append(f"residual_{_name}.bin")
+# the earlier writers' optional numbers: base_value (delta) and min_val /
+# scale / bits (the earlier quantized container)
+_DELTA = '{"method":"delta","base_value":5.0,"original_len":4,"shape":[4],"dtype":"float32","quant_bits":null,"version":2}'
+for _i, _b in enumerate(['"base_value":"5.0"', '"base_value":true', '"base_value":null']):
+    _raw(f"type_base_value_{_i}", _DELTA.replace('"base_value":5.0', _b), _deltas(5.0, lzma.FORMAT_ALONE))
+    TYPE_FILES.append(f"residual_type_base_value_{_i}.bin")
+_LEG = (HERE / "rust_legacy_quantized.bin").read_bytes()
+_LEG_TEXT = _LEG[4:4 + struct.unpack("<I", _LEG[:4])[0]].decode()
+for _i, (_good, _b) in enumerate([('"min_val":4', '"min_val":"4"'), ('"scale":2', '"scale":true'),
+                                  ('"bits":8', '"bits":8.0'), ('"bits":8', '"bits":"8"')]):
+    assert _good in _LEG_TEXT
+    _raw(f"type_legacy_quantized_{_i}", _LEG_TEXT.replace(_good, _b),
+         _LEG[4 + struct.unpack("<I", _LEG[:4])[0]:])
+    TYPE_FILES.append(f"residual_type_legacy_quantized_{_i}.bin")
