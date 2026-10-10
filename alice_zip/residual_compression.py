@@ -167,7 +167,7 @@ class ResidualData:
                         raise ValueError(
                             f"Residual header version must be a JSON integer, got {version!r}"
                         )
-                    if version > 3:
+                    if version > 3 or version < 1:
                         raise ValueError(
                             f"Unsupported residual header version {version} (1 to 3 exist)"
                         )
@@ -224,12 +224,33 @@ class ResidualData:
                 raise ValueError(f"version 3 needs a positive integer 'exceptions', got {k!r}")
         elif 'exceptions' in header:
             raise ValueError("'exceptions' is only read with version 3")
+        # every numeric field is a JSON integer (or a number where the
+        # writers write one): a string, a boolean or a float form is refused,
+        # as the Rust reader does (bool is an int in Python, so it is named)
+        def is_int(v):
+            return isinstance(v, int) and not isinstance(v, bool)
+
+        def is_number(v):
+            return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+        if 'original_len' in header and not (is_int(header['original_len'])
+                                             and header['original_len'] >= 0):
+            raise ValueError(f"Invalid original_len: {header['original_len']!r}")
+        qb = header.get('quant_bits')
+        if qb is not None and not (is_int(qb) and qb in (8, 16, 32)):
+            raise ValueError(f"quant_bits must be null, 8, 16 or 32, got {qb!r}")
+        if 'base_value' in header and not is_number(header['base_value']):
+            raise ValueError(f"base_value must be a number, got {header['base_value']!r}")
+        for key in ('min_val', 'scale'):
+            if key in header and not is_number(header[key]):
+                raise ValueError(f"{key} must be a number, got {header[key]!r}")
+        if 'bits' in header and not is_int(header['bits']):
+            raise ValueError(f"bits must be an integer, got {header['bits']!r}")
+
         # the Rust writer before the header keys were aligned recorded only
         # "original_len" (one dimension of float32)
         if 'shape' not in header and 'original_len' in header:
             n = header['original_len']
-            if isinstance(n, bool) or not isinstance(n, int) or n < 0:
-                raise ValueError(f"Invalid original_len: {n!r}")
             header = {**header, 'shape': [n], 'dtype': header.get('dtype', 'float32')}
 
         if 'shape' in header and 'original_len' in header:
@@ -261,7 +282,7 @@ class ResidualData:
         shape = header['shape']
         if not isinstance(shape, (list, tuple)):
             raise ValueError(f"Invalid shape type: {type(shape)}")
-        if not all(isinstance(d, int) and d > 0 for d in shape):
+        if not all(is_int(d) and d > 0 for d in shape):
             raise ValueError(f"Invalid shape values: {shape}")
 
         positions = np.zeros(0, dtype=np.uint64)

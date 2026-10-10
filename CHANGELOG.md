@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Python package の procedural payload の復元が、書き手が payload に記録した dtype で返る 4 つの生成器 (Perlin / Fourier / sine / polynomial) が結果を常に float32 に変換していたので、float64 の入力が float32 で返り、byte 数が header の `original_size` の半分になっていた 形式は変わらない (dtype は以前から payload の `params.dtype` にある) payload の dtype は書き手が記録しうる実数の 11 種 (`float16/32/64`、`int8〜64`、`uint8〜64`) だけを受け付け、それ以外 (complex、文字列型、未知の名前) は `ValueError` 復元した byte 数が header の `original_size` と違えば、procedural でも `ValueError`
 
 ### Added
-- Python package の `ResidualCompressor.compress_original(original, generated)`: 元データと generated から、`reconstruct` で bit 単位で元に戻る residual を書く 元か generated が有限でない位置 (NaN・無限大) と、規則で復元できない位置は例外として元の要素をそのまま持つ 差分では無限大や NaN の bit を運べず、inf - inf の NaN の符号のように環境で結果が変わる経路もあったため 例外を持つ file は version 3 で、以前の読み手は version で拒否する libalice の `residual::compress_original` と同じ file を書く
+- Python package の `ResidualCompressor.compress_original(original, generated)`: 元データと generated から、`reconstruct` で bit 単位で元に戻る residual を書く 元か generated が有限でない位置 (NaN・無限大) と、規則で復元できない位置は例外として元の要素をそのまま持つ 差分では無限大や NaN の bit を運べず、inf - inf の NaN の符号のように環境で結果が変わる経路もあったため 例外を持つ file は version 3 で、以前の読み手は version で拒否する libalice の `residual::compress_original` と同じ file を書く header の数の欄は整数 (base_value / min_val / scale は数) だけを受け付け、bool (Python では int の部分型) や `8.0` の形は拒否する 既知の挙動: 以前の版の読み手は、version 2 のまま exceptions の鍵と末尾の block を持つ file (どの書き手も作らない) を例外を落として読む この版の読み手は拒否する
 
 - `container` — a container that holds several payloads, each identified by
   its SHA-256: a 56-byte header (8-byte magic starting with a non-ASCII byte,

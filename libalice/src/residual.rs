@@ -263,6 +263,119 @@ pub struct ResidualData {
     pub metadata: ResidualMetadata,
 }
 
+/// A value of the flat JSON header, with its JSON type kept: `8` and `"8"`
+/// differ, and a numeric field takes only a JSON number (a count only a bare
+/// non-negative integer, not `8.0` or `8e0`).
+#[derive(Debug, Clone, PartialEq)]
+enum Json {
+    Str(String),
+    /// A bare non-negative integer (`0` or digits without a leading zero).
+    Int(u64),
+    /// Any other JSON number (negative, a fraction or an exponent).
+    Num(f64),
+    Bool(bool),
+    Null,
+    Arr(Vec<Json>),
+}
+
+impl Json {
+    fn parse(raw: &str) -> Result<Self, String> {
+        let raw = raw.trim();
+        if let Some(body) = raw.strip_prefix('"').and_then(|r| r.strip_suffix('"')) {
+            return Ok(Self::Str(body.to_owned()));
+        }
+        if let Some(body) = raw.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
+            if body.trim().is_empty() {
+                return Ok(Self::Arr(Vec::new()));
+            }
+            return ResidualData::split_members(body)
+                .into_iter()
+                .map(Self::parse)
+                .collect::<Result<Vec<_>, _>>()
+                .map(Self::Arr);
+        }
+        match raw {
+            "null" => return Ok(Self::Null),
+            "true" => return Ok(Self::Bool(true)),
+            "false" => return Ok(Self::Bool(false)),
+            // not JSON, but read as numbers by Python's json module, and the
+            // earlier writer of this crate wrote base_value NaN this way
+            "NaN" => return Ok(Self::Num(f64::NAN)),
+            "Infinity" => return Ok(Self::Num(f64::INFINITY)),
+            "-Infinity" => return Ok(Self::Num(f64::NEG_INFINITY)),
+            _ => {}
+        }
+        let is_int = raw == "0"
+            || (raw.starts_with(|c: char| ('1'..='9').contains(&c))
+                && raw.bytes().all(|b| b.is_ascii_digit()));
+        if is_int {
+            return raw
+                .parse()
+                .map(Self::Int)
+                .map_err(|e| format!("integer {raw}: {e}"));
+        }
+        if is_json_number(raw) {
+            return raw
+                .parse()
+                .map(Self::Num)
+                .map_err(|e| format!("number {raw}: {e}"));
+        }
+        Err(format!("not a JSON value: {raw}"))
+    }
+
+    fn as_usize(&self) -> Option<usize> {
+        match self {
+            Self::Int(n) => usize::try_from(*n).ok(),
+            _ => None,
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn as_f64(&self) -> Option<f64> {
+        match self {
+            Self::Int(n) => Some(*n as f64),
+            Self::Num(x) => Some(*x),
+            _ => None,
+        }
+    }
+}
+
+/// The JSON number grammar: `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?`.
+fn is_json_number(s: &str) -> bool {
+    let b = s.as_bytes();
+    let mut i = usize::from(b.first() == Some(&b'-'));
+    let digits = |i: &mut usize| {
+        let start = *i;
+        while *i < b.len() && b[*i].is_ascii_digit() {
+            *i += 1;
+        }
+        *i > start
+    };
+    match b.get(i) {
+        Some(b'0') => i += 1,
+        Some(b'1'..=b'9') => {
+            digits(&mut i);
+        }
+        _ => return false,
+    }
+    if b.get(i) == Some(&b'.') {
+        i += 1;
+        if !digits(&mut i) {
+            return false;
+        }
+    }
+    if matches!(b.get(i), Some(b'e' | b'E')) {
+        i += 1;
+        if matches!(b.get(i), Some(b'+' | b'-')) {
+            i += 1;
+        }
+        if !digits(&mut i) {
+            return false;
+        }
+    }
+    i == b.len()
+}
+
 impl ResidualData {
     // -------------------------------------------------------------------------
     // Serialisation
@@ -482,7 +595,7 @@ impl ResidualData {
         })
     }
 
-    fn parse_json_header(json: &str) -> Result<HashMap<String, String>, String> {
+    fn parse_json_header(json: &str) -> Result<HashMap<String, Json>, String> {
         let json = json.trim();
         if !json.starts_with('{') || !json.ends_with('}') {
             return Err(format!("JSON header must be a flat object, got: {json}"));
@@ -513,14 +626,7 @@ impl ResidualData {
                 key_raw.to_owned()
             };
 
-            // Strip surrounding quotes from value (if it is a JSON string).
-            let val = if val_raw.starts_with('"') && val_raw.ends_with('"') {
-                val_raw[1..val_raw.len() - 1].to_owned()
-            } else {
-                val_raw.to_owned()
-            };
-
-            map.insert(key, val);
+            map.insert(key, Json::parse(val_raw)?);
         }
 
         Ok(map)
@@ -528,17 +634,17 @@ impl ResidualData {
 
     /// Construct `ResidualData` from a parsed header map and a compressed payload.
     fn from_header_map(
-        map: &HashMap<String, String>,
+        map: &HashMap<String, Json>,
         mut compressed: Vec<u8>,
         version: u32,
     ) -> Result<Self, ResidualError> {
         // version 3 is a file with exceptions, and only it
         let exceptions = match (version, map.get("exceptions")) {
-            (3, Some(v)) => match v.parse::<usize>() {
-                Ok(k) if k > 0 => k,
+            (3, Some(v)) => match v.as_usize() {
+                Some(k) if k > 0 => k,
                 _ => {
                     return Err(ResidualError::InvalidHeader(format!(
-                        "version 3 needs a positive integer exceptions, got {v}"
+                        "version 3 needs a positive integer exceptions, got {v:?}"
                     )))
                 }
             },
@@ -553,9 +659,11 @@ impl ResidualData {
             (_, None) => 0,
         };
         // Required field: method
-        let method_str = map
-            .get("method")
-            .ok_or_else(|| ResidualError::MissingField("method".to_owned()))?;
+        let method_str = match map.get("method") {
+            None => return Err(ResidualError::MissingField("method".to_owned())),
+            Some(Json::Str(m)) => m,
+            Some(other) => return Err(ResidualError::UnknownMethod(format!("{other:?}"))),
+        };
 
         let method = ResidualCompressionMethod::parse(method_str)
             .ok_or_else(|| ResidualError::UnknownMethod(method_str.clone()))?;
@@ -565,16 +673,18 @@ impl ResidualData {
         let shape = map
             .get("shape")
             .map(|v| {
-                let body = v
-                    .trim()
-                    .strip_prefix('[')
-                    .and_then(|b| b.strip_suffix(']'))
-                    .ok_or_else(|| ResidualError::InvalidHeader(format!("invalid shape {v}")))?;
-                body.split(',')
-                    .filter(|d| !d.trim().is_empty())
+                let Json::Arr(items) = v else {
+                    return Err(ResidualError::InvalidHeader(format!(
+                        "shape must be a list, got {v:?}"
+                    )));
+                };
+                items
+                    .iter()
                     .map(|d| {
-                        d.trim().parse::<usize>().map_err(|e| {
-                            ResidualError::InvalidHeader(format!("invalid shape {v}: {e}"))
+                        d.as_usize().filter(|&n| n > 0).ok_or_else(|| {
+                            ResidualError::InvalidHeader(format!(
+                                "shape entries must be positive integers, got {d:?}"
+                            ))
                         })
                     })
                     .collect::<Result<Vec<usize>, _>>()
@@ -593,8 +703,9 @@ impl ResidualData {
         let from_len = map
             .get("original_len")
             .map(|v| {
-                v.parse::<usize>()
-                    .map_err(|e| ResidualError::InvalidHeader(format!("invalid original_len: {e}")))
+                v.as_usize().ok_or_else(|| {
+                    ResidualError::InvalidHeader(format!("invalid original_len: {v:?}"))
+                })
             })
             .transpose()?;
         let original_len = match (from_shape, from_len) {
@@ -609,7 +720,15 @@ impl ResidualData {
         let shape = shape.unwrap_or_else(|| vec![original_len]);
 
         // the dtype of the original as the writer recorded it
-        let dtype = map.get("dtype").map_or("float32", String::as_str);
+        let dtype = match map.get("dtype") {
+            None => "float32",
+            Some(Json::Str(d)) => d.as_str(),
+            Some(other) => {
+                return Err(ResidualError::InvalidHeader(format!(
+                    "dtype must be a string, got {other:?}"
+                )))
+            }
+        };
         if !WRITER_DTYPES.contains(&dtype) {
             return Err(ResidualError::InvalidHeader(format!(
                 "unsupported dtype {dtype}"
@@ -617,16 +736,19 @@ impl ResidualData {
         }
 
         // Optional / method-specific fields.
-        let quant_bits = match map.get("quant_bits").map(String::as_str) {
-            None | Some("null") => None,
-            Some(v) => match v.parse::<u8>() {
-                Ok(b @ (8 | 16 | 32)) => Some(b),
-                _ => {
-                    return Err(ResidualError::UnsupportedLayout(format!(
-                        "quant_bits {v} (8, 16 and 32 are read)"
-                    )))
-                }
-            },
+        let quant_bits = match map.get("quant_bits") {
+            None | Some(Json::Null) => None,
+            Some(Json::Int(b @ (8 | 16 | 32))) => Some(*b as u8),
+            Some(Json::Int(b)) => {
+                return Err(ResidualError::UnsupportedLayout(format!(
+                    "quant_bits {b} (8, 16 and 32 are read)"
+                )))
+            }
+            Some(other) => {
+                return Err(ResidualError::InvalidHeader(format!(
+                    "quant_bits must be null or an integer, got {other:?}"
+                )))
+            }
         };
         let mut metadata = ResidualMetadata {
             quant_bits,
@@ -637,14 +759,27 @@ impl ResidualData {
             if map.contains_key("min_val") {
                 // this crate's earlier quantized container
                 metadata.legacy_container = true;
-                if let Some(v) = map.get("min_val") {
-                    metadata.min_val = v.parse().unwrap_or(0.0);
+                let number = |key: &str| match map.get(key) {
+                    None => Ok(None),
+                    Some(v) => v.as_f64().map(Some).ok_or_else(|| {
+                        ResidualError::InvalidHeader(format!("{key} must be a number, got {v:?}"))
+                    }),
+                };
+                if let Some(v) = number("min_val")? {
+                    metadata.min_val = v;
                 }
-                if let Some(v) = map.get("scale") {
-                    metadata.scale = v.parse().unwrap_or(1.0);
+                if let Some(v) = number("scale")? {
+                    metadata.scale = v;
                 }
                 if let Some(v) = map.get("bits") {
-                    metadata.bits = v.parse().unwrap_or(8);
+                    metadata.bits =
+                        v.as_usize()
+                            .and_then(|b| u8::try_from(b).ok())
+                            .ok_or_else(|| {
+                                ResidualError::InvalidHeader(format!(
+                                    "bits must be an integer, got {v:?}"
+                                ))
+                            })?;
                 }
             } else if metadata.quant_bits.is_none() {
                 // the Python reader defaults to 8 bits
@@ -659,9 +794,9 @@ impl ResidualData {
             let v = map
                 .get("base_value")
                 .ok_or(ResidualError::DeltaWithoutBase)?;
-            metadata.base_value = v
-                .parse()
-                .map_err(|e| ResidualError::InvalidHeader(format!("invalid base_value: {e}")))?;
+            metadata.base_value = v.as_f64().ok_or_else(|| {
+                ResidualError::InvalidHeader(format!("base_value must be a number, got {v:?}"))
+            })? as f32;
         }
 
         if exceptions > 0 {
