@@ -99,3 +99,5 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v"
+# a test that returns its verdict instead of asserting it never fails
+filterwarnings = ["error::pytest.PytestReturnNotNoneWarning"]

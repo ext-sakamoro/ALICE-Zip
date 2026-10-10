@@ -109,8 +109,10 @@ def test_random_bit_patterns_come_back_bit_for_bit(dtype, seed):
     n = 2000
     original = rng.integers(0, 256, n * dt.itemsize, dtype=np.uint8).view(dt.newbyteorder("<"))
     original = original.astype(dt)
-    as_float = original.astype(np.float64) if dt.kind == "f" else original.astype(np.float64)
     with np.errstate(invalid="ignore", over="ignore"):
+        # a signaling NaN is quieted by the conversion: the generated value
+        # only has to be near the original, not equal to its bits
+        as_float = original.astype(np.float64)
         near = as_float + rng.normal(0, 4, n)
     noise = rng.integers(0, 2 ** 63, n, dtype=np.uint64).view(np.float64)
     pick = rng.integers(0, 3, n)

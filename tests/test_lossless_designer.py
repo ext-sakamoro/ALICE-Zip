@@ -116,12 +116,22 @@ SIZE_INPUTS = dict(
 )
 
 
+def as_dtype(values, dtype):
+    """The input in `dtype`; integers rounded and saturated explicitly (a cast
+    of an out-of-range float to an integer gives a platform-dependent value)."""
+    dt = np.dtype(dtype)
+    if dt.kind in "iu":
+        info = np.iinfo(dt)
+        return np.clip(np.round(values), info.min, info.max).astype(dt)
+    return values.astype(dt)
+
+
 @pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int16],
                          ids=["float32", "float64", "int16"])
 @pytest.mark.parametrize("name", list(SIZE_INPUTS))
 def test_a_lossless_result_is_not_larger_than_lzma_of_the_input(name, dtype):
     # what the fallback would store; the lossless result must not be larger
-    x = SIZE_INPUTS[name].astype(dtype)
+    x = as_dtype(SIZE_INPUTS[name], dtype)
     r, out = round_trip(x)
     assert same_bits(out, x)
     assert r.total_compressed_size <= len(lzma.compress(x.tobytes(), preset=6)), r.engine_used
