@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed
+
+- `alice-zip-enterprise` (未公開) の `security::ENCRYPTED_MAGIC` を削除 暗号化した archive はこの magic を書かず、読む側もこの値を見ていなかった (どの repo にも参照が無い) 暗号化した archive の形式を識別する値として残ると、実在しない形式を示す
+
 ### Fixed
 
 - Python package の `decompress_residual` は none / lzma / zlib の residual を float64 に変換せず、保存された float32 の bit のまま返す float64 を経由すると signaling NaN が quiet NaN に変わっていた (ランダムな bit パターンでおよそ 1000 個に 2 個) header の `shape` と `original_len` が食い違えば `ValueError`

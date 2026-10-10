@@ -43,9 +43,6 @@ pub use kdf::{
 /// Security module version
 pub const SECURITY_VERSION: u8 = 1;
 
-/// Encrypted archive header magic bytes
-pub const ENCRYPTED_MAGIC: [u8; 4] = [0xAE, 0x5A, 0x45, 0x01]; // AEZ + version
-
 #[cfg(test)]
 mod tests {
     use super::*;
