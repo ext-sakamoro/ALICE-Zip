@@ -37,7 +37,7 @@ def rows():
 
 def test_the_python_reader_accepts_exactly_the_files_the_table_lists():
     table = rows()
-    assert len(table) == 69
+    assert len(table) == 102
     for name, writer, _rust, python, values in table:
         try:
             out = ResidualCompressor().decompress_residual(
@@ -102,6 +102,6 @@ def test_the_python_writer_reproduces_the_committed_files():
         "write_python_fixtures", DATA / "write_python_fixtures.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert len(module.FILES) == 28
+    assert len(module.FILES) == 40
     for name, data in module.FILES.items():
         assert decoded_payload(data) == decoded_payload((DATA / name).read_bytes()), name

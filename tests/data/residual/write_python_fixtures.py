@@ -75,6 +75,36 @@ RANDOM = np.array(random_values(), dtype=np.float32)
 for _bits in (8, 16, 32):
     write(f"quantized_rand{_bits}", M.QUANTIZED, RANDOM, bits=_bits)
 
+
+# lossless writing from the original (exceptions): the shared inputs of
+# exception_cases.txt, by dtype
+CASES = {}
+for _line in (HERE / "exception_cases.txt").read_text().splitlines():
+    if _line and not _line.startswith("#"):
+        _dt, _orig, _gen = _line.split()
+        CASES.setdefault(_dt, ([], []))
+        CASES[_dt][0].append(bytes.fromhex(_orig))
+        CASES[_dt][1].append(int(_gen, 16))
+
+
+def exception_inputs(dtype):
+    """(original array of dtype, generated float64 array) of one dtype."""
+    orig, gen = CASES[dtype]
+    original = np.frombuffer(b"".join(orig), dtype=np.dtype(dtype).newbyteorder("<"))
+    generated = np.array(gen, dtype="<u8").view("<f8")
+    return original.astype(np.dtype(dtype)), generated
+
+
+def write_original(name, method, dtype):
+    original, generated = exception_inputs(dtype)
+    r = ResidualCompressor(method=method).compress_original(original, generated)
+    FILES[f"python_{name}.bin"] = r.to_bytes()
+
+
+for _dt in CASES:
+    write_original(f"exc_{_dt}", M.LZMA, _dt)
+write_original("exc_none_float32", M.NONE, "float32")
+
 if __name__ == "__main__":
     for _name, _bytes in FILES.items():
         (HERE / _name).write_bytes(_bytes)
