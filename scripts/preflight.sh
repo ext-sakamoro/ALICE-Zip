@@ -119,6 +119,9 @@ step "ci.yml / claim-check: claim-test marker が実在の試験を指してい�
 step "ci.yml / claim-check: include の参照先が git で追跡されているか"
 ( python3 scripts/test_include_tracked.py && python3 scripts/include_tracked.py )
 
+step "ci.yml / test: Versions agree"
+( python3 scripts/test_version_check.py && python3 scripts/version_check.py )
+
 step "ci.yml / libalice: Clippy (-D warnings, all targets, codec)"
 relint
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo clippy --manifest-path libalice/Cargo.toml --all-targets --features codec -- -D warnings )
