@@ -28,32 +28,39 @@ has_toolchain() { rustup toolchain list | grep -q "^$1"; }
 #   - security-audit.yml:stub-guard:FFI panic isolation (every extern "C" fn is guarded) (no cargo / grep)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_lz77_roundtrip] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_lz77_roundtrip] (no cargo / grep)
-#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_lz77_roundtrip] (continue-on-error)
-#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_lz77_roundtrip] (no cargo / grep)
+#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_lz77_roundtrip] (needs nightly + cargo-fuzz; runner-only)
+#   - fuzz.yml:fuzz:Check the runs (crash or 0 runs = fail) [target=fuzz_lz77_roundtrip] (reads the run log)
+#   - fuzz.yml:fuzz:Report crash [target=fuzz_lz77_roundtrip] (no cargo / grep)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_lz77_decode] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_lz77_decode] (no cargo / grep)
-#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_lz77_decode] (continue-on-error)
-#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_lz77_decode] (no cargo / grep)
+#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_lz77_decode] (needs nightly + cargo-fuzz; runner-only)
+#   - fuzz.yml:fuzz:Check the runs (crash or 0 runs = fail) [target=fuzz_lz77_decode] (reads the run log)
+#   - fuzz.yml:fuzz:Report crash [target=fuzz_lz77_decode] (no cargo / grep)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_dictionary] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_dictionary] (no cargo / grep)
-#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_dictionary] (continue-on-error)
-#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_dictionary] (no cargo / grep)
+#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_dictionary] (needs nightly + cargo-fuzz; runner-only)
+#   - fuzz.yml:fuzz:Check the runs (crash or 0 runs = fail) [target=fuzz_dictionary] (reads the run log)
+#   - fuzz.yml:fuzz:Report crash [target=fuzz_dictionary] (no cargo / grep)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_bpe] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_bpe] (no cargo / grep)
-#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_bpe] (continue-on-error)
-#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_bpe] (no cargo / grep)
+#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_bpe] (needs nightly + cargo-fuzz; runner-only)
+#   - fuzz.yml:fuzz:Check the runs (crash or 0 runs = fail) [target=fuzz_bpe] (reads the run log)
+#   - fuzz.yml:fuzz:Report crash [target=fuzz_bpe] (no cargo / grep)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_zlib_roundtrip] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_zlib_roundtrip] (no cargo / grep)
-#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_zlib_roundtrip] (continue-on-error)
-#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_zlib_roundtrip] (no cargo / grep)
+#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_zlib_roundtrip] (needs nightly + cargo-fuzz; runner-only)
+#   - fuzz.yml:fuzz:Check the runs (crash or 0 runs = fail) [target=fuzz_zlib_roundtrip] (reads the run log)
+#   - fuzz.yml:fuzz:Report crash [target=fuzz_zlib_roundtrip] (no cargo / grep)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_generators] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_generators] (no cargo / grep)
-#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_generators] (continue-on-error)
-#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_generators] (no cargo / grep)
+#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_generators] (needs nightly + cargo-fuzz; runner-only)
+#   - fuzz.yml:fuzz:Check the runs (crash or 0 runs = fail) [target=fuzz_generators] (reads the run log)
+#   - fuzz.yml:fuzz:Report crash [target=fuzz_generators] (no cargo / grep)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_fourier_parity] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_fourier_parity] (no cargo / grep)
-#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_fourier_parity] (continue-on-error)
-#   - fuzz.yml:fuzz:Report crash (informational) [target=fuzz_fourier_parity] (no cargo / grep)
+#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_fourier_parity] (needs nightly + cargo-fuzz; runner-only)
+#   - fuzz.yml:fuzz:Check the runs (crash or 0 runs = fail) [target=fuzz_fourier_parity] (reads the run log)
+#   - fuzz.yml:fuzz:Report crash [target=fuzz_fourier_parity] (no cargo / grep)
 
 need actionlint "brew install actionlint"
 need cargo-audit "cargo install cargo-audit --locked"
@@ -240,6 +247,9 @@ step "security-audit.yml / stub-guard: Detect TODO / FIXME / XXX / HACK (informa
     echo "✓ No TODO/FIXME/XXX/HACK"
   fi
 )
+
+step "fuzz.yml / fuzz: Test the run-count reader"
+( python3 scripts/test_fuzz_runs.py )
 
 step "fuzz.yml / fuzz: Build fuzz target [target=fuzz_lz77_roundtrip]"
 if has_toolchain nightly && cargo +nightly fuzz --version >/dev/null 2>&1; then
