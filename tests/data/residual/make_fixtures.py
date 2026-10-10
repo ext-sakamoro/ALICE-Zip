@@ -462,46 +462,95 @@ for _name, (_text, _payload) in V4_REFUSED.items():
 
 
 # ---------------------------------------------------------------------------
-# Which header keys each version takes: header_gating.txt, rows
-# `file key version verdict`, read by both readers (ResidualData.from_bytes
-# alone; the verdict is about the header). A base file of each version gets
-# one key added (or, for a key its version needs, removed).
-#   exceptions      version 3 (> 0) and 4 (>= 0) only
-#   residual_dtype  version 4 only
-#   quant_bits      null everywhere; an integer refused with exceptions (3, 4)
-#   original_len / base_value / min_val  numbers, read where they apply and
-#                   otherwise left alone, in every version
-_GATE_BASES = {2: (_BASE, _P4), 3: (_EXC, _EXC_BLOCK), 4: (_V4, _V4_STREAM + _V4_BLOCK)}
-_GATE_KEYS = [
-    ("exceptions", '"exceptions":1', {2: "refuse"}),
-    ("residual_dtype_float32", '"residual_dtype":"float32"', {2: "refuse", 3: "refuse"}),
-    ("residual_dtype_float64", '"residual_dtype":"float64"', {2: "refuse", 3: "refuse"}),
-    ("quant_bits_8", None, {2: "accept", 3: "refuse", 4: "refuse"}),
-    ("original_len", '"original_len":4', {2: "accept", 3: "accept", 4: "accept"}),
-    ("base_value", '"base_value":5.0', {2: "accept", 3: "accept", 4: "accept"}),
-    ("min_val", '"min_val":4', {2: "accept", 3: "accept", 4: "accept"}),
-    ("without_exceptions", None, {3: "refuse", 4: "refuse"}),
-    ("without_residual_dtype", None, {4: "refuse"}),
-]
+# Which header values each version takes: header_gating.txt, generated as a
+# matrix (key x JSON value kind x version), each cell's verdict from the spec
+# below (not from a reader). Both readers build each file from the row's
+# header and its version's base payload and must give the verdict
+# (ResidualData.from_bytes alone).
+#
+# Spec:
+# - the header is a flat object: an object value, or an array holding an
+#   array or an object, is refused; a key given twice is refused
+# - an unknown key with a scalar or an array of scalars is ignored
+# - every known key is type-checked in every version, whether or not it
+#   applies there: method / dtype / residual_dtype strings, shape an array of
+#   positive integers, version / original_len / exceptions / bits integers,
+#   base_value / min_val / scale numbers, quant_bits null or 8 / 16 / 32
+# - exceptions only in versions 3 and 4, residual_dtype only in version 4
+GATE_BASES = {
+    2: ('{"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":2}', _P4),
+    3: (_EXC, _EXC_BLOCK),
+    4: (_V4, _V4_STREAM + _V4_BLOCK),
+}
+GATE_KEYS = ["method", "shape", "dtype", "quant_bits", "version", "original_len",
+             "base_value", "min_val", "scale", "bits", "exceptions", "residual_dtype", "x"]
+GATE_KINDS = ["str", "int", "float", "bool", "null", "array", "object", "array_array",
+              "array_object"]
+
+
+def _members(text):
+    return json.loads(text, object_pairs_hook=lambda pairs: pairs)
+
+
+def _value(kind, key, base):
+    current = dict(base).get(key)
+    if kind == "str":
+        return json.dumps(current if isinstance(current, str) else "x")
+    if kind == "int":
+        return str(current) if type(current) is int else "4"
+    return {"float": "4.5", "bool": "true", "null": "null", "array": "[4]",
+            "object": '{"a":1}', "array_array": "[[4]]", "array_object": '[{"a":1}]'}[kind]
+
+
+def _gate_verdict(key, kind, version):
+    if kind in ("object", "array_array", "array_object"):
+        return "refuse"
+    if key == "x":
+        return "accept"
+    if key == "exceptions" and version == 2 or key == "residual_dtype" and version != 4:
+        return "refuse"
+    ok = {
+        "method": {"str"}, "dtype": {"str"}, "residual_dtype": {"str"}, "shape": {"array"},
+        "original_len": {"int"}, "exceptions": {"int"}, "bits": {"int"},
+        "base_value": {"int", "float"}, "min_val": {"int", "float"},
+        "scale": {"int", "float"}, "quant_bits": {"null"},
+    }
+    if key == "version":
+        # the int kind keeps the base's own version
+        return "accept" if kind == "int" else "refuse"
+    return "accept" if kind in ok[key] else "refuse"
+
+
 _gate_rows = []
-for _key, _member, _verdicts in _GATE_KEYS:
-    for _version, _verdict in sorted(_verdicts.items()):
-        _text, _payload = _GATE_BASES[_version]
-        if _key == "quant_bits_8":
-            _new = _text.replace('"quant_bits":null', '"quant_bits":8')
-        elif _key == "without_exceptions":
-            _new = re.sub(r',"exceptions":\d+', "", _text)
-        elif _key == "without_residual_dtype":
-            _new = _text.replace(',"residual_dtype":"float64"', "")
-        else:
-            _new = _text[:-1] + "," + _member + "}"
-        assert _new != _text, (_key, _version)
-        _name = f"gate_{_key}_v{_version}"
-        _raw(_name, _new, _payload)
-        _gate_rows.append(f"residual_{_name}.bin {_key} {_version} {_verdict}")
+for _version, (_text, _payload) in GATE_BASES.items():
+    _base = _members(_text)
+    for _key in GATE_KEYS:
+        for _kind in GATE_KINDS:
+            _v = _value(_kind, _key, _base)
+            _ms = [(k, json.dumps(v, separators=(",", ":"))) for k, v in _base if k != _key]
+            _ms.append((_key, _v))
+            _header = "{" + ",".join(f'"{k}":{v}' for k, v in _ms) + "}"
+            _gate_rows.append(f"{_version} {_gate_verdict(_key, _kind, _version)} "
+                              f"{_key}:{_kind} {_header}")
+    # a key given twice, with the same and with another value
+    for _key in ["version", "exceptions", "method", "x"]:
+        _current = dict(_base).get(_key)
+        _same = json.dumps(_current if _current is not None else 1)
+        _other = {"version": "3" if _version != 3 else "4", "exceptions": "7",
+                  "method": '"lzma"', "x": "2"}[_key]
+        for _tag, _second in (("same", _same), ("other", _other)):
+            _ms = [(k, json.dumps(v, separators=(",", ":"))) for k, v in _base]
+            if _key not in dict(_base):
+                _ms.append((_key, _same))
+            _ms.append((_key, _second))
+            _header = "{" + ",".join(f'"{k}":{v}' for k, v in _ms) + "}"
+            _gate_rows.append(f"{_version} refuse {_key}:duplicate_{_tag} {_header}")
 
 with open(HERE / "header_gating.txt", "w") as f:
-    f.write("# file | key | version | verdict of ResidualData.from_bytes (both readers)\n"
-            "# generated by make_fixtures.py\n")
+    f.write("# Header values each version takes (generated by make_fixtures.py).\n"
+            "# base <version> <payload hex>: the payload a row's header is put in front of\n"
+            "# <version> <verdict> <key:kind> <header>: verdict of ResidualData.from_bytes\n")
+    for _version, (_text, _payload) in GATE_BASES.items():
+        f.write(f"base {_version} {_payload.hex()}\n")
     for _row in _gate_rows:
         f.write(_row + "\n")
