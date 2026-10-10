@@ -99,6 +99,23 @@ jobs:
           cargo test --target wasm32-wasip1 --test container_oracle 2>&1 | tee wasm-test.log
           sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' wasm-test.log | grep -E 'test result: ok\. [1-9][0-9]* passed'
 
+  example:
+    name: compression_ratio example (runs; the xor rows are bit-exact)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # the README's ratios come from this example; it must run to the end and
+      # its law + xor residual table must report every row bit-exact
+      - name: Run the example the README numbers come from
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo run --release --example compression_ratio --features lzma | tee example.txt
+          python3 scripts/example_check.py example.txt
+
   clippy:
     name: Clippy (-D warnings)
     runs-on: ubuntu-latest
