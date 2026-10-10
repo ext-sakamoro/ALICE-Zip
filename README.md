@@ -159,7 +159,9 @@ restored = designer.decompress(result)   # same dtype, same bytes as data
   input, the LZMA result is returned instead; so is a dtype the residual
   cannot carry (complex, …). <!-- claim-test: test_a_lossless_result_is_not_larger_than_lzma_of_the_input -->
 - `quantize_residual=8` / `16` is lossy (`is_lossless` is `False`): each value
-  is within half a quantisation step. <!-- claim-test: test_a_quantized_residual_is_off_by_at_most_half_a_step -->
+  is within half a quantisation step, plus the rounding of the residual stored
+  as `float32` and of the output to its dtype (half a unit in the last place of
+  each). <!-- claim-test: test_a_quantized_residual_is_off_by_at_most_half_a_step -->
 - A result made by an earlier version (a `float32` residual, which was not
   lossless) is refused by `decompress`; compress the input again, or pass
   `allow_approximate=True` to read its approximate values. <!-- claim-test: test_a_result_of_the_earlier_residual_path_is_refused -->
