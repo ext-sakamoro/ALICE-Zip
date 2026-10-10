@@ -104,10 +104,20 @@ def test_its_approximate_values_are_read_when_asked_for():
     assert np.allclose(out, x, atol=1e-4)
 
 
-SIZE_INPUTS = dict(INPUTS, scaled=np.sin(T) * 1e30)
+# inputs where the procedural result with its residual is larger than LZMA
+# of the input (repetitive or rounded values LZMA finds, a noisy fit), as
+# well as ones where it is smaller
+SIZE_INPUTS = dict(
+    INPUTS,
+    scaled=np.sin(T) * 1e30,
+    rounded=np.round(np.sin(T) * 100),
+    periodic=np.tile(np.sin(np.linspace(0, 2 * np.pi, 50)), 40) * 100,
+    noisy=np.sin(T) * 100 + np.random.default_rng(1).normal(0, 0.5, 2000),
+)
 
 
-@pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["float32", "float64"])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int16],
+                         ids=["float32", "float64", "int16"])
 @pytest.mark.parametrize("name", list(SIZE_INPUTS))
 def test_a_lossless_result_is_not_larger_than_lzma_of_the_input(name, dtype):
     # what the fallback would store; the lossless result must not be larger
@@ -122,7 +132,10 @@ def test_a_float64_input_keeps_its_residual_in_float64():
     assert r.engine_used == CompressionEngine.PROCEDURAL
     rd = ResidualData.from_bytes(r.residual_data)
     assert rd.residual_dtype == "float64"
-    assert len(rd.exception_positions) == 0
+    # only where o - g is not exact (near the zero crossings, where the two
+    # are not within a factor of 2): 18 of 2000; a float32 residual keeps
+    # almost every value as an exception
+    assert len(rd.exception_positions) < 40
 
 
 def test_a_dtype_the_residual_cannot_carry_falls_back_to_lzma():

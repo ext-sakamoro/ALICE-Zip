@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use alice_core::residual::{decompress, ResidualData, ResidualError};
+use alice_core::residual::{decompress, decompress_f64, ResidualData, ResidualError};
 
 const VALUES: [u32; 4] = [0x40A0_0000, 0x40B0_0000, 0x40C0_0000, 0x4080_0000];
 const SPECIAL11: [u32; 11] = [
@@ -74,7 +74,16 @@ fn the_rust_reader_accepts_exactly_the_files_the_table_lists() {
         let c: Vec<&str> = line.split_whitespace().collect();
         let (name, writer, rust, values) = (c[0], c[1], c[2], c[4]);
         let bytes = std::fs::read(dir().join(name)).unwrap();
-        let read = ResidualData::from_bytes(&bytes).and_then(|r| decompress(&r));
+        // a float64 residual (version 4) is read with decompress_f64
+        let read = ResidualData::from_bytes(&bytes)
+            .and_then(|r| decompress_f64(&r).map(|_| r))
+            .and_then(|r| {
+                if r.metadata.residual_f64 {
+                    Ok(Vec::new())
+                } else {
+                    decompress(&r)
+                }
+            });
         assert_eq!(
             read.is_ok(),
             rust == "accept",
