@@ -1098,17 +1098,24 @@ fn f64_to_f16_bits(x: f64) -> u16 {
     }
     // below 2^-14 the half is subnormal: a multiple of 2^-24 (scaling by a
     // power of two is exact, so the only rounding is round_ties_even)
-    if a < 2f64.powi(-14) {
-        return sign | (a * 2f64.powi(24)).round_ties_even() as u16;
+    if a < pow2(-14) {
+        return sign | (a * pow2(24)).round_ties_even() as u16;
     }
     let exp = ((a.to_bits() >> 52) & 0x7FF) as i32 - 1023;
-    let mut m = (a * 2f64.powi(10 - exp)).round_ties_even() as u16; // 1024..=2048
+    let mut m = (a * pow2(10 - exp)).round_ties_even() as u16; // 1024..=2048
     let mut e = exp + 15;
     if m == 2048 {
         m = 1024;
         e += 1;
     }
     sign | ((e as u16) << 10) | (m - 1024)
+}
+
+/// `2^e` for a normal `f64` exponent, built from its bits (exact).
+#[allow(clippy::cast_sign_loss)]
+fn pow2(e: i32) -> f64 {
+    debug_assert!((-1022..=1023).contains(&e));
+    f64::from_bits(((e + 1023) as u64) << 52)
 }
 
 /// The quantized form the Python writer emits: `min: f64 · scale: f64`
