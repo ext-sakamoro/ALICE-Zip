@@ -100,4 +100,12 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v"
 # a test that returns its verdict instead of asserting it never fails
-filterwarnings = ["error::pytest.PytestReturnNotNoneWarning"]
+# a numeric warning (an invalid cast, an overflow), a resource left open and
+# an exception raised where pytest cannot report it are errors: each one is a
+# test (or code) depending on something it does not control
+filterwarnings = [
+    "error::pytest.PytestReturnNotNoneWarning",
+    "error::RuntimeWarning",
+    "error::ResourceWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
