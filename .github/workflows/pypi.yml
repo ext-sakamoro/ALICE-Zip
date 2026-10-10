@@ -1,0 +1,75 @@
+# Publishes the Python package `alice-zip` (pyproject.toml, pure Python) to
+# PyPI by trusted publishing: no token or secret is stored anywhere; PyPI
+# trusts this workflow file in this repository with the environment `pypi`.
+#
+# Trigger: a tag `py-alice-zip-v<version>` whose <version> equals `version`
+# in pyproject.toml (scripts/pypi_tag_check.py). The tags `v<version>` and
+# `alice-zip-cli-v<version>` are the Rust crates on crates.io and publish
+# nothing here; the wheel `libalice` has its own workflow
+# (pypi-libalice.yml, tag `py-libalice-v<version>`).
+#
+# The workflow never commits. Only the publish job holds `id-token: write`.
+name: PyPI (alice-zip)
+
+on:
+  push:
+    tags: ['py-alice-zip-v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-alice-zip-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and check the sdist and wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - name: The tag names alice-zip and its version is pyproject.toml's
+        run: |
+          python3 scripts/test_pypi_tag_check.py
+          out=$(python3 scripts/pypi_tag_check.py "$GITHUB_REF_NAME")
+          printf '%s\n' "$out"
+          [ "$(printf '%s\n' "$out" | tail -n 1)" = alice-zip ] \
+            || { echo "::error::$GITHUB_REF_NAME does not name alice-zip"; exit 1; }
+      - name: Versions agree (alice_zip.__version__ = pyproject.toml)
+        run: python3 scripts/version_check.py
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build --outdir dist .
+      - name: One sdist and one wheel, Apache-2.0 with LICENSE-APACHE and NOTICE inside
+        run: |
+          n_whl=$(find dist -maxdepth 1 -name 'alice_zip-*.whl' | wc -l)
+          n_sdist=$(find dist -maxdepth 1 -name 'alice_zip-*.tar.gz' | wc -l)
+          [ "$n_whl" -eq 1 ] && [ "$n_sdist" -eq 1 ] \
+            || { echo "::error::expected 1 wheel and 1 sdist, got $n_whl / $n_sdist"; ls -l dist; exit 1; }
+          python3 scripts/dist_license_check.py 'dist/*.whl' 'dist/*.tar.gz'
+          twine check --strict dist/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: alice-zip-dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: alice-zip-dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

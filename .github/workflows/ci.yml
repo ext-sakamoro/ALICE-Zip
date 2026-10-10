@@ -65,6 +65,7 @@ jobs:
           PY=$(command -v python3 || command -v python)
           "$PY" scripts/test_version_check.py
           "$PY" scripts/version_check.py
+          "$PY" scripts/test_pypi_tag_check.py
       # Apache-2.0 everywhere it is stated, NOTICE + LICENSE-APACHE shipped in
       # both crates (libalice carries identical copies); 0 comparisons fail
       - name: Licence agrees and its files are packaged
