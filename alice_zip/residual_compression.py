@@ -420,8 +420,23 @@ class ResidualCompressor:
         if original.shape != generated.shape:
             raise ValueError(f"Shape mismatch: {original.shape} vs {generated.shape}")
 
-        # Compute difference in float64 for precision
-        residual = original.astype(np.float64) - generated.astype(np.float64)
+        # Compute difference in float64 for precision; the NaN of a
+        # difference is chosen by rule rather than by the hardware (x86 gives
+        # inf - inf a negative NaN, arm64 a positive one): the original's NaN
+        # with the quiet bit set, else the generated value's, else (inf - inf)
+        # 0x7FF8000000000000
+        o = np.asarray(original, dtype=np.float64)
+        g = np.asarray(generated, dtype=np.float64)
+        with np.errstate(invalid="ignore", over="ignore"):
+            residual = o - g
+        nan = np.isnan(residual)
+        if nan.any():
+            quiet = np.uint64(1 << 51)
+            ob = o[nan].view(np.uint64)
+            gb = g[nan].view(np.uint64)
+            bits = np.where(np.isnan(o[nan]), ob | quiet,
+                            np.where(np.isnan(g[nan]), gb | quiet, _QUIET64))
+            residual[nan] = bits.view(np.float64)
 
         return residual
 

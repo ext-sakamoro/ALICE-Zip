@@ -456,45 +456,25 @@ class ProceduralCompressionDesigner:
                     return fallback
                 return result
 
-            # Calculate residual
-            residual = data.astype(np.float64) - regenerated.astype(np.float64)
-
-            # Check if residual is significant
-            if np.max(np.abs(residual)) > 1e-10:
-                # Quantize residual (lossy)
-                if quantize_residual is not None:
-                    # Normalize residual to [0, 1] range
-                    r_min, r_max = residual.min(), residual.max()
-                    r_range = r_max - r_min if r_max > r_min else 1.0
-                    normalized = (residual - r_min) / r_range
-
-                    if quantize_residual == 8:
-                        quantized = (normalized * 255).astype(np.uint8)
-                        residual_bytes = quantized.tobytes()
-                    elif quantize_residual == 16:
-                        quantized = (normalized * 65535).astype(np.uint16)
-                        residual_bytes = quantized.tobytes()
-                    else:
-                        residual_bytes = residual.astype(np.float32).tobytes()
-
-                    # Store quantization metadata
-                    result.metadata['residual_quantized'] = quantize_residual
-                    result.metadata['residual_min'] = float(r_min)
-                    result.metadata['residual_max'] = float(r_max)
-                    result.is_lossless = False  # Quantization is lossy
-                else:
-                    residual_bytes = residual.astype(np.float32).tobytes()
-                    result.is_lossless = True
-
-                compressed_residual = lzma.compress(residual_bytes, preset=6)
-
-                # Update result
-                result.residual_data = compressed_residual
-                result.error_metric = 0.0
-            else:
-                # No significant residual - already lossless
-                result.is_lossless = True
-                result.error_metric = 0.0
+            # quantized residual (lossy): ResidualCompressor's quantized form
+            # (rounded half to even, xz), in a ResidualData file like the
+            # lossless one; reconstruct rebuilds the approximate values
+            from .residual_compression import (
+                ResidualCompressionMethod, ResidualCompressor, _WRITER_DTYPES)
+            if data.dtype.name not in _WRITER_DTYPES:
+                return compress_with_lzma(data)
+            rc = ResidualCompressor(method=ResidualCompressionMethod.QUANTIZED,
+                                    quantization_bits=quantize_residual)
+            residual = rc.compute_residual(data, regenerated.astype(np.float64))
+            if not np.all(np.isfinite(residual)):
+                # values that are not finite cannot be quantized
+                return compress_with_lzma(data)
+            result.residual_data = rc.compress_residual(
+                residual, original_dtype=data.dtype.name).to_bytes()
+            result.metadata['residual_format'] = RESIDUAL_FORMAT
+            result.metadata['residual_quantized'] = quantize_residual
+            result.is_lossless = False
+            result.error_metric = 0.0
 
         return result
 
