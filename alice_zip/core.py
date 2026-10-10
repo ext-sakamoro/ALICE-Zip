@@ -492,6 +492,10 @@ class ALICEZip:
     # gigabytes, so the reader decodes at most this much; lower it on an
     # instance (`zipper.MAX_OUTPUT_SIZE = n`) to bound memory further.
     MAX_OUTPUT_SIZE = 4 * 1024 * 1024 * 1024
+    # Decoder memory the LZMA fallback reader allows liblzma (the stream's
+    # dictionary plus a little): dictionaries of up to 64 MiB, as the Rust
+    # reader accepts; the writer uses 8 MiB.
+    MAX_LZMA_DECODER_MEMORY = 80 * 1024 * 1024
     # Soft limit for warning about large files (1GB)
     LARGE_FILE_WARNING_SIZE = 1024 * 1024 * 1024
     # Maximum JSON payload size (for procedural parameters) - 100MB should be plenty
@@ -958,7 +962,9 @@ class ALICEZip:
         dtype = metadata.get('dtype', 'uint8')
 
         # Decompress the xz stream, at most original_size + 1 bytes
-        decoder = lzma.LZMADecompressor(format=lzma.FORMAT_XZ)
+        # memlimit bounds the dictionary the stream asks for: the writer
+        # (preset 6) uses 8 MiB; a header can ask for up to 4 GiB.
+        decoder = lzma.LZMADecompressor(format=lzma.FORMAT_XZ, memlimit=self.MAX_LZMA_DECODER_MEMORY)
         try:
             raw_bytes = decoder.decompress(payload_data[4 + meta_len:], max_length=original_size + 1)
         except lzma.LZMAError as e:

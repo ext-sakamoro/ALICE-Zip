@@ -1075,11 +1075,13 @@ pub struct LegacyArray {
 /// to megabytes, so the caller states how large a result it accepts:
 /// `limit` bounds `original_size`. Before anything is decoded, the xz
 /// container is parsed (one stream with a CRC-64 check, one block whose only
-/// filter is LZMA2, its index and footer, nothing after it, as the writer
-/// produces it) and the LZMA2 chunk headers are read; the unpacked sizes they
-/// state must add up to `original_size`. The decoder then produces each
-/// chunk only up to its stated size, so memory stays proportional to
-/// `original_size` (at most `limit`), whatever the payload claims.
+/// filter is LZMA2 with a dictionary of at most 64 MiB, its index and
+/// footer, nothing after it, as the writer produces it) and the LZMA2 chunk
+/// headers are read; the unpacked sizes they state must add up to
+/// `original_size`. The decoder then produces each chunk only up to its
+/// stated size. It holds the decoded bytes in its own buffer and copies them
+/// out at the end, so peak memory is about twice `original_size`, at most
+/// about twice `limit`, whatever the payload claims.
 ///
 /// Procedural, media and texture payloads store generator parameters that
 /// only the Python package regenerates; they are refused here.
@@ -1165,8 +1167,10 @@ mod xz {
     /// Stream flags: check type 0x04 (CRC-64).
     const FLAGS_CRC64: [u8; 2] = [0x00, 0x04];
     const FILTER_LZMA2: u64 = 0x21;
-    /// Largest LZMA2 dictionary size byte the format defines (4 GiB − 1).
-    const MAX_DICT_BYTE: u8 = 40;
+    /// Largest LZMA2 dictionary size byte accepted: 28 is 64 MiB. The
+    /// writer (preset 6) uses 22, 8 MiB; the format allows up to 40 (4 GiB),
+    /// which a decoder that allocates the dictionary would have to reserve.
+    const MAX_DICT_BYTE: u8 = 28;
 
     pub(super) fn crc32(b: &[u8]) -> u32 {
         Crc::<u32>::new(&CRC_32_ISO_HDLC).checksum(b)

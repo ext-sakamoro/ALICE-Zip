@@ -472,3 +472,21 @@ fn a_check_type_other_than_crc64_is_refused() {
         assert_eq!(decode(file), Err(ContainerError::LegacyPayload));
     }
 }
+
+#[test]
+fn the_dictionary_size_is_bounded_at_64_mib() {
+    // Dictionary size byte (block header offset 4): the writer uses 22
+    // (8 MiB); 28 is 64 MiB, 29 is 96 MiB, 40 is 4 GiB.
+    assert_eq!(F64[xz_at(F64) + 12 + 4], 22);
+    assert_eq!(
+        decode(&with_block_header_byte(F64, 4, 28)).unwrap().data,
+        F64_ORIG
+    );
+    for b in [29, 40] {
+        assert_eq!(
+            decode(&with_block_header_byte(F64, 4, b)),
+            Err(ContainerError::LegacyPayload),
+            "dict byte {b}"
+        );
+    }
+}

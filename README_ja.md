@@ -271,7 +271,7 @@ SHA-256 で識別する section は既存の形式の bytes をそのまま運�
   LZMA に退避した payload (元データをそのまま再現する唯一の種類) を復元し、header の
   `original_size` と `original_hash` に照合する 受け入れる `original_size` の上限は
   呼び出し側が渡し、展開の前に xz の chunk の大きさを `original_size` と照合するので、
-  小さな payload がメモリ上で膨らむことはない procedural の payload は生成器の
+  小さな payload がメモリ上で膨らむことはない (最大のメモリは受け入れた大きさのおよそ 2 倍) procedural の payload は生成器の
   parameter なので Python package だけが復元する <!-- claim-test: python_lzma_fallback_files_decode_to_the_original_bytes -->
 
 <!-- claim-test: every_single_bit_flip_is_refused_by_the_expected_check -->

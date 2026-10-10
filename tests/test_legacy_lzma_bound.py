@@ -7,6 +7,7 @@ import lzma
 import pathlib
 import struct
 import tracemalloc
+import zlib
 
 import pytest
 
@@ -87,3 +88,30 @@ def test_a_check_type_other_than_crc64_is_refused(check):
     v[COMPRESSED_SIZE_AT:COMPRESSED_SIZE_AT + 8] = struct.pack("<Q", len(v) - PAYLOAD_AT)
     with pytest.raises(ValueError, match="the writer uses CRC-64"):
         ALICEZip().decompress(bytes(v))
+
+
+def with_dict_byte(file, value):
+    """`file` with the xz block header's dictionary size byte set to `value`
+    and the block header CRC-32 recomputed."""
+    meta_len = struct.unpack("<I", file[PAYLOAD_AT:PAYLOAD_AT + 4])[0]
+    h = PAYLOAD_AT + 4 + meta_len + 12
+    size = (file[h] + 1) * 4
+    v = bytearray(file)
+    v[h + 4] = value
+    v[h + size - 4:h + size] = struct.pack("<I", zlib.crc32(bytes(v[h:h + size - 4])))
+    return bytes(v)
+
+
+def test_the_dictionary_size_is_bounded_at_64_mib():
+    f64 = read("legacy_lzma_f64", "alice")
+    assert with_dict_byte(f64, 22) == f64  # the writer's 8 MiB
+    assert ALICEZip().decompress(with_dict_byte(f64, 28)).tobytes() == read("legacy_lzma_f64", "orig")
+    for b in (29, 40):  # 96 MiB, 4 GiB
+        tracemalloc.start()
+        try:
+            with pytest.raises(ValueError, match="LZMA decompression failed"):
+                ALICEZip().decompress(with_dict_byte(f64, b))
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        assert peak < 16 * 1024 * 1024, f"dict byte {b}: peak {peak}"
