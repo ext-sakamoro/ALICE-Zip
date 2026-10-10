@@ -4,6 +4,8 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-11
+
 ### ライセンス
 
 - 3.0.0 から Apache License 2.0 (2.7.0 までは MIT) crate と wheel に `LICENSE-APACHE` と `NOTICE` を入れる (repository の root と同じ内容の写し)

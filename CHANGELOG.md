@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-11
+
 ### ライセンス
 
 - 本 release から Apache License 2.0 だけ (Rust crate `alice-zip` 0.9.0、libalice 3.0.0 の crate `alice-zip-cli` と wheel `libalice`、Python package `alice-zip` 2.0.0、bindings) `LICENSE-MIT` を削除し、`NOTICE` を足した 再配布には `LICENSE-APACHE` と `NOTICE` を添える (application の画面に出す必要は無い) crate と wheel / sdist にも両方を入れる (`libalice/` には同じ内容の写しを置く、`scripts/license_check.py` が一致を確かめる)
