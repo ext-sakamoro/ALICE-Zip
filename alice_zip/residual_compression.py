@@ -20,7 +20,7 @@ import logging
 import lzma
 import struct
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, Tuple, Dict, Any
 import numpy as np
@@ -63,6 +63,10 @@ class ResidualData:
     # the payload is the Rust writer's earlier quantized container (its header
     # records min_val / scale / bits)
     rust_container: bool = False
+    # positions (ascending) whose original is kept as it is, and the original
+    # elements there (little-endian bytes of the dtype); see compress_original
+    exception_positions: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.uint64))
+    exception_bytes: bytes = b""
 
     # Maximum header size - prevents DoS via malformed header_len
     # 10MB is generous for JSON metadata; larger payloads should use binary format
@@ -90,12 +94,21 @@ class ResidualData:
             'quant_bits': self.quantization_bits,
             'version': 2  # Version 2 uses 4-byte header length
         }
+        k = len(self.exception_positions)
+        block = b""
+        if k:
+            # exceptions: version 3, and a raw block after the compressed
+            # residual (positions as u64, then the original elements)
+            header['version'] = 3
+            header['exceptions'] = k
+            block = np.asarray(self.exception_positions, dtype='<u8').tobytes() + \
+                self.exception_bytes
         header_json = json.dumps(header, separators=(',', ':')).encode('utf-8')
 
         # Use 4-byte integer for header length (supports up to 4GB headers)
         header_len = struct.pack('<I', len(header_json))
 
-        return header_len + header_json + self.compressed_data
+        return header_len + header_json + self.compressed_data + block
 
     @classmethod
     def from_bytes(cls, data: bytes) -> 'ResidualData':
@@ -154,13 +167,13 @@ class ResidualData:
                         raise ValueError(
                             f"Residual header version must be a JSON integer, got {version!r}"
                         )
-                    if version > 2:
+                    if version > 3:
                         raise ValueError(
-                            f"Unsupported residual header version {version} (1 and 2 exist)"
+                            f"Unsupported residual header version {version} (1 to 3 exist)"
                         )
-                    if version == 2:
+                    if version in (2, 3):
                         compressed_data = data[4+header_len_v2:]
-                        return cls._create_from_header(header, compressed_data)
+                        return cls._create_from_header(header, compressed_data, version)
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     pass  # Fall through to v1 format
         else:
@@ -201,8 +214,16 @@ class ResidualData:
         return cls._create_from_header(header, compressed_data)
 
     @classmethod
-    def _create_from_header(cls, header: Dict[str, Any], compressed_data: bytes) -> 'ResidualData':
+    def _create_from_header(cls, header: Dict[str, Any], compressed_data: bytes,
+                            version: int = 2) -> 'ResidualData':
         """Create instance from parsed header."""
+        # version 3 is a file with exceptions, and only it
+        k = header.get('exceptions')
+        if version == 3:
+            if isinstance(k, bool) or not isinstance(k, int) or k <= 0:
+                raise ValueError(f"version 3 needs a positive integer 'exceptions', got {k!r}")
+        elif 'exceptions' in header:
+            raise ValueError("'exceptions' is only read with version 3")
         # the Rust writer before the header keys were aligned recorded only
         # "original_len" (one dimension of float32)
         if 'shape' not in header and 'original_len' in header:
@@ -243,6 +264,24 @@ class ResidualData:
         if not all(isinstance(d, int) and d > 0 for d in shape):
             raise ValueError(f"Invalid shape values: {shape}")
 
+        positions = np.zeros(0, dtype=np.uint64)
+        exception_bytes = b""
+        if k:
+            if method == ResidualCompressionMethod.QUANTIZED or header.get('quant_bits') is not None:
+                raise ValueError("a quantized residual cannot keep exceptions (it is not lossless)")
+            width = np.dtype(header['dtype']).itemsize
+            need = k * (8 + width)
+            if len(compressed_data) < need:
+                raise ValueError(f"{k} exceptions need {need} bytes, {len(compressed_data)} follow")
+            block = compressed_data[len(compressed_data) - need:]
+            compressed_data = compressed_data[:len(compressed_data) - need]
+            positions = np.frombuffer(block[:8 * k], dtype='<u8').astype(np.uint64)
+            n = int(np.prod(shape))
+            if np.any(positions[1:] <= positions[:-1]) or int(positions[-1]) >= n:
+                raise ValueError(
+                    f"exception positions must ascend strictly and stay below {n}")
+            exception_bytes = block[8 * k:]
+
         return cls(
             method=method,
             compressed_data=compressed_data,
@@ -252,6 +291,8 @@ class ResidualData:
             quantization_bits=header.get('quant_bits'),
             base_value=header.get('base_value'),
             rust_container=(method == ResidualCompressionMethod.QUANTIZED and 'min_val' in header),
+            exception_positions=positions,
+            exception_bytes=exception_bytes,
         )
 
 
@@ -468,25 +509,58 @@ class ResidualCompressor:
         if generated.shape != residual.shape:
             raise ValueError(f"Shape mismatch: {generated.shape} vs {residual.shape}")
 
-        # Reconstruct (the NaN of a sum is chosen by rule, see _sum_nan_bits)
-        generated = np.asarray(generated, dtype=np.float64)
-        with np.errstate(invalid="ignore"):
-            reconstructed = generated + residual.astype(np.float64)
-        nan = np.isnan(reconstructed)
-
-        # Cast back to original dtype
         target_dtype = np.dtype(residual_data.original_dtype)
+        out, invalid = _rebuild(np.asarray(generated, dtype=np.float64).ravel(),
+                                residual.ravel(), target_dtype)
+        positions = residual_data.exception_positions
+        if len(positions):
+            idx = positions.astype(np.intp)
+            out[idx] = np.frombuffer(residual_data.exception_bytes,
+                                     dtype=target_dtype.newbyteorder('<'))
+            invalid[idx] = False
+        if invalid.any():
+            raise ValueError("NaN where the original is an integer")
+        return out.reshape(residual.shape)
 
-        if np.issubdtype(target_dtype, np.integer):
-            return _to_integer(reconstructed, target_dtype)
+    def compress_original(self, original: np.ndarray, generated: np.ndarray) -> ResidualData:
+        """
+        Residual of `original` against `generated` that rebuilds the original
+        bit for bit with `reconstruct`.
 
-        # a float dtype: rounded once; an overflow is an infinity
+        A position is kept as an exception (the original element itself, the
+        residual there 0) when the original or the generated value is not
+        finite, or when the reconstruct rule applied to generated and the
+        float32 residual does not give the original's bits.
+
+        Raises:
+            ValueError: for a quantizing compressor (lossy, so it cannot keep
+                exceptions), a dtype the writer does not record, or shapes
+                that differ
+        """
+        if self.method == ResidualCompressionMethod.QUANTIZED or self.quantization_bits is not None:
+            raise ValueError("a quantized residual is not lossless: use a lossless method")
+        original = np.asarray(original)
+        dtype = original.dtype
+        if dtype.name not in _WRITER_DTYPES:
+            raise ValueError(f"Unsupported dtype {dtype.name!r}")
+        generated = np.asarray(generated, dtype=np.float64)
+        if generated.shape != original.shape:
+            raise ValueError(f"Shape mismatch: {original.shape} vs {generated.shape}")
+        o = original.ravel()
+        g = generated.ravel()
         with np.errstate(over="ignore", invalid="ignore"):
-            out = reconstructed.astype(target_dtype)
-        if nan.any():
-            bits = _sum_nan_bits(generated[nan], residual[nan])
-            out[nan] = _nan_as(bits, target_dtype)
-        return out
+            # a signaling NaN is quieted here; it is an exception either way
+            of = o.astype(np.float64)
+            finite = np.isfinite(g) & np.isfinite(of)
+            r = np.where(finite, of - np.where(finite, g, 0.0), 0.0).astype(np.float32)
+        rebuilt, invalid = _rebuild(g, r, dtype)
+        uint = np.dtype(f"u{dtype.itemsize}")
+        exceptions = ~finite | invalid | (rebuilt.view(uint) != o.view(uint))
+        r[exceptions] = 0.0
+        rd = self.compress_residual(r.reshape(original.shape), original_dtype=dtype.name)
+        rd.exception_positions = np.nonzero(exceptions)[0].astype(np.uint64)
+        rd.exception_bytes = o[exceptions].astype(dtype.newbyteorder('<')).tobytes()
+        return rd
 
     def _quantize_residual(self, residual: np.ndarray, bits: int) -> bytes:
         """
@@ -748,6 +822,22 @@ def _nan_as(bits: np.ndarray, dtype: np.dtype) -> np.ndarray:
             ((bits >> np.uint64(29)) & np.uint64(0x3FFFFF))
         return f.astype(np.uint32).view(np.float32)
     return bits.view(np.float64)
+
+
+def _rebuild(generated: np.ndarray, residual: np.ndarray, dtype: np.dtype):
+    """generated (float64) + residual (float32) as `dtype`, by the reconstruct
+    rule; returns the values and a mask of the integer positions that are NaN
+    (refused unless an exception covers them)."""
+    with np.errstate(invalid="ignore"):
+        s = generated + residual.astype(np.float64)
+    nan = np.isnan(s)
+    if np.issubdtype(dtype, np.integer):
+        return _to_integer(np.where(nan, 0.0, s), dtype), nan
+    with np.errstate(over="ignore", invalid="ignore"):
+        out = s.astype(dtype)
+    if nan.any():
+        out[nan] = _nan_as(_sum_nan_bits(generated[nan], residual[nan]), dtype)
+    return out, np.zeros(s.shape, dtype=bool)
 
 
 def _to_integer(values: np.ndarray, dtype: np.dtype) -> np.ndarray:

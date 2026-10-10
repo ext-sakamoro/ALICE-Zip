@@ -57,6 +57,9 @@ pub enum ResidualError {
     /// Values that are NaN or infinite cannot be quantized (the codes span
     /// the finite range from the minimum to the maximum).
     NotFinite,
+    /// A lossy (quantized) residual cannot keep exceptions, so it cannot be
+    /// written from the original losslessly.
+    NotLossless,
     /// A `"delta"` residual without `base_value`: the writer dropped the
     /// first value, so the data cannot be reconstructed; recompress from the
     /// original.
@@ -94,6 +97,10 @@ impl std::fmt::Display for ResidualError {
             Self::Corrupted(msg) => write!(f, "corrupted data: {msg}"),
             Self::UnsupportedLayout(msg) => write!(f, "unsupported residual layout: {msg}"),
             Self::NotFinite => write!(f, "values that are not finite cannot be quantized"),
+            Self::NotLossless => write!(
+                f,
+                "a quantized residual is not lossless: use a lossless method"
+            ),
             Self::DeltaWithoutBase => write!(
                 f,
                 "delta residual without its base value: recompress from the original"
@@ -205,6 +212,13 @@ pub struct ResidualMetadata {
     /// The payload is this crate's earlier quantized container (the header
     /// records `min_val` / `scale` / `bits`, which are written back).
     pub legacy_container: bool,
+    /// Positions (strictly ascending) whose original is kept as it is: the
+    /// generated value plus the residual cannot rebuild it bit for bit (see
+    /// [`compress_original`]). A file with any has version 3.
+    pub exception_positions: Vec<u64>,
+    /// The original elements at `exception_positions`, the dtype's
+    /// little-endian bytes one after another.
+    pub exception_bytes: Vec<u8>,
 }
 
 impl Default for ResidualMetadata {
@@ -216,6 +230,8 @@ impl Default for ResidualMetadata {
             base_value: 0.0,
             quant_bits: None,
             legacy_container: false,
+            exception_positions: Vec::new(),
+            exception_bytes: Vec::new(),
         }
     }
 }
@@ -281,7 +297,15 @@ impl ResidualData {
             (false, Some(b)) => fields.push(format!(r#""quant_bits":{b}"#)),
             (false, None) => fields.push(r#""quant_bits":null"#.to_owned()),
         }
-        fields.push(r#""version":2"#.to_owned());
+        let k = self.metadata.exception_positions.len();
+        if k == 0 {
+            fields.push(r#""version":2"#.to_owned());
+        } else {
+            // exceptions: version 3, and a raw block after the compressed
+            // residual (positions as u64, then the original elements)
+            fields.push(r#""version":3"#.to_owned());
+            fields.push(format!(r#""exceptions":{k}"#));
+        }
 
         match self.method {
             ResidualCompressionMethod::Quantized if self.metadata.legacy_container => {
@@ -303,6 +327,10 @@ impl ResidualData {
         out.extend_from_slice(&header_len.to_le_bytes());
         out.extend_from_slice(header_bytes);
         out.extend_from_slice(&self.compressed);
+        for p in &self.metadata.exception_positions {
+            out.extend_from_slice(&p.to_le_bytes());
+        }
+        out.extend_from_slice(&self.metadata.exception_bytes);
         out
     }
 
@@ -353,12 +381,12 @@ impl ResidualData {
                         };
                         // only versions 1 and 2 were written; a later one is
                         // refused rather than read as version 2
-                        if version > 2 {
+                        if version > 3 {
                             return Err(ResidualError::UnsupportedVersion(version));
                         }
-                        if version == 2 {
+                        if version >= 2 {
                             let compressed = data[v2_end..].to_vec();
-                            return Self::from_header_map(&parsed, compressed);
+                            return Self::from_header_map(&parsed, compressed, version);
                         }
                         // version < 2 — fall through to v1
                     } else {
@@ -401,7 +429,7 @@ impl ResidualData {
         let parsed = Self::parse_json_header(json_str).map_err(ResidualError::InvalidHeader)?;
 
         let compressed = data[v1_payload_start..].to_vec();
-        Self::from_header_map(&parsed, compressed)
+        Self::from_header_map(&parsed, compressed, 1)
     }
 
     // -------------------------------------------------------------------------
@@ -501,8 +529,29 @@ impl ResidualData {
     /// Construct `ResidualData` from a parsed header map and a compressed payload.
     fn from_header_map(
         map: &HashMap<String, String>,
-        compressed: Vec<u8>,
+        mut compressed: Vec<u8>,
+        version: u32,
     ) -> Result<Self, ResidualError> {
+        // version 3 is a file with exceptions, and only it
+        let exceptions = match (version, map.get("exceptions")) {
+            (3, Some(v)) => match v.parse::<usize>() {
+                Ok(k) if k > 0 => k,
+                _ => {
+                    return Err(ResidualError::InvalidHeader(format!(
+                        "version 3 needs a positive integer exceptions, got {v}"
+                    )))
+                }
+            },
+            (3, None) => {
+                return Err(ResidualError::MissingField("exceptions".to_owned()));
+            }
+            (_, Some(_)) => {
+                return Err(ResidualError::InvalidHeader(
+                    "exceptions is only read with version 3".to_owned(),
+                ));
+            }
+            (_, None) => 0,
+        };
         // Required field: method
         let method_str = map
             .get("method")
@@ -613,6 +662,43 @@ impl ResidualData {
             metadata.base_value = v
                 .parse()
                 .map_err(|e| ResidualError::InvalidHeader(format!("invalid base_value: {e}")))?;
+        }
+
+        if exceptions > 0 {
+            if method == ResidualCompressionMethod::Quantized || metadata.quant_bits.is_some() {
+                return Err(ResidualError::InvalidHeader(
+                    "a quantized residual cannot keep exceptions".to_owned(),
+                ));
+            }
+            let width = dtype_width(dtype).ok_or_else(|| {
+                ResidualError::InvalidHeader(format!("unsupported dtype {dtype}"))
+            })?;
+            let need = exceptions
+                .checked_mul(8 + width)
+                .filter(|&n| n <= compressed.len())
+                .ok_or_else(|| {
+                    ResidualError::Corrupted(format!(
+                        "{exceptions} exceptions need more than the {} bytes that follow",
+                        compressed.len()
+                    ))
+                })?;
+            let block = compressed.split_off(compressed.len() - need);
+            let (pos, elems) = block.split_at(8 * exceptions);
+            let positions: Vec<u64> = pos
+                .chunks_exact(8)
+                .map(|c| u64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]))
+                .collect();
+            let ascending = positions.windows(2).all(|w| w[0] < w[1]);
+            let below = positions
+                .last()
+                .is_some_and(|&p| (p as u128) < original_len as u128);
+            if !(ascending && below) {
+                return Err(ResidualError::InvalidHeader(format!(
+                    "exception positions must ascend strictly and stay below {original_len}"
+                )));
+            }
+            metadata.exception_positions = positions;
+            metadata.exception_bytes = elems.to_vec();
         }
 
         Ok(Self {
@@ -1046,42 +1132,165 @@ pub fn reconstruct_bytes(generated: &[f64], rd: &ResidualData) -> Result<Vec<u8>
             residual.len()
         )));
     }
-    let width = match rd.dtype.as_str() {
-        "int8" | "uint8" => 1,
-        "float16" | "int16" | "uint16" => 2,
-        "float32" | "int32" | "uint32" => 4,
-        "float64" | "int64" | "uint64" => 8,
-        other => {
-            return Err(ResidualError::InvalidHeader(format!(
-                "unsupported dtype {other}"
-            )))
-        }
-    };
+    let dtype = rd.dtype.as_str();
+    let width = dtype_width(dtype)
+        .ok_or_else(|| ResidualError::InvalidHeader(format!("unsupported dtype {dtype}")))?;
+    let positions = &rd.metadata.exception_positions;
+    if rd.metadata.exception_bytes.len() != positions.len() * width {
+        return Err(ResidualError::Corrupted(format!(
+            "{} exception bytes for {} positions of {width} bytes",
+            rd.metadata.exception_bytes.len(),
+            positions.len()
+        )));
+    }
     let mut out = Vec::with_capacity(generated.len() * width);
-    for (&g, &r) in generated.iter().zip(&residual) {
-        let s = sum(g, r);
-        let dtype = rd.dtype.as_str();
-        if dtype.contains("int") && s.is_nan() {
+    let mut next = 0;
+    for (i, (&g, &r)) in generated.iter().zip(&residual).enumerate() {
+        if positions.get(next).is_some_and(|&p| p as usize == i) {
+            out.extend_from_slice(&rd.metadata.exception_bytes[next * width..(next + 1) * width]);
+            next += 1;
+            continue;
+        }
+        if !rebuild_element(g, r, dtype, &mut out) {
             return Err(ResidualError::Corrupted(
                 "NaN where the original is an integer".to_owned(),
             ));
         }
-        let n = s.round_ties_even();
-        match dtype {
-            "float16" => out.extend_from_slice(&f64_to_f16_bits(s).to_le_bytes()),
-            "float32" => out.extend_from_slice(&f64_to_f32_bits(s).to_le_bytes()),
-            "float64" => out.extend_from_slice(&s.to_le_bytes()),
-            "int8" => out.extend_from_slice(&(n as i8).to_le_bytes()),
-            "int16" => out.extend_from_slice(&(n as i16).to_le_bytes()),
-            "int32" => out.extend_from_slice(&(n as i32).to_le_bytes()),
-            "int64" => out.extend_from_slice(&(n as i64).to_le_bytes()),
-            "uint8" => out.push(n as u8),
-            "uint16" => out.extend_from_slice(&(n as u16).to_le_bytes()),
-            "uint32" => out.extend_from_slice(&(n as u32).to_le_bytes()),
-            _ => out.extend_from_slice(&(n as u64).to_le_bytes()),
-        }
+    }
+    if next != positions.len() {
+        return Err(ResidualError::Corrupted(
+            "exception positions beyond the values".to_owned(),
+        ));
     }
     Ok(out)
+}
+
+/// Bytes of one element of the dtype `width_of` names.
+fn dtype_width(dtype: &str) -> Option<usize> {
+    match dtype {
+        "int8" | "uint8" => Some(1),
+        "float16" | "int16" | "uint16" => Some(2),
+        "float32" | "int32" | "uint32" => Some(4),
+        "float64" | "int64" | "uint64" => Some(8),
+        _ => None,
+    }
+}
+
+/// Appends `generated + residual` as `dtype` (the reconstruct rule); `false`
+/// for an integer dtype whose value would be NaN (nothing is appended).
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn rebuild_element(g: f64, r: f32, dtype: &str, out: &mut Vec<u8>) -> bool {
+    let s = sum(g, r);
+    if dtype.contains("int") && s.is_nan() {
+        return false;
+    }
+    let n = s.round_ties_even();
+    match dtype {
+        "float16" => out.extend_from_slice(&f64_to_f16_bits(s).to_le_bytes()),
+        "float32" => out.extend_from_slice(&f64_to_f32_bits(s).to_le_bytes()),
+        "float64" => out.extend_from_slice(&s.to_le_bytes()),
+        "int8" => out.extend_from_slice(&(n as i8).to_le_bytes()),
+        "int16" => out.extend_from_slice(&(n as i16).to_le_bytes()),
+        "int32" => out.extend_from_slice(&(n as i32).to_le_bytes()),
+        "int64" => out.extend_from_slice(&(n as i64).to_le_bytes()),
+        "uint8" => out.push(n as u8),
+        "uint16" => out.extend_from_slice(&(n as u16).to_le_bytes()),
+        "uint32" => out.extend_from_slice(&(n as u32).to_le_bytes()),
+        _ => out.extend_from_slice(&(n as u64).to_le_bytes()),
+    }
+    true
+}
+
+/// A residual of `original` (the dtype's little-endian bytes) against
+/// `generated` that [`reconstruct_bytes`] turns back into `original` bit for
+/// bit; the same rule and file as the Python `ResidualCompressor.compress_original`.
+///
+/// A position is kept as an exception (the original element itself, the
+/// residual there 0) when the original or the generated value is not finite,
+/// or when the reconstruct rule applied to generated and the `f32` residual
+/// `(original - generated) as f32` does not give the original's bytes.
+///
+/// # Errors
+///
+/// `NotLossless` for `Quantized`, `InvalidHeader` for a dtype outside the
+/// eleven the writers record, `Corrupted` when the lengths disagree.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+pub fn compress_original(
+    original: &[u8],
+    dtype: &str,
+    generated: &[f64],
+    method: ResidualCompressionMethod,
+) -> Result<ResidualData, ResidualError> {
+    if method == ResidualCompressionMethod::Quantized {
+        return Err(ResidualError::NotLossless);
+    }
+    let width = dtype_width(dtype)
+        .ok_or_else(|| ResidualError::InvalidHeader(format!("unsupported dtype {dtype}")))?;
+    if original.len() != generated.len() * width {
+        return Err(ResidualError::Corrupted(format!(
+            "{} bytes of {dtype} for {} generated values",
+            original.len(),
+            generated.len()
+        )));
+    }
+    let mut residual = Vec::with_capacity(generated.len());
+    let mut positions = Vec::new();
+    let mut kept = Vec::new();
+    let mut rebuilt = Vec::with_capacity(width);
+    for (i, (o, &g)) in original.chunks_exact(width).zip(generated).enumerate() {
+        let of = element_as_f64(o, dtype);
+        let r = if g.is_finite() && of.is_finite() {
+            (of - g) as f32
+        } else {
+            f32::NAN
+        };
+        rebuilt.clear();
+        let same = !r.is_nan() && rebuild_element(g, r, dtype, &mut rebuilt) && rebuilt == o;
+        if same {
+            residual.push(r);
+        } else {
+            residual.push(0.0);
+            positions.push(i as u64);
+            kept.extend_from_slice(o);
+        }
+    }
+    let mut rd = compress_with_method(&residual, method);
+    rd.dtype = dtype.to_owned();
+    rd.metadata.exception_positions = positions;
+    rd.metadata.exception_bytes = kept;
+    Ok(rd)
+}
+
+/// One element of `dtype` (little-endian bytes) as `f64`: exact for the
+/// floats and for integers up to 2^53, rounded to nearest even above.
+#[allow(clippy::cast_precision_loss)]
+fn element_as_f64(b: &[u8], dtype: &str) -> f64 {
+    match dtype {
+        "float16" => f16_bits_to_f64(u16::from_le_bytes([b[0], b[1]])),
+        "float32" => f64::from(f32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+        "float64" => f64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]),
+        "int8" => f64::from(i8::from_le_bytes([b[0]])),
+        "int16" => f64::from(i16::from_le_bytes([b[0], b[1]])),
+        "int32" => f64::from(i32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+        "int64" => i64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]) as f64,
+        "uint8" => f64::from(b[0]),
+        "uint16" => f64::from(u16::from_le_bytes([b[0], b[1]])),
+        "uint32" => f64::from(u32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+        _ => u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]) as f64,
+    }
+}
+
+/// An IEEE half as `f64` (exact; only finiteness matters for a NaN).
+fn f16_bits_to_f64(h: u16) -> f64 {
+    let sign = if h & 0x8000 == 0 { 1.0 } else { -1.0 };
+    let e = i32::from((h >> 10) & 0x1F);
+    let m = f64::from(h & 0x3FF);
+    match e {
+        0 => sign * m * pow2(-24),
+        31 if m == 0.0 => sign * f64::INFINITY,
+        31 => f64::NAN,
+        _ => sign * (1024.0 + m) * pow2(e - 25),
+    }
 }
 
 /// `generated + residual` in `f64`, with the NaN chosen by rule rather than
@@ -1332,6 +1541,34 @@ mod tests {
             };
             files.push((format!("quantized_rand{bits}"), rd.to_bytes()));
         }
+        // lossless writing from the original: tests/data/residual/exception_cases.txt
+        let cases = std::fs::read_to_string(fixture_dir().join("exception_cases.txt")).unwrap();
+        let mut by_dtype: Vec<(String, Vec<u8>, Vec<f64>)> = Vec::new();
+        for line in cases
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+        {
+            let c: Vec<&str> = line.split_whitespace().collect();
+            if by_dtype.last().is_none_or(|(d, _, _)| d != c[0]) {
+                by_dtype.push((c[0].to_owned(), Vec::new(), Vec::new()));
+            }
+            let entry = by_dtype.last_mut().unwrap();
+            entry.1.extend(
+                (0..c[1].len())
+                    .step_by(2)
+                    .map(|i| u8::from_str_radix(&c[1][i..i + 2], 16).unwrap()),
+            );
+            entry
+                .2
+                .push(f64::from_bits(u64::from_str_radix(c[2], 16).unwrap()));
+        }
+        for (dtype, original, generated) in &by_dtype {
+            let rd = compress_original(original, dtype, generated, M::Lzma).unwrap();
+            files.push((format!("exc_{dtype}"), rd.to_bytes()));
+        }
+        let (_, original, generated) = by_dtype.iter().find(|(d, _, _)| d == "float32").unwrap();
+        let rd = compress_original(original, "float32", generated, M::None).unwrap();
+        files.push(("exc_none_float32".to_owned(), rd.to_bytes()));
         files
     }
 
@@ -1377,7 +1614,7 @@ mod tests {
                 "rust_{name}.bin differs from the writer's output"
             );
         }
-        assert_eq!(files.len(), 24, "every writer file compared");
+        assert_eq!(files.len(), 36, "every writer file compared");
     }
 
     #[test]
