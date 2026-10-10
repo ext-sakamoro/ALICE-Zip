@@ -58,6 +58,13 @@ jobs:
         run: cargo test --test container_oracle --no-default-features
       - name: Container example (reads back, resolves references, refuses a changed byte)
         run: cargo run --example container_roundtrip
+      # each published version in one place (libalice from its Cargo.toml) or
+      # agreeing where it is written twice; 0 comparisons fail
+      - name: Versions agree
+        run: |
+          PY=$(command -v python3 || command -v python)
+          "$PY" scripts/test_version_check.py
+          "$PY" scripts/version_check.py
       # A suite gated on a feature compiles to an empty test binary when the
       # feature is missing, which passes with 0 tests. Each of these must
       # report at least one passed test on every OS.
@@ -232,8 +239,14 @@ jobs:
         run: cargo build --manifest-path libalice/Cargo.toml --release
 
   libalice-python:
-    name: libalice Python module (PyO3) + pytest
+    name: libalice Python module (PyO3) + pytest (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
+    # the oldest Python the packages declare (requires-python) and a current
+    # one, so the declared minimum is the one that is tested
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.12']
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -242,7 +255,7 @@ jobs:
           workspaces: libalice
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python }}
       # extension-module: the .so links against the interpreter at import time,
       # so `cargo test` cannot link — check / clippy the feature, then build the
       # real wheel with maturin and run the Python test suite with the native
