@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- CI: fuzz の time-boxed run を gate にした (`continue-on-error` を外した) crash も、1 件も入力を実行しなかった run も red になり、target ごとの実行回数・秒数・結果を job summary に出す (`scripts/fuzz_runs.py` が libFuzzer の log の `Done N runs` を読む、試験 `scripts/test_fuzz_runs.py`) crash の入力は artifact に上げる 直近 15 回の fuzz run (3 日分) で run step が失敗していたものは無く、手元の 60 秒 × 7 target も crash 0 (実行回数 45,000〜2,400,000)
+
 ## [0.9.0] - 2026-10-11
 
 ### ライセンス
