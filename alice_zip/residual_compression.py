@@ -244,8 +244,10 @@ class ResidualData:
                 raise ValueError(
                     f"version 4 needs residual_dtype float32 or float64, "
                     f"got {header.get('residual_dtype')!r}")
-        elif 'exceptions' in header or 'residual_dtype' in header:
-            raise ValueError("'exceptions' and 'residual_dtype' are read with versions 3 and 4")
+        elif 'exceptions' in header:
+            raise ValueError("'exceptions' is only read with versions 3 and 4")
+        if version != 4 and 'residual_dtype' in header:
+            raise ValueError("'residual_dtype' is only read with version 4")
         # every numeric field is a JSON integer (or a number where the
         # writers write one): a string, a boolean or a float form is refused,
         # as the Rust reader does (bool is an int in Python, so it is named)
