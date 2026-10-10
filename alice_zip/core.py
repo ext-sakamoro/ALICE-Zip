@@ -12,10 +12,10 @@ File Format: .alice
 - Engine-specific payload
 
 Author: Moroya Sakamoto
-License: MIT
+License: Apache-2.0
 
 This module provides both compression and decompression functionality.
-Basic compression (sine wave, polynomial, LZMA) is free under MIT license.
+Basic compression (sine wave, polynomial, LZMA) is free under the Apache-2.0 license.
 For advanced compression features, see ALICE Optimizer (Pro).
 """
 
@@ -30,7 +30,7 @@ from typing import Optional, Union, BinaryIO, Any, Dict
 from enum import Enum
 import numpy as np
 
-# Generators (MIT License - Free for decompression)
+# Generators (Apache-2.0 - Free for decompression)
 from .generators import (
     CompressionResult,
     CompressionEngine,
@@ -40,10 +40,10 @@ from .generators import (
     decompress_from_lzma,
 )
 
-# Analyzers (MIT License - Free for basic compression)
+# Analyzers (Apache-2.0 - Free for basic compression)
 from .analyzers import analyze_data, compress_with_lzma
 
-# Media Decompressor (MIT License - Free for decompression)
+# Media Decompressor (Apache-2.0 - Free for decompression)
 from .media_generators import (
     MediaDecompressor,
     ALICE_IMAGE_MAGIC,
@@ -357,7 +357,7 @@ def _verify_original(header: "AliceFileHeader", result) -> None:
 
 class ALICEZip:
     """
-    ALICE_Zip compression/decompression engine (Core/MIT version).
+    ALICE_Zip compression/decompression engine (Core/Apache-2.0 version).
 
     This is the Open Core (free) version that supports:
     - Basic compression (sine wave, polynomial fitting, LZMA fallback)

@@ -13,7 +13,7 @@ Functions:
     polynomial_generate: Generate signal from polynomial coefficients
     polynomial_fit: Fit polynomial to data
 
-License: MIT
+License: Apache-2.0
 Author: Moroya Sakamoto
 """
 

@@ -155,7 +155,7 @@ cargo build --release --target aarch64-linux-android
 
 ## License
 
-- **Core Library**: MIT License
+- **Core Library**: Apache-2.0
 - **Game Development**: Free with attribution (Game Industry Exception)
 - **Other Commercial Use**: Contact for licensing
 

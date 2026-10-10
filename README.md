@@ -10,7 +10,7 @@
   <a href="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/ci.yml"><img src="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/security-audit.yml"><img src="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/security-audit.yml/badge.svg" alt="Security"></a>
   <a href="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/fuzz.yml"><img src="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/fuzz.yml/badge.svg" alt="Fuzz"></a>
-  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-green.svg" alt="License"></a>
+  <a href="#license"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg" alt="License"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.9+-yellow.svg" alt="Python"></a>
 </p>
 
@@ -451,8 +451,17 @@ All projects share the core philosophy: **encode the generation process, not the
 
 ## License
 
-- Rust core crate `alice-zip` (`/`): [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE), at your option
-- CLI / FFI crate (`libalice/`), Python package (`alice_zip/`), bindings: [MIT](LICENSE-MIT)
+- [Apache License, Version 2.0](LICENSE-APACHE): the Rust core crate
+  `alice-zip` (`/`), the CLI / FFI crate and Python wheel (`libalice/`), the
+  Python package (`alice_zip/`) and the bindings
+- Redistributions, in source or binary form, carry [LICENSE-APACHE](LICENSE-APACHE)
+  and [NOTICE](NOTICE) (Apache-2.0 §4); the notice need not appear in an
+  application's user interface
+- Earlier releases keep the licence they were published under: the core crate
+  up to 0.8.0 is MIT OR Apache-2.0, libalice up to 2.7.0 and the Python
+  package up to 1.0.0 are MIT
+- The "ALICE" names are covered by [TRADEMARK_NOTICE](TRADEMARK_NOTICE), whatever
+  the licence
 - `libalice-enterprise/`: separate, unpublished proprietary crate (see its own [LICENSE](libalice-enterprise/LICENSE))
 
 ## Author

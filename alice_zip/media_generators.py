@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ALICE-Zip Media Generators (MIT License)
+ALICE-Zip Media Generators (Apache-2.0)
 =========================================
 
 Generation logic for media decompression.
@@ -8,7 +8,7 @@ This module contains the code that regenerates media from parameters.
 Required for decompression.
 
 Author: Moroya Sakamoto
-License: MIT
+License: Apache-2.0
 
 Copyright (c) 2026 Moroya Sakamoto
 
@@ -249,11 +249,11 @@ class VideoParams:
 
 
 # ============================================================================
-# Image Generator (MIT)
+# Image Generator (Apache-2.0)
 # ============================================================================
 
 class ImageGenerator:
-    """Generate images from procedural parameters (MIT License)"""
+    """Generate images from procedural parameters (Apache-2.0)"""
 
     def __init__(self):
         if not HAS_PIL:
@@ -435,11 +435,11 @@ class ImageGenerator:
 
 
 # ============================================================================
-# Audio Generator (MIT)
+# Audio Generator (Apache-2.0)
 # ============================================================================
 
 class AudioGenerator:
-    """Generate audio from procedural parameters (MIT License)"""
+    """Generate audio from procedural parameters (Apache-2.0)"""
 
     # Default chunk size: 1 second of audio at 44.1kHz = ~88KB per channel
     DEFAULT_CHUNK_SAMPLES = 44100
@@ -625,11 +625,11 @@ class AudioGenerator:
 
 
 # ============================================================================
-# Video Generator (MIT)
+# Video Generator (Apache-2.0)
 # ============================================================================
 
 class VideoGenerator:
-    """Generate video from procedural parameters (MIT License)"""
+    """Generate video from procedural parameters (Apache-2.0)"""
 
     def __init__(self):
         if not HAS_CV2:
@@ -772,11 +772,11 @@ class VideoGenerator:
 
 
 # ============================================================================
-# Unified Media Decompressor (MIT)
+# Unified Media Decompressor (Apache-2.0)
 # ============================================================================
 
 class MediaDecompressor:
-    """Unified interface for decompressing images, audio, and video (MIT License)"""
+    """Unified interface for decompressing images, audio, and video (Apache-2.0)"""
 
     def __init__(self):
         self._image_generator = None

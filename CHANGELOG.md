@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### ライセンス
+
+- 本 release から Apache License 2.0 だけ (Rust crate `alice-zip` 0.9.0、libalice 3.0.0 の crate `alice-zip-cli` と wheel `libalice`、Python package `alice-zip` 2.0.0、bindings) `LICENSE-MIT` を削除し、`NOTICE` を足した 再配布には `LICENSE-APACHE` と `NOTICE` を添える (application の画面に出す必要は無い) crate と wheel / sdist にも両方を入れる (`libalice/` には同じ内容の写しを置く、`scripts/license_check.py` が一致を確かめる)
+- 以前の release は公開した時のライセンスのまま: Rust crate の 0.8.0 までは MIT OR Apache-2.0、libalice の 2.7.0 までと Python package の 1.0.0 までは MIT
+- Apache-2.0 は AGPL-3.0 の作品に組み込めるので、AGPL-3.0 で配布している依存側 (ALICE-DB 等) はそのまま依存できる 商標は `TRADEMARK_NOTICE` のとおりでライセンスによらない
+- `scripts/license_check.py` (CI と preflight): manifest と pyproject のライセンス、`license-files`、`__license__`、`NOTICE` / `LICENSE-APACHE` の有無と写しの一致、`LICENSE-MIT` が無いこと、README の表示を確かめる 比べた件数が 0 なら失敗
+
 ### 破壊的変更 (package ごと)
 
 版: Rust crate `alice-zip` 0.8.0 → 0.9.0、Python package `alice-zip` 1.0.0 → 2.0.0、libalice (crate `alice-zip-cli` と Python の wheel `libalice`) 2.7.0 → 3.0.0 各項目の詳細は本 file の Changed (破壊的変更) / Fixed と [libalice/CHANGELOG.md](libalice/CHANGELOG.md)

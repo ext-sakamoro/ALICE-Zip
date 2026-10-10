@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ALICE-Zip: Procedural Generators (MIT License)
+ALICE-Zip: Procedural Generators (Apache-2.0)
 ===============================================
 
 Generation logic for procedural compression.
@@ -8,7 +8,7 @@ This module contains the "hands and feet" - the code that regenerates
 data from parameters. Required for decompression.
 
 Author: Moroya Sakamoto
-License: MIT
+License: Apache-2.0
 
 Copyright (c) 2026 Moroya Sakamoto
 
@@ -328,7 +328,7 @@ def decompress_from_params(params: GeneratorParameters) -> np.ndarray:
     """
     Decompress (regenerate) data from generator parameters.
 
-    This is the core decompression function - MIT licensed.
+    This is the core decompression function - Apache-2.0.
     Uses GeneratorFactory for extensible generator selection.
     """
     generator = GeneratorFactory.get(params)
@@ -339,7 +339,7 @@ def decompress_from_lzma(compressed_data: bytes, shape: Tuple, dtype: str = 'flo
     """
     Decompress LZMA-compressed raw data.
 
-    This is the fallback decompression - MIT licensed.
+    This is the fallback decompression - Apache-2.0.
     """
     import lzma
     raw = lzma.decompress(compressed_data)

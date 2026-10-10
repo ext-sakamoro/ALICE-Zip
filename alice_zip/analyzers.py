@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ALICE-Zip: Basic Analyzers (MIT License)
+ALICE-Zip: Basic Analyzers (Apache-2.0)
 =========================================
 
 Basic data analysis and fitting functions for compression.
@@ -13,7 +13,7 @@ Supported patterns:
 - LZMA fallback for non-procedural data
 
 Author: Moroya Sakamoto
-License: MIT
+License: Apache-2.0
 """
 
 import logging

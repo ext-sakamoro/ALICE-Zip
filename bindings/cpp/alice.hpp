@@ -3,7 +3,7 @@
  * @brief ALICE-Zip C++ Header-Only Wrapper
  * @author Moroya Sakamoto
  * @version 2.2.0
- * @license MIT (Core) / Game Industry Exception available
+ * @license Apache-2.0 (Core) / Game Industry Exception available
  *
  * Modern C++ wrapper for libalice providing RAII, exceptions, and STL containers.
  *

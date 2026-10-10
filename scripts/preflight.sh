@@ -20,6 +20,7 @@ has_toolchain() { rustup toolchain list | grep -q "^$1"; }
 
 # Steps CI runs that this file cannot reproduce locally (they can only fail remotely):
 #   - ci.yml:libalice-python:Build + install libalice (maturin) (no cargo / grep)
+#   - ci.yml:libalice-python:Licence files in the wheels and sdists (needs maturin + build; scripts/dist_license_check.py)
 #   - ci.yml:libalice-python:pytest (native accelerator enabled) (no cargo / grep)
 #   - ci.yml:libalice-python:pytest (pure Python fallback) (no cargo / grep)
 #   - security-audit.yml:audit:Install cargo-audit (needs network / runner-only)
@@ -128,6 +129,19 @@ step "ci.yml / claim-check: include の参照先が git で追跡されている
 
 step "ci.yml / test: Versions agree"
 ( python3 scripts/test_version_check.py && python3 scripts/version_check.py )
+
+step "ci.yml / test: Licence agrees and its files are packaged"
+(
+  python3 scripts/test_license_check.py && python3 scripts/license_check.py
+  python3 scripts/test_dist_license_check.py
+  for m in Cargo.toml libalice/Cargo.toml; do
+    list=$(cargo package --list --allow-dirty --manifest-path "$m")
+    for f in LICENSE-APACHE NOTICE; do
+      printf '%s\n' "$list" | grep -qx "$f" || { echo "$m: the package lacks $f"; exit 1; }
+    done
+    echo "$m: LICENSE-APACHE and NOTICE packaged"
+  done
+)
 
 step "ci.yml / libalice: Clippy (-D warnings, all targets, codec)"
 relint

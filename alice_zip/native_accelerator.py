@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-ALICE-Zip: Native Accelerator (MIT License)
+ALICE-Zip: Native Accelerator (Apache-2.0)
 ============================================
 
 Optional high-performance native acceleration using libalice (Rust).
 Falls back to pure Python if libalice is not installed.
 
 Author: Moroya Sakamoto
-License: MIT
+License: Apache-2.0
 """
 
 import logging

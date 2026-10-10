@@ -4,7 +4,7 @@
 //! Generates procedural PCM audio from parametric descriptions and can
 //! write the result directly to a 32-bit IEEE-float WAV file.
 //!
-//! License: MIT
+//! License: Apache-2.0
 //! Author: Moroya Sakamoto
 
 use rand::Rng;
