@@ -9,6 +9,7 @@ use alice_core::residual::{ResidualCompressionMethod, ResidualData, ResidualErro
 const V2: &[u8] = include_bytes!("../../tests/data/residual/residual_v2.bin");
 const V3: &[u8] = include_bytes!("../../tests/data/residual/residual_v3.bin");
 const V5: &[u8] = include_bytes!("../../tests/data/residual/residual_v5.bin");
+const V0: &[u8] = include_bytes!("../../tests/data/residual/residual_v0.bin");
 
 #[test]
 fn version_2_is_read() {
@@ -56,4 +57,14 @@ fn a_version_written_as_a_float_or_a_string_is_refused() {
             "{name}"
         );
     }
+}
+
+#[test]
+fn version_0_is_refused_as_an_unsupported_version() {
+    // versions 1 to 4 exist; 0 is refused the same way as 5 (Python: the
+    // same ValueError), not read as the 2-byte-length version 1 layout
+    assert!(matches!(
+        ResidualData::from_bytes(V0),
+        Err(ResidualError::UnsupportedVersion(0))
+    ));
 }

@@ -14,6 +14,7 @@
 #           the dtype of the original; - = not compared
 residual_v2.bin                  hand        accept accept -
 residual_v3.bin                  hand        refuse refuse -
+residual_v0.bin                  hand        refuse refuse -
 residual_v5.bin                  hand        refuse refuse -
 residual_v2_float.bin            hand        refuse refuse -
 residual_v2_string.bin           hand        refuse refuse -

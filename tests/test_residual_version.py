@@ -37,3 +37,9 @@ def test_a_version_written_as_a_float_or_a_string_is_refused(name):
     # same verdict as libalice/tests/residual_version.rs
     with pytest.raises(ValueError, match="version"):
         ResidualData.from_bytes((DATA / name).read_bytes())
+
+
+def test_version_0_is_refused_as_an_unsupported_version():
+    # same verdict as libalice/tests/residual_version.rs
+    with pytest.raises(ValueError, match="Unsupported residual header version 0"):
+        ResidualData.from_bytes((DATA / "residual_v0.bin").read_bytes())
