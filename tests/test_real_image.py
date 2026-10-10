@@ -15,8 +15,6 @@ Tests:
 
 import numpy as np
 import sys
-import urllib.request
-import os
 from pathlib import Path
 
 # Resolve the repository root from this file so the tests run anywhere
@@ -29,51 +27,15 @@ from alice_zip.analyzers import ProceduralCompressionDesigner
 from alice_zip.residual_compression import ResidualCompressionMethod
 
 
-def download_test_image(url: str, filename: str) -> Path:
-    """Download test image if not exists"""
-    test_dir = REPO_ROOT / 'test_images'
-    test_dir.mkdir(exist_ok=True)
-    filepath = test_dir / filename
-
-    if not filepath.exists():
-        print(f"Downloading {filename}...")
-        urllib.request.urlretrieve(url, filepath)
-        print(f"Downloaded to {filepath}")
-
-    return filepath
-
-
-def load_image(filepath: Path) -> np.ndarray:
-    """Load image as numpy array"""
-    try:
-        from PIL import Image
-        img = Image.open(filepath)
-        return np.array(img)
-    except ImportError:
-        print("PIL not available, trying matplotlib...")
-        try:
-            import matplotlib.pyplot as plt
-            img = plt.imread(str(filepath))
-            if img.dtype == np.float32 or img.dtype == np.float64:
-                img = (img * 255).astype(np.uint8)
-            return img
-        except ImportError:
-            print("Neither PIL nor matplotlib available!")
-            return None
-
-
-def save_image(data: np.ndarray, filepath: Path):
-    """Save numpy array as image"""
-    try:
-        from PIL import Image
-        img = Image.fromarray(data.astype(np.uint8))
-        img.save(filepath)
-    except ImportError:
-        try:
-            import matplotlib.pyplot as plt
-            plt.imsave(str(filepath), data.astype(np.uint8))
-        except ImportError:
-            print("Cannot save image - no PIL or matplotlib")
+def photo_like_image(size: int = 256) -> np.ndarray:
+    """A deterministic photograph-like grayscale image: smooth shading, a few
+    edges and fine texture (the test needs no network and no image file)."""
+    rng = np.random.default_rng(123)
+    y, x = np.mgrid[0:size, 0:size] / size
+    shading = 120 + 80 * np.sin(3 * x + 1) * np.cos(2 * y)
+    edges = 40 * ((x - 0.5) ** 2 + (y - 0.4) ** 2 < 0.08)
+    texture = rng.normal(0, 12, (size, size))
+    return np.clip(shading + edges + texture, 0, 255).astype(np.uint8)
 
 
 def calculate_psnr(original: np.ndarray, reconstructed: np.ndarray) -> float:
@@ -198,39 +160,12 @@ def test_noisy_texture():
 def test_real_image():
     """Test with real photograph"""
     print("\n" + "=" * 70)
-    print("Test 3: Real Photograph (Lenna/Mandrill)")
+    print("Test 3: Photograph-like image (synthetic)")
     print("=" * 70)
 
-    # Try to download a test image
-    test_images = [
-        # USC-SIPI standard test images
-        ("https://upload.wikimedia.org/wikipedia/en/7/7d/Lenna_%28test_image%29.png", "lenna.png"),
-        ("https://www.cs.cmu.edu/~chuck/lenern/mandrill.jpg", "mandrill.jpg"),
-    ]
-
-    data = None
-    for url, filename in test_images:
-        try:
-            filepath = download_test_image(url, filename)
-            data = load_image(filepath)
-            if data is not None:
-                print(f"Loaded: {filename}")
-                break
-        except Exception as e:
-            print(f"Failed to load {filename}: {e}")
-            continue
-
-    if data is None:
-        print("Could not load any test image. Creating synthetic photo-like image...")
-        # Create synthetic photo-like image
-        np.random.seed(123)
-        data = np.random.randint(0, 256, (256, 256, 3), dtype=np.uint8)
-
-    # Convert to grayscale for simpler testing
-    if len(data.shape) == 3:
-        data_gray = np.mean(data, axis=2).astype(np.uint8)
-    else:
-        data_gray = data
+    # a deterministic photograph-like image (the earlier version downloaded
+    # one, which failed offline and left an HTML page in the repository)
+    data_gray = photo_like_image()
 
     print(f"Image shape: {data_gray.shape}, dtype: {data_gray.dtype}")
     print(f"Original size: {data_gray.nbytes:,} bytes")
@@ -272,12 +207,6 @@ def test_real_image():
         print(f"PSNR: {psnr_lossy:.2f} dB")
         print(f"SSIM: {ssim_lossy:.4f}")
 
-        # Save comparison images
-        test_dir = REPO_ROOT / 'test_images'
-        test_dir.mkdir(exist_ok=True)
-        save_image(data_gray, test_dir / 'original_gray.png')
-        save_image(reconstructed_lossy, test_dir / 'reconstructed_lossy.png')
-        print(f"\nSaved comparison images to {test_dir}")
     else:
         print("No procedural fit found (using LZMA fallback)")
 
