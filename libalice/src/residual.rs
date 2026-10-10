@@ -1658,7 +1658,7 @@ fn widen(r: f32) -> f64 {
 }
 
 /// The residual values as `f64`, whatever the residual's precision (an `f32`
-/// residual widened by [`widen`]'s rule).
+/// residual widened by the rule of `widen`: sign, quiet bit, payload at the top).
 ///
 /// # Errors
 ///
