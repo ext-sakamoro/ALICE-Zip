@@ -146,7 +146,7 @@ restored = designer.decompress(result)   # data と同じ dtype、同じ byte
 - `decompress` は実数の 11 種の dtype (`float16/32/64`、`int8`〜`int64`、`uint8`〜`uint64`) で、NaN の payload や無限大を含めて入力を dtype ごと bit 単位で返す <!-- claim-test: test_lossless_gives_back_the_input_bit_for_bit -->
 - residual は元データから書き、元データの精度で持つ (float64 / int32 / uint32 / int64 / uint64 の元データは `float64`、それ以外は `float32`) 生成値と residual で正確に復元できない値 (NaN、無限大、差が正確でない値) はそのまま持つ residual は `ResidualData` の file で version 4 (residual が `float32` でそのまま持つ値が無ければ version 2)
 - parameter と residual の合計が入力の LZMA より小さくなければ LZMA の結果を返す residual が運べない dtype (complex など) も同じ <!-- claim-test: test_a_lossless_result_is_not_larger_than_lzma_of_the_input -->
-- `quantize_residual=8` / `16` は lossy (`is_lossless` は `False`) で、各値の誤差は量子化の半 step に、`float32` で持つ residual の丸めと出力 dtype への丸め (それぞれ最後の桁の半分) を足した範囲に収まる <!-- claim-test: test_a_quantized_residual_is_off_by_at_most_half_a_step -->
+- `quantize_residual=8` / `16` は lossy (`is_lossless` は `False`) で、各値の誤差は量子化の半 step に、`float32` で持つ residual の丸めと出力 dtype への丸め (それぞれ最後の桁の半分) を足した範囲に収まる residual の幅が小さい `float32` のデータでは丸めの項が半 step よりずっと大きくなり、半 step は上界にほとんど効かない <!-- claim-test: test_a_quantized_residual_is_off_by_at_most_half_a_step -->
 - 以前の版で作った結果 (`float32` の residual で lossless でなかったもの) は `decompress` が拒否する 入力から圧縮し直すか、近似値でよければ `allow_approximate=True` で読む <!-- claim-test: test_a_result_of_the_earlier_residual_path_is_refused -->
 
 ## 仕組み

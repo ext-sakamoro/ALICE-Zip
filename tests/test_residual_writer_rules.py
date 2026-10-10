@@ -54,7 +54,10 @@ def test_finite_residuals_are_the_float64_difference():
 def test_a_quantized_residual_is_off_by_at_most_half_a_step(bits, dtype):
     # oracle: each value is within half a quantisation step of the original,
     # plus the rounding of the residual stored as float32 and of the output
-    # to its dtype (half a unit in the last place of each, per value)
+    # to its dtype (half a unit in the last place of each, per value). For
+    # float32 data with a small residual range the rounding terms can be far
+    # larger than the half step (then the half step adds nothing); this input
+    # is chosen so the step dominates and truncation is caught
     t = np.linspace(0, 20, 2000)
     x = (np.sin(t) * 100 + np.random.default_rng(2).normal(0, 0.3, 2000)).astype(dtype)
     d = ProceduralCompressionDesigner()

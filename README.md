@@ -161,7 +161,9 @@ restored = designer.decompress(result)   # same dtype, same bytes as data
 - `quantize_residual=8` / `16` is lossy (`is_lossless` is `False`): each value
   is within half a quantisation step, plus the rounding of the residual stored
   as `float32` and of the output to its dtype (half a unit in the last place of
-  each). <!-- claim-test: test_a_quantized_residual_is_off_by_at_most_half_a_step -->
+  each). For `float32` data with a small residual range the rounding terms can
+  be far larger than the half step, which then adds nothing to the bound.
+  <!-- claim-test: test_a_quantized_residual_is_off_by_at_most_half_a_step -->
 - A result made by an earlier version (a `float32` residual, which was not
   lossless) is refused by `decompress`; compress the input again, or pass
   `allow_approximate=True` to read its approximate values. <!-- claim-test: test_a_result_of_the_earlier_residual_path_is_refused -->
