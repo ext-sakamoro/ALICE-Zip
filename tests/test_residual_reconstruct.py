@@ -28,7 +28,7 @@ ROWS = [l.split() for l in (DATA / "reconstruct_vectors.txt").read_text().splitl
 
 
 def test_every_dtype_has_vectors():
-    assert len(ROWS) == 286
+    assert len(ROWS) == 304
     assert len({r[0] for r in ROWS}) == 11
 
 
