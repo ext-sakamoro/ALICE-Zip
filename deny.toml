@@ -26,7 +26,8 @@ ignore = [
 
 # ---------------------------------------------------------------------------
 # Licenses (allow-list 方式、記載外 = deny)
-# alice-zip は MIT OR Apache-2.0 デュアルライセンス、libalice は MIT
+# 本 repository の crate は Apache-2.0 (0.9.0 / libalice 3.0.0 から)、下の allow は依存側の
+# ライセンス
 # ---------------------------------------------------------------------------
 [licenses]
 version = 2

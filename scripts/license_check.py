@@ -14,7 +14,8 @@ only. This checks that:
   identical copies (a package cannot reach files outside its directory), and
   no `LICENSE-MIT` is left;
 - `NOTICE` carries the attribution sentence;
-- the READMEs show the Apache-2.0 badge and link no `LICENSE-MIT`.
+- the READMEs show the Apache-2.0 badge and link no `LICENSE-MIT`;
+- no comment in `deny.toml` describes this repository's crates as MIT.
 
 A run that compares nothing fails.
 
@@ -87,6 +88,11 @@ def check(root: Path) -> list:
     notice = root / "NOTICE"
     expect(notice.is_file() and ATTRIBUTION in notice.read_text(encoding="utf-8"),
            "NOTICE lacks the attribution sentence")
+
+    deny = (root / "deny.toml").read_text(encoding="utf-8")
+    comments = "\n".join(l for l in deny.splitlines() if l.lstrip().startswith("#"))
+    expect(not re.search(r"(alice-zip|libalice)[^\n]*\bMIT\b", comments),
+           "deny.toml: a comment still describes this repository's crates as MIT")
 
     for rel in READMES:
         text = (root / rel).read_text(encoding="utf-8")
