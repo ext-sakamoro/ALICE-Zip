@@ -142,7 +142,8 @@ def test_grayscale_gradient():
     print(f"  Exact match: {exact_match}")
     print(f"  PSNR: {psnr:.2f} dB")
 
-    return exact_match or psnr > 50
+    # lossless: bit for bit, dtype included
+    assert reconstructed.dtype == data.dtype and reconstructed.tobytes() == data.tobytes()
 
 
 def test_noisy_texture():
@@ -190,7 +191,8 @@ def test_noisy_texture():
     print(f"  Exact match: {exact_match}")
     print(f"  PSNR: {psnr:.2f} dB")
 
-    return exact_match or psnr > 50
+    # lossless: bit for bit, dtype included
+    assert reconstructed.dtype == data.dtype and reconstructed.tobytes() == data.tobytes()
 
 
 def test_real_image():
@@ -279,7 +281,9 @@ def test_real_image():
     else:
         print("No procedural fit found (using LZMA fallback)")
 
-    return exact_match or psnr_lossless > 50
+    # lossless: bit for bit, dtype included
+    assert (reconstructed_lossless.dtype == data_gray.dtype
+            and reconstructed_lossless.tobytes() == data_gray.tobytes())
 
 
 def test_adaptive_fallback():
@@ -321,7 +325,7 @@ def test_adaptive_fallback():
     print(f"\nAdaptive chose better option: {adaptive_is_better}")
     print(f"Compression ratio >= 1.0x: {ratio_above_one}")
 
-    return adaptive_is_better
+    assert adaptive_is_better
 
 
 if __name__ == "__main__":

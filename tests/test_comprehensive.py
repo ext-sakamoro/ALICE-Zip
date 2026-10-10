@@ -45,7 +45,7 @@ def test_smooth_gradient():
     print(f"Engine: {result.engine_used.value}")
     print(f"Exact match: {np.allclose(data, reconstructed)}")
 
-    return result.effective_ratio > 1.0
+    assert result.effective_ratio > 1.0
 
 
 def test_pure_sine_wave():
@@ -68,7 +68,7 @@ def test_pure_sine_wave():
     print(f"Engine: {result.engine_used.value}")
     print(f"Exact match: {np.allclose(data, reconstructed, atol=1e-4)}")
 
-    return result.effective_ratio > 1.0
+    assert result.effective_ratio > 1.0
 
 
 def test_polynomial_data():
@@ -92,7 +92,7 @@ def test_polynomial_data():
     print(f"Engine: {result.engine_used.value}")
     print(f"Exact match: {np.allclose(data, reconstructed, atol=1e-4)}")
 
-    return result.effective_ratio > 1.0
+    assert result.effective_ratio > 1.0
 
 
 def test_signal_with_noise():
@@ -133,7 +133,7 @@ def test_signal_with_noise():
         print(f"  Ratio: {data.nbytes / result_lossy.compressed_size:.2f}x")
         print(f"  MSE: {mse:.4f}")
 
-    return result_lossless.effective_ratio >= 0.99  # Allow tiny tolerance
+    assert result_lossless.effective_ratio >= 0.99  # Allow tiny tolerance
 
 
 def test_random_noise():
@@ -160,7 +160,7 @@ def test_random_noise():
     print(f"Exact match: {np.allclose(data, reconstructed)}")
 
     # Ratio should be >= ~0.99 (adaptive fallback prevents expansion)
-    return result.effective_ratio >= 0.99
+    assert result.effective_ratio >= 0.99
 
 
 def test_mixed_frequency():
@@ -190,7 +190,7 @@ def test_mixed_frequency():
     print(f"Has residual: {result.has_residual}")
     print(f"Exact match: {np.allclose(data, reconstructed, atol=1e-4)}")
 
-    return result.effective_ratio > 1.0
+    assert result.effective_ratio > 1.0
 
 
 def test_edge_cases():
@@ -229,7 +229,7 @@ def test_edge_cases():
     print(f"     Ratio: {result.effective_ratio:.2f}x, Match: {match}")
     all_pass = all_pass and match
 
-    return all_pass
+    assert all_pass
 
 
 def print_summary(results):

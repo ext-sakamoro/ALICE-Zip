@@ -93,7 +93,7 @@ def test_polynomial_with_noise():
     print(f"Total size reduction: {(result_32.total_compressed_size - result_8.total_compressed_size) / result_32.total_compressed_size * 100:.1f}%")
     print(f"Quality loss (PSNR): {calculate_psnr(data, recon_32) - calculate_psnr(data, recon_8):.2f} dB")
 
-    return calculate_psnr(data, recon_8) > 40  # Should be high quality
+    assert calculate_psnr(data, recon_8) > 40  # Should be high quality
 
 
 def test_texture_pattern():
@@ -137,7 +137,7 @@ def test_texture_pattern():
     print(f"Size reduction: {(result_32.total_compressed_size - result_8.total_compressed_size) / result_32.total_compressed_size * 100:.1f}%")
     print(f"Quality: PSNR={calculate_psnr(data, recon_8):.1f}dB (>40dB is excellent)")
 
-    return calculate_psnr(data, recon_8) > 40
+    assert calculate_psnr(data, recon_8) > 40
 
 
 def test_audio_signal():
@@ -198,7 +198,7 @@ def test_audio_signal():
     print(f"16-bit: {result_16.total_compressed_size:,} bytes, PSNR={calculate_psnr(data, recon_16):.1f}dB")
     print(f"8-bit:  {result_8.total_compressed_size:,} bytes, PSNR={calculate_psnr(data, recon_8):.1f}dB")
 
-    return calculate_psnr(data, recon_8) > 30  # Audio needs > 30dB
+    assert calculate_psnr(data, recon_8) > 30  # Audio needs > 30dB
 
 
 def test_comparison_table():
@@ -250,7 +250,7 @@ def test_comparison_table():
     print("-" * 75)
     print("\nNote: PSNR > 40dB = Excellent, > 30dB = Good, > 20dB = Acceptable")
 
-    return all_passed
+    assert all_passed
 
 
 if __name__ == "__main__":

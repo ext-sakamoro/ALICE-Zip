@@ -57,7 +57,10 @@ def test_perlin_noise_lossless():
     print(f"  MSE: {mse:.2e}")
     print(f"  Exact match: {np.allclose(data, reconstructed, atol=1e-5)}")
 
-    return result.is_lossless and np.allclose(data, reconstructed, atol=1e-5)
+    # lossless: bit for bit, dtype included
+    assert result.is_lossless
+    assert np.asarray(reconstructed).dtype == data.dtype
+    assert np.asarray(reconstructed).tobytes() == data.tobytes()
 
 
 def test_polynomial_lossless():
@@ -97,7 +100,10 @@ def test_polynomial_lossless():
     print(f"  MSE: {mse:.2e}")
     print(f"  Exact match: {np.allclose(data, reconstructed, atol=1e-5)}")
 
-    return result.is_lossless and np.allclose(data, reconstructed, atol=1e-5)
+    # lossless: bit for bit, dtype included
+    assert result.is_lossless
+    assert np.asarray(reconstructed).dtype == data.dtype
+    assert np.asarray(reconstructed).tobytes() == data.tobytes()
 
 
 def test_fourier_lossless():
@@ -143,7 +149,10 @@ def test_fourier_lossless():
     print(f"  MSE: {mse:.2e}")
     print(f"  Exact match: {np.allclose(data, reconstructed, atol=1e-5)}")
 
-    return result.is_lossless and np.allclose(data, reconstructed, atol=1e-5)
+    # lossless: bit for bit, dtype included
+    assert result.is_lossless
+    assert np.asarray(reconstructed).dtype == data.dtype
+    assert np.asarray(reconstructed).tobytes() == data.tobytes()
 
 
 def test_lossy_vs_lossless():
@@ -177,7 +186,7 @@ def test_lossy_vs_lossless():
     print(f"  MSE: {np.mean((data - recon_lossless) ** 2):.2e}")
     print(f"  Exact: {np.allclose(data, recon_lossless, atol=1e-5)}")
 
-    return result_lossless.is_lossless
+    assert result_lossless.is_lossless
 
 
 if __name__ == "__main__":

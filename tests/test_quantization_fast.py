@@ -58,7 +58,7 @@ def test_polynomial_quantization():
         reduction = (r32.total_compressed_size - r8.total_compressed_size) / r32.total_compressed_size * 100
         print(f"Size reduction: {reduction:.1f}%")
 
-    return calculate_psnr(data, rec8) > 40
+    assert calculate_psnr(data, rec8) > 40
 
 
 def test_sine_quantization():
@@ -90,7 +90,7 @@ def test_sine_quantization():
         reduction = (r32.total_compressed_size - r8.total_compressed_size) / r32.total_compressed_size * 100
         print(f"Size reduction: {reduction:.1f}%")
 
-    return calculate_psnr(data, rec8) > 40
+    assert calculate_psnr(data, rec8) > 40
 
 
 def test_2d_texture_quantization():
@@ -126,7 +126,7 @@ def test_2d_texture_quantization():
         reduction = (r32.total_compressed_size - r8.total_compressed_size) / r32.total_compressed_size * 100
         print(f"Size reduction: {reduction:.1f}%")
 
-    return calculate_psnr(data, rec8) > 40
+    assert calculate_psnr(data, rec8) > 40
 
 
 def test_comparison_matrix():
@@ -157,7 +157,6 @@ def test_comparison_matrix():
         print(f"{bits_str:<10} {r.total_compressed_size:,}B{'':<5} {r.effective_ratio:.2f}x{'':<5} {psnr_str:<15}")
 
     print("-" * 50)
-    return True
 
 
 if __name__ == "__main__":
