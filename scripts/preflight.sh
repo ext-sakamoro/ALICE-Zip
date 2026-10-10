@@ -120,6 +120,9 @@ step "ci.yml / fmt: Check formatting (libalice)"
 step "ci.yml / claim-check: claim-test marker が実在の試験を指しているか"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; python3 scripts/claim_check.py )
 
+step "ci.yml / claim-check: Python の未定義の名前と上書き (ruff F821 / F811)"
+( python3 scripts/undefined_names.py )
+
 step "ci.yml / claim-check: include の参照先が git で追跡されているか"
 ( python3 scripts/test_include_tracked.py && python3 scripts/include_tracked.py )
 

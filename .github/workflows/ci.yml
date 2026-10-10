@@ -211,6 +211,12 @@ jobs:
       # ⚠️ marker 0 件でも fail する (空振りを成功と読ませない)
       - name: claim-test marker が実在の試験を指しているか
         run: python3 scripts/claim_check.py
+      # 改名で古い名前の呼び出しが残ると、pytest が実行しない場所 (__main__
+      # の block など) では誰も気付かない ⚠️ 検査した file が 0 件でも fail
+      - name: Python の未定義の名前と上書き (ruff F821 / F811)
+        run: |
+          python3 -m pip install ruff==0.14.0
+          python3 scripts/undefined_names.py
       # include_bytes! / include_str! の参照先が追跡されているか (ignore に当たった
       # fixture は手元では compile できても clean な checkout では compile できない)
       # ⚠️ 比較 0 件でも fail する
