@@ -267,6 +267,10 @@ SHA-256 で識別する section は既存の形式の bytes をそのまま運�
   `ContainerView::verify_law_ids` を通して payload から再計算した識別子と照合する
 - **以前の file**: `container::read_any` は版 1.0 / 1.1 の `ALICE_ZIP` file も
   読み (header と payload の 2 section)、書かれたことのない値は拒否する
+  `container::decompress_legacy_alice_zip` (`lzma` feature) は Python の書き手が
+  LZMA に退避した payload (元データをそのまま再現する唯一の種類) を復元し、header の
+  `original_size` と `original_hash` に照合する procedural の payload は生成器の
+  parameter なので Python package だけが復元する <!-- claim-test: python_lzma_fallback_files_decode_to_the_original_bytes -->
 
 <!-- claim-test: every_single_bit_flip_is_refused_by_the_expected_check -->
 コンテナのどの 1 bit を変えても拒否される (4 section の fixture の全 bit で確認)

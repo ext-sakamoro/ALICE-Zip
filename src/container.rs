@@ -265,6 +265,18 @@ pub enum ContainerError {
     /// Data offered as the original of an `ALICE_ZIP` file does not match
     /// the header's `original_hash`.
     OriginalHash,
+    /// An `ALICE_ZIP` payload of a kind `decompress_legacy_alice_zip` does
+    /// not decode: everything except the LZMA fallback (`payload_type`
+    /// `0x30`).
+    UnsupportedPayload {
+        /// `payload_type` in the header; `None` for version 1.0.
+        payload_type: Option<u8>,
+    },
+    /// An `ALICE_ZIP` LZMA fallback payload is not as the writer produces
+    /// it: the metadata length, the metadata JSON, the xz stream, or a
+    /// result longer than `original_size` or not of the size the metadata's
+    /// shape and dtype give.
+    LegacyPayload,
 }
 
 impl fmt::Display for ContainerError {
@@ -314,6 +326,13 @@ impl fmt::Display for ContainerError {
             ),
             Self::OriginalHash => {
                 write!(f, "ALICE_ZIP: the original does not match original_hash")
+            }
+            Self::UnsupportedPayload { payload_type } => match payload_type {
+                Some(t) => write!(f, "ALICE_ZIP: payload_type {t:#04x} is not decoded here"),
+                None => write!(f, "ALICE_ZIP: a version 1.0 payload is not decoded here"),
+            },
+            Self::LegacyPayload => {
+                write!(f, "ALICE_ZIP: the LZMA fallback payload is malformed")
             }
         }
     }
@@ -993,8 +1012,10 @@ pub fn parse_legacy_alice_zip_header(
 ///
 /// The header is checked as in [`parse_legacy_alice_zip_header`], and the
 /// payload must be exactly as long as the header states. The payload is not
-/// decompressed here, so `original_hash` is not checked here; a reader that
-/// decompresses checks its result with [`LegacyHeader::verify_original`].
+/// decompressed here, so `original_hash` is not checked here;
+/// `decompress_legacy_alice_zip` (`lzma` feature) decompresses the LZMA
+/// fallback payload and checks its result with
+/// [`LegacyHeader::verify_original`].
 ///
 /// # Errors
 ///
@@ -1010,6 +1031,156 @@ pub fn read_legacy_alice_zip(bytes: &[u8]) -> Result<Container, ContainerError> 
     c.push(Tag::PROV, true, bytes[..header_len].to_vec());
     c.push(Tag::RAW, true, payload.to_vec());
     Ok(c)
+}
+
+/// An array decoded from an `ALICE_ZIP` LZMA fallback payload.
+#[cfg(feature = "lzma")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyArray {
+    /// Dimensions, as the writer recorded them.
+    pub shape: Vec<u64>,
+    /// `NumPy` dtype name, as the writer recorded it (for example `float64`).
+    pub dtype: alloc::string::String,
+    /// The array's bytes in the writer's order (`ndarray.tobytes()`), checked
+    /// against `original_size` and `original_hash`.
+    pub data: Vec<u8>,
+}
+
+/// Decodes an `ALICE_ZIP` file whose payload is the LZMA fallback
+/// (`payload_type` `0x30`), the one payload that reproduces the original
+/// exactly, and checks the result with [`LegacyHeader::verify_original`].
+///
+/// The payload is `meta_len` (u32 LE) ‖ metadata JSON ‖ an xz stream, as the
+/// Python writer (`ALICEZip.compress`) produces it. The metadata must be in
+/// the writer's form, `{"shape":[..],"dtype":".."}`, with a dtype whose size
+/// is known, and the decoded bytes must be exactly the shape's element count
+/// times that size. Decoding stops as soon as the result exceeds
+/// `original_size`, so a payload cannot make the reader produce more than
+/// the header states.
+///
+/// Procedural, media and texture payloads store generator parameters that
+/// only the Python package regenerates; they are refused here.
+///
+/// # Errors
+///
+/// As [`parse_legacy_alice_zip_header`]; [`ContainerError::Layout`] (the
+/// payload length differs from the header);
+/// [`ContainerError::UnsupportedPayload`]; [`ContainerError::LegacyPayload`];
+/// [`ContainerError::OriginalSize`] or [`ContainerError::OriginalHash`].
+#[cfg(feature = "lzma")]
+pub fn decompress_legacy_alice_zip(bytes: &[u8]) -> Result<LegacyArray, ContainerError> {
+    let (header, header_len) = parse_legacy_alice_zip_header(bytes)?;
+    let payload = &bytes[header_len..];
+    if header.compressed_size != payload.len() as u64 {
+        return Err(ContainerError::Layout);
+    }
+    if header.payload_type != Some(LEGACY_LZMA_FALLBACK) {
+        return Err(ContainerError::UnsupportedPayload {
+            payload_type: header.payload_type,
+        });
+    }
+    let bad = ContainerError::LegacyPayload;
+    let meta_len = u32::from_le_bytes(payload.get(..4).ok_or(bad)?.try_into().map_err(|_| bad)?);
+    let meta_end = usize::try_from(meta_len)
+        .ok()
+        .and_then(|m| m.checked_add(4))
+        .filter(|&e| e <= payload.len())
+        .ok_or(bad)?;
+    let (shape, dtype) = parse_legacy_meta(&payload[4..meta_end]).ok_or(bad)?;
+    let item = legacy_dtype_size(dtype).ok_or(bad)?;
+
+    let mut out = CappedWriter {
+        data: Vec::new(),
+        cap: header.original_size,
+    };
+    lzma_rs::xz_decompress(&mut &payload[meta_end..], &mut out).map_err(|_| bad)?;
+    header.verify_original(&out.data)?;
+
+    let elements = shape
+        .iter()
+        .try_fold(1_u64, |n, &d| n.checked_mul(d))
+        .ok_or(bad)?;
+    if elements.checked_mul(item) != Some(out.data.len() as u64) {
+        return Err(bad);
+    }
+    Ok(LegacyArray {
+        shape,
+        dtype: dtype.into(),
+        data: out.data,
+    })
+}
+
+/// Collects decoded bytes and fails once they would exceed `cap`.
+#[cfg(feature = "lzma")]
+struct CappedWriter {
+    data: Vec<u8>,
+    cap: u64,
+}
+
+#[cfg(feature = "lzma")]
+impl std::io::Write for CappedWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if (self.data.len() + buf.len()) as u64 > self.cap {
+            return Err(std::io::Error::other("longer than original_size"));
+        }
+        self.data.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Parses the writer's metadata, `{"shape":[d,..],"dtype":"name"}` with no
+/// spaces (`json.dumps(.., separators=(',', ':'))`). Anything else is `None`.
+#[cfg(feature = "lzma")]
+fn parse_legacy_meta(meta: &[u8]) -> Option<(Vec<u64>, &str)> {
+    let mut rest = meta.strip_prefix(b"{\"shape\":[")?;
+    let mut shape = Vec::new();
+    if let Some(r) = rest.strip_prefix(b"]") {
+        rest = r;
+    } else {
+        loop {
+            let digits = rest.iter().take_while(|b| b.is_ascii_digit()).count();
+            if digits == 0 || (digits > 1 && rest[0] == b'0') {
+                return None;
+            }
+            let text = core::str::from_utf8(&rest[..digits]).ok()?;
+            shape.push(text.parse::<u64>().ok()?);
+            rest = &rest[digits..];
+            match rest.split_first()? {
+                (b',', r) => rest = r,
+                (b']', r) => {
+                    rest = r;
+                    break;
+                }
+                _ => return None,
+            }
+        }
+    }
+    let rest = rest.strip_prefix(b",\"dtype\":\"")?;
+    let name_len = rest
+        .iter()
+        .take_while(|b| b.is_ascii_alphanumeric())
+        .count();
+    if rest.get(name_len..)? != b"\"}" {
+        return None;
+    }
+    Some((shape, core::str::from_utf8(&rest[..name_len]).ok()?))
+}
+
+/// Size in bytes of one element of a `NumPy` dtype the writer can record.
+#[cfg(feature = "lzma")]
+fn legacy_dtype_size(dtype: &str) -> Option<u64> {
+    Some(match dtype {
+        "bool" | "int8" | "uint8" => 1,
+        "int16" | "uint16" | "float16" => 2,
+        "int32" | "uint32" | "float32" => 4,
+        "int64" | "uint64" | "float64" | "complex64" => 8,
+        "complex128" => 16,
+        _ => return None,
+    })
 }
 
 /// Reads a container or an `ALICE_ZIP` file, telling them apart by their
