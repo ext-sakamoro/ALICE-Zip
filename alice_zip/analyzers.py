@@ -367,6 +367,11 @@ def compress_with_lzma(data: np.ndarray, preset: int = 6) -> CompressionResult:
 # ProceduralCompressionDesigner - High-level Compression API
 # ============================================================================
 
+# residual_format of a lossless result: residual_data is a ResidualData file
+# (alice_zip.residual_compression) that rebuilds the input bit for bit
+RESIDUAL_FORMAT = "alice-residual"
+
+
 class ProceduralCompressionDesigner:
     """
     High-level API for procedural compression.
@@ -430,12 +435,25 @@ class ProceduralCompressionDesigner:
             regenerated = decompress_from_params(result.generator_params)
             regenerated = regenerated.reshape(original_shape)
 
+            if quantize_residual is None:
+                # lossless: a residual written from the original; positions the
+                # generated values plus a float32 residual cannot rebuild bit
+                # for bit are kept as they are (ResidualCompressor.compress_original)
+                from .residual_compression import ResidualCompressor
+                rd = ResidualCompressor().compress_original(
+                    data, regenerated.astype(np.float64))
+                result.residual_data = rd.to_bytes()
+                result.metadata['residual_format'] = RESIDUAL_FORMAT
+                result.is_lossless = True
+                result.error_metric = 0.0
+                return result
+
             # Calculate residual
             residual = data.astype(np.float64) - regenerated.astype(np.float64)
 
             # Check if residual is significant
             if np.max(np.abs(residual)) > 1e-10:
-                # Quantize residual if requested
+                # Quantize residual (lossy)
                 if quantize_residual is not None:
                     # Normalize residual to [0, 1] range
                     r_min, r_max = residual.min(), residual.max()
@@ -472,15 +490,23 @@ class ProceduralCompressionDesigner:
 
         return result
 
-    def decompress(self, result: CompressionResult) -> np.ndarray:
+    def decompress(self, result: CompressionResult,
+                   allow_approximate: bool = False) -> np.ndarray:
         """
         Decompress data from a CompressionResult.
 
         Args:
             result: CompressionResult from compress()
+            allow_approximate: read a result of the earlier residual path (a
+                float32 residual without residual_format, which is not
+                lossless) as its approximate values instead of refusing it
 
         Returns:
             Reconstructed numpy array
+
+        Raises:
+            ValueError: for a result of the earlier residual path, unless
+                allow_approximate is set
         """
         from .generators import decompress_from_params, decompress_from_lzma
 
@@ -496,12 +522,23 @@ class ProceduralCompressionDesigner:
             if shape is not None:
                 data = data.reshape(shape)
 
+            quant_bits = result.metadata.get('residual_quantized') if result.metadata else None
+            residual_format = result.metadata.get('residual_format') if result.metadata else None
+            if result.has_residual and residual_format == RESIDUAL_FORMAT:
+                from .residual_compression import ResidualCompressor, ResidualData
+                rd = ResidualData.from_bytes(result.residual_data)
+                return ResidualCompressor().reconstruct(data.astype(np.float64), rd)
+            if result.has_residual and residual_format is not None:
+                raise ValueError(f"Unknown residual_format {residual_format!r}")
+            if result.has_residual and quant_bits is None and not allow_approximate:
+                raise ValueError(
+                    "this result was written by the earlier residual path (a float32 "
+                    "residual), which is not lossless; compress the input again, or "
+                    "pass allow_approximate=True to read its approximate values")
+
             # Add residual if present (for lossless/near-lossless reconstruction)
             if result.has_residual:
                 residual_bytes = lzma.decompress(result.residual_data)
-
-                # Check if residual was quantized
-                quant_bits = result.metadata.get('residual_quantized') if result.metadata else None
                 if quant_bits == 8:
                     quantized = np.frombuffer(residual_bytes, dtype=np.uint8).reshape(shape)
                     r_min = result.metadata.get('residual_min', 0.0)
