@@ -19,31 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Python package の `ResidualCompressor.compress_original(original, generated)`: 元データと generated から、`reconstruct` で bit 単位で元に戻る residual を書く residual は元データの精度で持つ (float64 / int32 / uint32 / int64 / uint64 は float64) 元か generated が有限でない位置 (NaN・無限大) と、規則で復元できない位置は例外として元の要素をそのまま持ち、residual と一緒に圧縮する 差分では無限大や NaN の bit を運べず、inf - inf の NaN の符号のように環境で結果が変わる経路もあったため 例外か float64 の residual を持つ file は version 4 (`residual_dtype` と `exceptions`)、以前の読み手は version で拒否する `exceptions` は version 3 と 4、`residual_dtype` は version 4 でだけ読み、それ以外の version に付いていれば拒否する header は平らな object とし、同じ鍵が 2 回ある header、object の値、配列の中の配列・object は拒否する (鍵の重複を以前は後の値で読んでいた) 既知の鍵は使わない場面でも型を見る 鍵 × JSON の値の種類 × version の組 (375 行) を仕様から生成した `tests/data/residual/header_gating.txt` で両方の読み手を照合する `decompress_residual` は residual の精度 (float32 / float64) で返す libalice の `residual::compress_original` と同じ file を書く header の数の欄は整数 (base_value / min_val / scale は数) だけを受け付け、bool (Python では int の部分型) や `8.0` の形は拒否する 既知の挙動: 以前の版の読み手は、version 2 のまま exceptions の鍵と末尾の block を持つ file (どの書き手も作らない) を例外を落として読む この版の読み手は拒否する
 
-- `container` — a container that holds several payloads, each identified by
-  its SHA-256: a 56-byte header (8-byte magic starting with a non-ASCII byte,
-  major / minor version, semantics id), a section table (tag, critical flag,
-  offset, length, SHA-256) and a trailing SHA-256 of the whole file.
-  `Container::id` hashes the header and the table with domain separation.
-  Readers refuse another major version, an unknown critical section, any
-  reserved bit, a gap or extra byte, and a trailer or payload that does not
-  match; unknown non-critical sections are kept. `SREF` sections refer to
-  sections by SHA-256 (a missing one is refused), `LIDS` sections list law
-  identifiers checked against the header's semantics id and, through
-  `ContainerView::verify_law_ids`, against recomputed identifiers.
-  `read_any` also reads `ALICE_ZIP` files of version 1.0 / 1.1 and refuses
-  field values that were never written. `parse_legacy_alice_zip_header` returns the
-  header as `LegacyHeader`; `LegacyHeader::verify_original` checks data offered
-  as the original against `original_size` and, when one is recorded (not all
-  zeros), `original_hash`. `ContainerView` checks a payload's
-  hash only when it is read.
-- `tests/container_oracle.rs` (25 tests): bytes and identifiers equal those of
-  the independent reference writer `tests/data/container/container_ref.py`;
-  every single-bit change of a fixture is refused by the check its position
-  belongs to; degenerate input returns the stated error.
-- `examples/container_roundtrip.rs`.
-- CI: the container oracles run in the `no_std` build on each OS and under
-  `wasmtime` on `wasm32-wasip1`; the wasm job fails when the summary reports
-  no passed test.
+- `container`: 複数の payload をそれぞれの SHA-256 で識別して 1 つにまとめるコンテナ 56 byte の header (非 ASCII の byte で始まる 8 byte の magic、major / minor 版、semantics id)、section の表 (tag、critical flag、offset、長さ、SHA-256)、file 全体の SHA-256 を末尾に置く `Container::id` は header と表を domain を分けて hash する 読み手は別の major 版、未知の critical section、予約 bit、隙間や余分な byte、合わない末尾や payload の hash を拒否し、未知の critical でない section は保つ `SREF` section は section を SHA-256 で参照し (無い参照は拒否)、`LIDS` section は法則の識別子を並べ、header の semantics id と、`ContainerView::verify_law_ids` で計算し直した識別子に照合する `read_any` は ALICE_ZIP の版 1.0 / 1.1 も読み、書き手が出したことのない値は拒否する `parse_legacy_alice_zip_header` は header を `LegacyHeader` で返し、`LegacyHeader::verify_original` は元データとして渡された byte を `original_size` と、記録があれば (全 0 でなければ) `original_hash` に照合する `ContainerView` は payload の hash を読む時だけ確かめる
+- `tests/container_oracle.rs` (25 本): byte と識別子が独立した参照の書き手 `tests/data/container/container_ref.py` と一致する fixture の 1 bit の変更はすべて、その位置を受け持つ検査で拒否される 退化した入力は定めた error を返す
+- `examples/container_roundtrip.rs`
+- CI: コンテナの oracle を各 OS の `no_std` build と `wasm32-wasip1` 上の `wasmtime` で走らせる wasm の job は通った試験が 0 件なら失敗にする
 - `container::LegacyHeader::original_hash_checkable` — ALICE_ZIP の payload を復元すると元データが再現されるか (`original_hash` を照合できるか) LZMA fallback (`0x30`) だけが true Python の `alice_zip.core.original_hash_checkable` と同じ規則で、両方の試験が同じ表 (`tests/container_oracle.rs` の `CHECKABLE`) を読む
 
 ### Changed (破壊的変更)
@@ -59,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - engine の index が 4 以上 (`IndexError` だった)
   - 66 byte 未満の 1.1 header (1.0 として読んでいた)
   - header の `compressed_size` と header の後ろの byte 数が違う file (後ろが長い file を読んでいた)
-- Python package の `residual_compression.ResidualData.from_bytes` は JSON header の `"version"` が 3 以上なら `ValueError` (version 2 として読んでいた) libalice の Rust 版と同じ規則で、両方の試験が同じ fixture (`tests/data/residual/`) を読む
+- Python package の `residual_compression.ResidualData.from_bytes` は JSON header の `"version"` が 1〜4 以外なら `ValueError` (以前は 3 以上を version 2 として読んでいた) version 3 / 4 は例外と residual の精度を持つ形 (Added の `compress_original` を参照) libalice の Rust 版と同じ規則で、両方の試験が同じ fixture (`tests/data/residual/`) を読む
 - `ALICEZip.decompress` は lossless な payload (LZMA fallback) を復元した後、長さを `original_size` と、記録があれば (全 0 でなければ) SHA-256 を `original_hash` と照合し、違えば `ValueError` procedural / media / texture は生成パラメータから近似で復元するので照合しない (`original_hash_checkable`)
 - 移行: Python package と本 crate の書き手が出した file (版 1.0 / 1.1、定義された値) はこれまでどおり読める 上の値を持つ file はどの書き手も出していないので、読めなくなった file は壊れているか別の形式 書き手の出力は変わらない (同じ入力で同じ bytes、header は参照実装の配置と一致)
 
