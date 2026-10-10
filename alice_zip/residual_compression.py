@@ -169,7 +169,7 @@ class ResidualData:
                     # Safe to slice - bounds already validated
                     header_json = data[4:4+header_len_v2].decode('utf-8')
                     # Use standard json.loads - header size already validated
-                    header = json.loads(header_json)
+                    header = _load_header(header_json)
 
                     # v2 format has 'version' field; only versions 1 and 2
                     # were written, so a later one is refused rather than
@@ -219,7 +219,7 @@ class ResidualData:
 
         try:
             # Use standard json.loads - header size already validated via MAX_HEADER_SIZE
-            header = json.loads(header_json)
+            header = _load_header(header_json)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid header JSON: {e}")
 
@@ -268,7 +268,7 @@ class ResidualData:
         for key in ('min_val', 'scale'):
             if key in header and not is_number(header[key]):
                 raise ValueError(f"{key} must be a number, got {header[key]!r}")
-        if 'bits' in header and not is_int(header['bits']):
+        if 'bits' in header and not (is_int(header['bits']) and header['bits'] >= 0):
             raise ValueError(f"bits must be an integer, got {header['bits']!r}")
 
         # the Rust writer before the header keys were aligned recorded only
@@ -895,6 +895,28 @@ def decompress_delta_differences(residual_data: "ResidualData") -> np.ndarray:
         raise ValueError(f"Not a delta residual: {residual_data.method.value}")
     raw = lzma.decompress(residual_data.compressed_data)
     return np.frombuffer(raw, dtype='<f4').reshape(residual_data.original_shape)
+
+
+def _load_header(text: str) -> Dict[str, Any]:
+    """The flat JSON header: a key given twice, an object value, or an array
+    holding an array or an object is refused (the Rust reader parses the same
+    way), so the same bytes cannot be read two ways."""
+    def pairs(items):
+        out = {}
+        for k, v in items:
+            if k in out:
+                raise ValueError(f"key {k!r} is given twice in the residual header")
+            out[k] = v
+        return out
+
+    header = json.loads(text, object_pairs_hook=pairs)
+    if not isinstance(header, dict):
+        raise ValueError("the residual header must be a JSON object")
+    for k, v in header.items():
+        if isinstance(v, dict) or (isinstance(v, list)
+                                   and any(isinstance(e, (list, dict)) for e in v)):
+            raise ValueError(f"the residual header is flat: {k!r} holds {v!r}")
+    return header
 
 
 _QUIET64 = np.uint64(0x7FF8000000000000)

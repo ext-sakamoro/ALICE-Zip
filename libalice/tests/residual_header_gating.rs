@@ -47,6 +47,11 @@ fn the_rust_reader_gives_every_verdict() {
         }
         compared += 1;
     }
-    assert!(wrong.is_empty(), "{} cells differ:\n{}", wrong.len(), wrong.join("\n"));
+    assert!(
+        wrong.is_empty(),
+        "{} cells differ:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
     assert_eq!(compared, 375);
 }

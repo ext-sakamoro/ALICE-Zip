@@ -300,9 +300,13 @@ impl Json {
             if body.trim().is_empty() {
                 return Ok(Self::Arr(Vec::new()));
             }
+            // the header is flat: an array holds scalars only
             return ResidualData::split_members(body)
                 .into_iter()
-                .map(Self::parse)
+                .map(|item| match Self::parse(item)? {
+                    Self::Arr(_) => Err(format!("an array inside an array: {raw}")),
+                    scalar => Ok(scalar),
+                })
                 .collect::<Result<Vec<_>, _>>()
                 .map(Self::Arr);
         }
@@ -651,7 +655,11 @@ impl ResidualData {
                 key_raw.to_owned()
             };
 
-            map.insert(key, Json::parse(val_raw)?);
+            // a key given twice is refused: the same bytes must not be read
+            // as two headers (first-wins here, last-wins elsewhere)
+            if map.insert(key.clone(), Json::parse(val_raw)?).is_some() {
+                return Err(format!("key {key} is given twice"));
+            }
         }
 
         Ok(map)
@@ -872,6 +880,24 @@ impl ResidualData {
             quant_bits,
             ..ResidualMetadata::default()
         };
+
+        // every known key is type-checked whether or not it applies here
+        for key in ["base_value", "min_val", "scale"] {
+            if let Some(v) = map.get(key) {
+                if v.as_f64().is_none() {
+                    return Err(ResidualError::InvalidHeader(format!(
+                        "{key} must be a number, got {v:?}"
+                    )));
+                }
+            }
+        }
+        if let Some(v) = map.get("bits") {
+            if v.as_usize().is_none() {
+                return Err(ResidualError::InvalidHeader(format!(
+                    "bits must be an integer, got {v:?}"
+                )));
+            }
+        }
 
         if method == ResidualCompressionMethod::Quantized {
             if map.contains_key("min_val") {
