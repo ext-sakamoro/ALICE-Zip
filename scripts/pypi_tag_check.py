@@ -12,7 +12,8 @@ Publishing tags (`.github/workflows/pypi.yml`):
 
 The tags `v<version>` and `alice-zip-cli-v<version>` name the Rust crates on
 crates.io and publish nothing to PyPI. Any other tag, or a version that
-differs, fails; a run that compared nothing fails. On success it prints the
+differs, fails: every path of `check` that compares nothing also reports
+a problem, so a run that compared nothing fails. On success it prints the
 project name (`alice-zip` or `libalice`) on the last line.
 
     python3 scripts/pypi_tag_check.py py-libalice-v3.0.0
@@ -60,10 +61,9 @@ def main(argv: list[str]) -> int:
     project, problems, compared = check(argv[1], ROOT)
     for p in problems:
         print(f"error: {p}", file=sys.stderr)
+    # check() reports a problem whenever it compares nothing, so a run that
+    # compared nothing always fails here (tests: *_compare_nothing_and_fail)
     if problems:
-        return 1
-    if compared == 0:
-        print("error: compared nothing", file=sys.stderr)
         return 1
     print(f"pypi-tag-check: OK ({compared} comparison)")
     print(project)

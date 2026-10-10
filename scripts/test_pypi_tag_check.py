@@ -83,6 +83,21 @@ class PypiTagCheck(unittest.TestCase):
         self.assertEqual(compared, 0)
         self.assertEqual(len(problems), 1)
 
+    def test_no_comparison_never_comes_without_a_problem(self):
+        # main() relies on this: a run that compared nothing always fails
+        tags = ["", "v0.9.0", "py-alice-zip-v", "py-libalice-vx", f"py-alice-zip-v{self.py}",
+                f"py-libalice-v{self.lib}", "py-alice-zip-v0.0.1", "py-libalice-v0.0.1"]
+        p = self.root / "libalice/Cargo.toml"
+        p.write_text(p.read_text(encoding="utf-8").replace(f'version = "{self.lib}"', "", 1), encoding="utf-8")
+        tags.append(f"py-libalice-v{self.lib}")
+        seen_zero = 0
+        for tag in tags:
+            _, problems, compared = self.run_check(tag)
+            if compared == 0:
+                seen_zero += 1
+                self.assertTrue(problems, tag)
+        self.assertGreater(seen_zero, 0)
+
     def test_main_exit_codes(self):
         self.assertEqual(pypi_tag_check.main(["x", f"py-alice-zip-v{self.py}"]), 0)
         self.assertEqual(pypi_tag_check.main(["x", "py-alice-zip-v0.0.1"]), 1)

@@ -26,6 +26,7 @@ jobs:
   build:
     name: Build and check the sdist and wheel
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -52,6 +53,10 @@ jobs:
           n_sdist=$(find dist -maxdepth 1 -name 'alice_zip-*.tar.gz' | wc -l)
           [ "$n_whl" -eq 1 ] && [ "$n_sdist" -eq 1 ] \
             || { echo "::error::expected 1 wheel and 1 sdist, got $n_whl / $n_sdist"; ls -l dist; exit 1; }
+          version="${GITHUB_REF_NAME#py-alice-zip-v}"
+          off=$(find dist -maxdepth 1 \( -name 'alice_zip-*.whl' -o -name 'alice_zip-*.tar.gz' \) ! -name "alice_zip-${version}-*.whl" ! -name "alice_zip-${version}.tar.gz" | wc -l)
+          [ "$off" -eq 0 ] \
+            || { echo "::error::$off archive(s) do not carry version $version"; ls -l dist; exit 1; }
           python3 scripts/dist_license_check.py 'dist/*.whl' 'dist/*.tar.gz'
           twine check --strict dist/*
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -64,6 +69,7 @@ jobs:
     name: Publish to PyPI
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: pypi
     permissions:
       id-token: write
