@@ -468,8 +468,11 @@ class ResidualCompressor:
         if generated.shape != residual.shape:
             raise ValueError(f"Shape mismatch: {generated.shape} vs {residual.shape}")
 
-        # Reconstruct
-        reconstructed = generated.astype(np.float64) + residual
+        # Reconstruct (the NaN of a sum is chosen by rule, see _sum_nan_bits)
+        generated = np.asarray(generated, dtype=np.float64)
+        with np.errstate(invalid="ignore"):
+            reconstructed = generated + residual.astype(np.float64)
+        nan = np.isnan(reconstructed)
 
         # Cast back to original dtype
         target_dtype = np.dtype(residual_data.original_dtype)
@@ -478,8 +481,12 @@ class ResidualCompressor:
             return _to_integer(reconstructed, target_dtype)
 
         # a float dtype: rounded once; an overflow is an infinity
-        with np.errstate(over="ignore"):
-            return reconstructed.astype(target_dtype)
+        with np.errstate(over="ignore", invalid="ignore"):
+            out = reconstructed.astype(target_dtype)
+        if nan.any():
+            bits = _sum_nan_bits(generated[nan], residual[nan])
+            out[nan] = _nan_as(bits, target_dtype)
+        return out
 
     def _quantize_residual(self, residual: np.ndarray, bits: int) -> bytes:
         """
@@ -707,6 +714,40 @@ def decompress_delta_differences(residual_data: "ResidualData") -> np.ndarray:
         raise ValueError(f"Not a delta residual: {residual_data.method.value}")
     raw = lzma.decompress(residual_data.compressed_data)
     return np.frombuffer(raw, dtype='<f4').reshape(residual_data.original_shape)
+
+
+_QUIET64 = np.uint64(0x7FF8000000000000)
+
+
+def _sum_nan_bits(generated: np.ndarray, residual: np.ndarray) -> np.ndarray:
+    """float64 bits of the NaN of generated (float64) + residual (float32).
+
+    Chosen by rule, not left to the hardware (which differs in which NaN it
+    keeps, and in the sign of the NaN of inf + -inf): generated's NaN with the
+    quiet bit set; else the residual's NaN widened (sign, quiet bit, its 23
+    payload bits at the top of the 52); else (inf + -inf) 0x7FF8000000000000."""
+    gb = generated.view(np.uint64)
+    rb = residual.astype(np.float32, copy=False).view(np.uint32).astype(np.uint64)
+    widened = ((rb >> np.uint64(31)) << np.uint64(63)) | _QUIET64 | \
+        ((rb & np.uint64(0x7FFFFF)) << np.uint64(29))
+    bits = np.where(np.isnan(residual), widened, _QUIET64)
+    return np.where(np.isnan(generated), gb | np.uint64(1 << 51), bits)
+
+
+def _nan_as(bits: np.ndarray, dtype: np.dtype) -> np.ndarray:
+    """float64 NaN bits as NaNs of a float dtype: the sign, the quiet bit and
+    the top of the payload (what numpy's conversion does on the platforms it
+    is measured on, written out so it does not depend on them)."""
+    sign = bits >> np.uint64(63)
+    if dtype == np.float16:
+        h = (sign << np.uint64(15)) | np.uint64(0x7E00) | \
+            ((bits >> np.uint64(42)) & np.uint64(0x3FF))
+        return h.astype(np.uint16).view(np.float16)
+    if dtype == np.float32:
+        f = (sign << np.uint64(31)) | np.uint64(0x7FC00000) | \
+            ((bits >> np.uint64(29)) & np.uint64(0x3FFFFF))
+        return f.astype(np.uint32).view(np.float32)
+    return bits.view(np.float64)
 
 
 def _to_integer(values: np.ndarray, dtype: np.dtype) -> np.ndarray:

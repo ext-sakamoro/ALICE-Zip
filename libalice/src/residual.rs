@@ -1020,7 +1020,8 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
 /// The original rebuilt from `generated` and the residual, as the
 /// little-endian bytes of the dtype the header records.
 ///
-/// Each value is `generated + residual` in `f64`, then:
+/// Each value is `generated + residual` in `f64` (a NaN chosen by rule,
+/// see `sum`), then:
 /// - an integer dtype refuses NaN (`Corrupted`), and otherwise rounds half to
 ///   even and saturates to the dtype's range, infinities included (Rust's
 ///   float-to-integer `as` saturates, so the 64-bit bounds need no special
@@ -1058,7 +1059,7 @@ pub fn reconstruct_bytes(generated: &[f64], rd: &ResidualData) -> Result<Vec<u8>
     };
     let mut out = Vec::with_capacity(generated.len() * width);
     for (&g, &r) in generated.iter().zip(&residual) {
-        let s = g + f64::from(r);
+        let s = sum(g, r);
         let dtype = rd.dtype.as_str();
         if dtype.contains("int") && s.is_nan() {
             return Err(ResidualError::Corrupted(
@@ -1068,7 +1069,7 @@ pub fn reconstruct_bytes(generated: &[f64], rd: &ResidualData) -> Result<Vec<u8>
         let n = s.round_ties_even();
         match dtype {
             "float16" => out.extend_from_slice(&f64_to_f16_bits(s).to_le_bytes()),
-            "float32" => out.extend_from_slice(&(s as f32).to_le_bytes()),
+            "float32" => out.extend_from_slice(&f64_to_f32_bits(s).to_le_bytes()),
             "float64" => out.extend_from_slice(&s.to_le_bytes()),
             "int8" => out.extend_from_slice(&(n as i8).to_le_bytes()),
             "int16" => out.extend_from_slice(&(n as i16).to_le_bytes()),
@@ -1083,14 +1084,48 @@ pub fn reconstruct_bytes(generated: &[f64], rd: &ResidualData) -> Result<Vec<u8>
     Ok(out)
 }
 
+/// `generated + residual` in `f64`, with the NaN chosen by rule rather than
+/// by the hardware (which differs in which NaN it keeps and in the sign of
+/// the NaN of inf + -inf): `generated`'s NaN with the quiet bit set; else the
+/// residual's NaN widened (sign, quiet bit, its 23 payload bits at the top of
+/// the 52); else (inf + -inf) `0x7FF8_0000_0000_0000`.
+fn sum(generated: f64, residual: f32) -> f64 {
+    const QUIET: u64 = 0x7FF8_0000_0000_0000;
+    if generated.is_nan() {
+        return f64::from_bits(generated.to_bits() | 1 << 51);
+    }
+    if residual.is_nan() {
+        let r = u64::from(residual.to_bits());
+        return f64::from_bits((r >> 31) << 63 | QUIET | (r & 0x7F_FFFF) << 29);
+    }
+    let s = generated + f64::from(residual);
+    if s.is_nan() {
+        f64::from_bits(QUIET)
+    } else {
+        s
+    }
+}
+
+/// `x` rounded once to `f32`; a NaN keeps its sign, the quiet bit and the top
+/// 22 bits of its payload (written out: `as` leaves a NaN's bits unspecified).
+#[allow(clippy::cast_possible_truncation)]
+fn f64_to_f32_bits(x: f64) -> u32 {
+    if x.is_nan() {
+        let b = x.to_bits();
+        return ((b >> 63) as u32) << 31 | 0x7FC0_0000 | ((b >> 29) & 0x3F_FFFF) as u32;
+    }
+    (x as f32).to_bits()
+}
+
 /// `x` rounded once (half to even) to an IEEE half: an overflow is an
-/// infinity, a NaN the quiet NaN with `x`'s sign.
+/// infinity; a NaN keeps its sign, the quiet bit and the top 10 bits of its
+/// payload.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn f64_to_f16_bits(x: f64) -> u16 {
     let sign = if x.is_sign_negative() { 0x8000 } else { 0 };
     let a = x.abs();
     if a.is_nan() {
-        return sign | 0x7E00;
+        return sign | 0x7E00 | ((x.to_bits() >> 42) & 0x3FF) as u16;
     }
     // 65520 is halfway between 65504 (the largest half) and 65536
     if a >= 65520.0 {
