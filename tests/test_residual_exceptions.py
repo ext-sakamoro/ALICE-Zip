@@ -26,12 +26,16 @@ from alice_zip.residual_compression import (  # noqa: E402
     ResidualCompressionMethod as M,
     ResidualCompressor,
     ResidualData,
+    _rebuild,
 )
 
 DATA = ROOT / "tests" / "data" / "residual"
 DTYPES = ["float16", "float32", "float64", "int8", "int16", "int32", "int64",
           "uint8", "uint16", "uint32", "uint64"]
 LOSSLESS = [M.NONE, M.LZMA, M.ZLIB, M.BITDELTA]
+# the residual is kept in float64 where float32 cannot carry the original's
+# precision (version 4, "residual_dtype")
+FLOAT64_RESIDUAL = {"float64", "int32", "uint32", "int64", "uint64"}
 
 _spec = importlib.util.spec_from_file_location("wpf", DATA / "write_python_fixtures.py")
 WPF = importlib.util.module_from_spec(_spec)
@@ -65,10 +69,13 @@ def test_exceptions_are_exactly_the_positions_the_rule_cannot_rebuild(dtype):
     rd = c.compress_original(original, generated)
     h = header(rd.to_bytes())
     positions = rd.exception_positions.tolist()
-    assert h["version"] == 3 and h["exceptions"] == len(positions) > 0
+    rdt = "float64" if dtype in FLOAT64_RESIDUAL else "float32"
+    assert h["version"] == 4 and h["residual_dtype"] == rdt
+    assert h["exceptions"] == len(positions) > 0
     assert positions == sorted(set(positions))
     residual = c.decompress_residual(rd)
-    assert all(residual.view("<u4")[p] == 0 for p in positions)
+    assert residual.dtype == np.dtype(rdt)
+    assert all(residual.view(f"<u{residual.itemsize}")[p] == 0 for p in positions)
     # the other positions rebuild from generated + residual alone; these do not,
     # or have a value that is not finite
     width = np.dtype(dtype).itemsize
@@ -79,12 +86,8 @@ def test_exceptions_are_exactly_the_positions_the_rule_cannot_rebuild(dtype):
         if not np.isfinite(generated[i]) or (is_float and not np.isfinite(original[i])):
             expected.append(i)
             continue
-        one = ResidualCompressor(method=M.NONE).compress_residual(
-            residual[i:i + 1], original_dtype=dtype)
-        try:
-            got = le_bytes(c.reconstruct(generated[i:i + 1], one))
-        except ValueError:
-            got = None
+        out, invalid = _rebuild(generated[i:i + 1], residual[i:i + 1], np.dtype(dtype))
+        got = None if invalid[0] else le_bytes(out)
         if got != o[i * width:(i + 1) * width]:
             expected.append(i)
     assert positions == expected
@@ -142,12 +145,12 @@ def test_both_writers_files_rebuild_the_original(dtype, writer):
 def test_both_writers_write_the_same_file_before_compression(name):
     import lzma
     def parts(data):
+        # version 4: the residual stream and the exceptions are compressed together
         h = header(data)
         n = 4 + struct.unpack("<I", data[:4])[0]
-        k = h.get("exceptions", 0)
-        width = np.dtype(h["dtype"]).itemsize
-        body, block = data[n:len(data) - k * (8 + width)], data[len(data) - k * (8 + width):]
-        return h, (body if h["method"] == "none" else lzma.decompress(body)), block
+        assert h["version"] == 4
+        body = data[n:]
+        return h, (body if h["method"] == "none" else lzma.decompress(body))
     assert parts((DATA / f"python_{name}.bin").read_bytes()) == \
         parts((DATA / f"rust_{name}.bin").read_bytes())
 
@@ -158,3 +161,27 @@ def test_a_value_that_is_not_finite_is_an_exception_even_when_it_would_rebuild()
     rd = ResidualCompressor(method=M.NONE).compress_original(
         np.array([np.inf, 1.0, -np.inf], dtype=np.float32), np.array([2.0, 1.0, -np.inf]))
     assert rd.exception_positions.tolist() == [0, 2]
+
+
+@pytest.mark.parametrize("dtype", ["float64", "int64", "uint32"])
+def test_values_close_to_generated_need_no_exceptions(dtype):
+    # a float64 residual rebuilds them exactly (o - g is exact when they are
+    # close), so nothing is kept as it is; a float32 residual could not
+    rng = np.random.default_rng(3)
+    if dtype == "float64":
+        original = rng.normal(0, 1000, 2000)
+    else:
+        original = rng.integers(2 ** 31, 2 ** 32 - 1, 2000).astype(dtype)
+    generated = original.astype(np.float64) + rng.normal(0, 0.2, 2000)
+    rd = ResidualCompressor(method=M.LZMA).compress_original(original, generated)
+    h = header(rd.to_bytes())
+    assert (h["version"], h["residual_dtype"], h["exceptions"]) == (4, "float64", 0)
+    out = ResidualCompressor().reconstruct(generated, ResidualData.from_bytes(rd.to_bytes()))
+    assert le_bytes(out) == le_bytes(original)
+
+
+def test_a_float64_file_rebuilds_its_original():
+    rd = ResidualData.from_bytes((DATA / "residual_v4_ok.bin").read_bytes())
+    out = ResidualCompressor().reconstruct(np.array([0.0, 1.0, -1.0, 4.0]), rd)
+    assert out.view("<u8").tolist() == [0x4014000000000000, 0x7FF0000000000001,
+                                        0x4014000000000000, 0x4020000000000000]

@@ -176,3 +176,55 @@ fn a_value_that_is_not_finite_is_an_exception_even_when_it_would_rebuild() {
     let rd = compress_original(&original, "float32", &generated, M::None).unwrap();
     assert_eq!(rd.metadata.exception_positions, [0, 2]);
 }
+
+#[test]
+fn values_close_to_generated_need_no_exceptions_with_a_float64_residual() {
+    // o - g is exact when they are close, so a float64 residual rebuilds every
+    // value (tests/test_residual_exceptions.py); a float32 residual could not
+    let mut x: u64 = 7;
+    let mut next = || {
+        x = x
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (x >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let values: Vec<f64> = (0..2000).map(|_| (next() - 0.5) * 2000.0).collect();
+    let generated: Vec<f64> = values.iter().map(|v| v + (next() - 0.5) * 0.4).collect();
+    let original: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+    let rd = compress_original(&original, "float64", &generated, M::Lzma).unwrap();
+    let read = ResidualData::from_bytes(&rd.to_bytes()).unwrap();
+    assert!(read.metadata.exception_positions.is_empty());
+    assert!(read.metadata.residual_f64);
+    assert_eq!(reconstruct_bytes(&generated, &read).unwrap(), original);
+}
+
+#[test]
+fn a_float64_file_rebuilds_its_original() {
+    let rd = ResidualData::from_bytes(&std::fs::read(dir().join("residual_v4_ok.bin")).unwrap())
+        .unwrap();
+    let out = reconstruct_bytes(&[0.0, 1.0, -1.0, 4.0], &rd).unwrap();
+    let bits: Vec<u64> = out
+        .chunks_exact(8)
+        .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
+        .collect();
+    assert_eq!(
+        bits,
+        [0x4014_0000_0000_0000, 0x7FF0_0000_0000_0001, 0x4014_0000_0000_0000, 0x4020_0000_0000_0000]
+    );
+}
+
+#[test]
+fn the_writers_files_have_version_4_and_the_residual_dtype() {
+    for dtype in DTYPES {
+        let b = std::fs::read(dir().join(format!("rust_exc_{dtype}.bin"))).unwrap();
+        let n = u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize;
+        let h = String::from_utf8(b[4..4 + n].to_vec()).unwrap();
+        let rdt = if matches!(dtype, "float64" | "int32" | "uint32" | "int64" | "uint64") {
+            "float64"
+        } else {
+            "float32"
+        };
+        assert!(h.contains("\"version\":4"), "{h}");
+        assert!(h.contains(&format!("\"residual_dtype\":\"{rdt}\"")), "{h}");
+    }
+}

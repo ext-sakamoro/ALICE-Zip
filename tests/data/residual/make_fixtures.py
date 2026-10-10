@@ -16,7 +16,7 @@ PAYLOAD = zlib.compress(struct.pack("<2f", 0.5, -1.25))
 
 # version as the writers emit it (an integer) and in two spellings no writer
 # emits: a float and a string; both readers must refuse the latter two
-for version, name in ((2, "v2"), (3, "v3"), (4, "v4"), (2.0, "v2_float"), ("2", "v2_string")):
+for version, name in ((2, "v2"), (3, "v3"), (5, "v5"), (2.0, "v2_float"), ("2", "v2_string")):
     header = json.dumps(
         {"method": "zlib", "original_len": 2, "shape": [2], "dtype": "float32",
          "quant_bits": None, "version": version},
@@ -429,3 +429,32 @@ for _i, _b in enumerate(['"quant_bits":8.0', '"quant_bits":8e0', '"quant_bits":t
     assert '"quant_bits":8' in _QT
     _raw(f"type_quantized_bits_{_i}", _QT.replace('"quant_bits":8', _b), _Q[4 + _QN:])
     TYPE_FILES.append(f"residual_type_quantized_bits_{_i}.bin")
+
+
+# ---------------------------------------------------------------------------
+# version 4: the residual in the original's precision ("residual_dtype"
+# float32 or float64) and the exceptions compressed with it. After the
+# method's decompression the payload is the residual stream (n values of
+# residual_dtype, or their bitdelta) followed by the positions (u64) and the
+# original elements. Method none here, so the payload is that plain stream.
+_V4 = '{"method":"none","shape":[4],"dtype":"float64","quant_bits":null,"version":4,"residual_dtype":"float64","exceptions":1}'
+_V4_STREAM = struct.pack("<4d", 5.0, 0.0, 6.0, 4.0)
+_V4_BLOCK = struct.pack("<Q", 1) + struct.pack("<Q", 0x7FF0000000000001)
+_raw("v4_ok", _V4, _V4_STREAM + _V4_BLOCK)
+V4_REFUSED = {
+    "v4_without_residual_dtype": (_V4.replace(',"residual_dtype":"float64"', ""), _V4_STREAM + _V4_BLOCK),
+    "v4_residual_dtype_float16": (_V4.replace('"residual_dtype":"float64"', '"residual_dtype":"float16"'),
+                                  _V4_STREAM + _V4_BLOCK),
+    "v4_residual_dtype_number": (_V4.replace('"residual_dtype":"float64"', '"residual_dtype":8'),
+                                 _V4_STREAM + _V4_BLOCK),
+    "v4_without_exceptions": (_V4.replace(',"exceptions":1', ""), _V4_STREAM + _V4_BLOCK),
+    "v4_longer": (_V4, _V4_STREAM + _V4_BLOCK + b"\x00"),
+    "v4_shorter": (_V4, _V4_STREAM + _V4_BLOCK[:-1]),
+    "v4_out_of_range": (_V4, _V4_STREAM + struct.pack("<Q", 4) + _V4_BLOCK[8:]),
+    "v4_quantized": (_V4.replace('"method":"none"', '"method":"quantized"').replace(
+        '"quant_bits":null', '"quant_bits":8'), _V4_STREAM + _V4_BLOCK),
+    "v4_unsorted": (_V4.replace('"exceptions":1', '"exceptions":2'),
+                    _V4_STREAM + struct.pack("<QQ", 2, 1) + _V4_BLOCK[8:] * 2),
+}
+for _name, (_text, _payload) in V4_REFUSED.items():
+    _raw(_name, _text, _payload)

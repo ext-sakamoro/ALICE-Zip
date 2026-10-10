@@ -14,7 +14,7 @@
 #           the dtype of the original; - = not compared
 residual_v2.bin                  hand        accept accept -
 residual_v3.bin                  hand        refuse refuse -
-residual_v4.bin                  hand        refuse refuse -
+residual_v5.bin                  hand        refuse refuse -
 residual_v2_float.bin            hand        refuse refuse -
 residual_v2_string.bin           hand        refuse refuse -
 residual_delta_python_legacy.bin hand        refuse refuse -
@@ -160,3 +160,13 @@ residual_type_leading_zero_1.bin hand        refuse refuse -
 residual_type_quantized_bits_0.bin hand        refuse refuse -
 residual_type_quantized_bits_1.bin hand        refuse refuse -
 residual_type_quantized_bits_2.bin hand        refuse refuse -
+residual_v4_ok.bin               hand        accept accept -
+residual_v4_without_residual_dtype.bin hand        refuse refuse -
+residual_v4_residual_dtype_float16.bin hand        refuse refuse -
+residual_v4_residual_dtype_number.bin hand        refuse refuse -
+residual_v4_without_exceptions.bin hand        refuse refuse -
+residual_v4_longer.bin hand        refuse refuse -
+residual_v4_shorter.bin hand        refuse refuse -
+residual_v4_out_of_range.bin hand        refuse refuse -
+residual_v4_quantized.bin hand        refuse refuse -
+residual_v4_unsorted.bin hand        refuse refuse -

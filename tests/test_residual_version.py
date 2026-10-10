@@ -22,8 +22,8 @@ def test_version_2_is_read():
 
 
 def test_a_later_version_is_refused_instead_of_being_read_as_version_2():
-    with pytest.raises(ValueError, match="version 4"):
-        ResidualData.from_bytes((DATA / "residual_v4.bin").read_bytes())
+    with pytest.raises(ValueError, match="version 5"):
+        ResidualData.from_bytes((DATA / "residual_v5.bin").read_bytes())
 
 
 def test_version_3_without_exceptions_is_refused():

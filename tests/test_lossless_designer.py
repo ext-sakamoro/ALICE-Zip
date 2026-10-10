@@ -102,3 +102,31 @@ def test_its_approximate_values_are_read_when_asked_for():
     x, r = earlier_result()
     out = ProceduralCompressionDesigner().decompress(r, allow_approximate=True)
     assert np.allclose(out, x, atol=1e-4)
+
+
+SIZE_INPUTS = dict(INPUTS, scaled=np.sin(T) * 1e30)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["float32", "float64"])
+@pytest.mark.parametrize("name", list(SIZE_INPUTS))
+def test_a_lossless_result_is_not_larger_than_lzma_of_the_input(name, dtype):
+    # what the fallback would store; the lossless result must not be larger
+    x = SIZE_INPUTS[name].astype(dtype)
+    r, out = round_trip(x)
+    assert same_bits(out, x)
+    assert r.total_compressed_size <= len(lzma.compress(x.tobytes(), preset=6)), r.engine_used
+
+
+def test_a_float64_input_keeps_its_residual_in_float64():
+    r, _ = round_trip(INPUTS["sin"].astype(np.float64))
+    assert r.engine_used == CompressionEngine.PROCEDURAL
+    rd = ResidualData.from_bytes(r.residual_data)
+    assert rd.residual_dtype == "float64"
+    assert len(rd.exception_positions) == 0
+
+
+def test_a_dtype_the_residual_cannot_carry_falls_back_to_lzma():
+    x = (np.sin(T) + 1j * np.cos(T)).astype(np.complex128)
+    r, out = round_trip(x)
+    assert r.engine_used == CompressionEngine.FALLBACK_LZMA
+    assert same_bits(out, x)
