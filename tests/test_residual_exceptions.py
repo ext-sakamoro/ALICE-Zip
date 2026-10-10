@@ -150,3 +150,11 @@ def test_both_writers_write_the_same_file_before_compression(name):
         return h, (body if h["method"] == "none" else lzma.decompress(body)), block
     assert parts((DATA / f"python_{name}.bin").read_bytes()) == \
         parts((DATA / f"rust_{name}.bin").read_bytes())
+
+
+def test_a_value_that_is_not_finite_is_an_exception_even_when_it_would_rebuild():
+    # inf - 2.0 is inf and 2.0 + inf is inf again, but the rule keeps every
+    # value that is not finite as it is (libalice/tests/residual_exceptions.rs)
+    rd = ResidualCompressor(method=M.NONE).compress_original(
+        np.array([np.inf, 1.0, -np.inf], dtype=np.float32), np.array([2.0, 1.0, -np.inf]))
+    assert rd.exception_positions.tolist() == [0, 2]

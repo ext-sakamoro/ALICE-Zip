@@ -163,3 +163,16 @@ fn random_bit_patterns_come_back_bit_for_bit() {
         }
     }
 }
+
+#[test]
+fn a_value_that_is_not_finite_is_an_exception_even_when_it_would_rebuild() {
+    // inf - 2.0 is inf and 2.0 + inf is inf again, but the rule keeps every
+    // value that is not finite as it is (tests/test_residual_exceptions.py)
+    let original: Vec<u8> = [f32::INFINITY, 1.0, f32::NEG_INFINITY]
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .collect();
+    let generated = [2.0, 1.0, f64::NEG_INFINITY];
+    let rd = compress_original(&original, "float32", &generated, M::None).unwrap();
+    assert_eq!(rd.metadata.exception_positions, [0, 2]);
+}
