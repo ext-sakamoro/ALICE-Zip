@@ -67,6 +67,14 @@ class ResidualData:
     # elements there (little-endian bytes of the dtype); see compress_original
     exception_positions: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.uint64))
     exception_bytes: bytes = b""
+    # the file's layout: 2 (no exceptions, float32 residual), 3 (exceptions as
+    # a raw block after the compressed residual) or 4 (residual_dtype, and the
+    # exceptions compressed with the residual)
+    layout: int = 2
+    # "float32" or "float64" (version 4); the residual stream before the
+    # method's compression, without the exceptions (version 4, as read)
+    residual_dtype: str = "float32"
+    residual_stream: Optional[bytes] = None
 
     # Maximum header size - prevents DoS via malformed header_len
     # 10MB is generous for JSON metadata; larger payloads should use binary format
@@ -96,9 +104,15 @@ class ResidualData:
         }
         k = len(self.exception_positions)
         block = b""
-        if k:
-            # exceptions: version 3, and a raw block after the compressed
-            # residual (positions as u64, then the original elements)
+        if self.layout == 4:
+            # the residual in the original's precision, the exceptions
+            # compressed with it (inside compressed_data)
+            header['version'] = 4
+            header['residual_dtype'] = self.residual_dtype
+            header['exceptions'] = k
+        elif k:
+            # version 3: a raw block after the compressed residual (positions
+            # as u64, then the original elements)
             header['version'] = 3
             header['exceptions'] = k
             block = np.asarray(self.exception_positions, dtype='<u8').tobytes() + \
@@ -167,11 +181,11 @@ class ResidualData:
                         raise ValueError(
                             f"Residual header version must be a JSON integer, got {version!r}"
                         )
-                    if version > 3 or version < 1:
+                    if version > 4 or version < 1:
                         raise ValueError(
-                            f"Unsupported residual header version {version} (1 to 3 exist)"
+                            f"Unsupported residual header version {version} (1 to 4 exist)"
                         )
-                    if version in (2, 3):
+                    if version in (2, 3, 4):
                         compressed_data = data[4+header_len_v2:]
                         return cls._create_from_header(header, compressed_data, version)
                 except (UnicodeDecodeError, json.JSONDecodeError):
@@ -217,13 +231,21 @@ class ResidualData:
     def _create_from_header(cls, header: Dict[str, Any], compressed_data: bytes,
                             version: int = 2) -> 'ResidualData':
         """Create instance from parsed header."""
-        # version 3 is a file with exceptions, and only it
+        # version 3 is a file with exceptions; version 4 records its residual
+        # dtype and its number of exceptions (0 or more)
         k = header.get('exceptions')
         if version == 3:
             if isinstance(k, bool) or not isinstance(k, int) or k <= 0:
                 raise ValueError(f"version 3 needs a positive integer 'exceptions', got {k!r}")
-        elif 'exceptions' in header:
-            raise ValueError("'exceptions' is only read with version 3")
+        elif version == 4:
+            if isinstance(k, bool) or not isinstance(k, int) or k < 0:
+                raise ValueError(f"version 4 needs an integer 'exceptions' >= 0, got {k!r}")
+            if header.get('residual_dtype') not in ('float32', 'float64'):
+                raise ValueError(
+                    f"version 4 needs residual_dtype float32 or float64, "
+                    f"got {header.get('residual_dtype')!r}")
+        elif 'exceptions' in header or 'residual_dtype' in header:
+            raise ValueError("'exceptions' and 'residual_dtype' are read with versions 3 and 4")
         # every numeric field is a JSON integer (or a number where the
         # writers write one): a string, a boolean or a float form is refused,
         # as the Rust reader does (bool is an int in Python, so it is named)
@@ -287,7 +309,27 @@ class ResidualData:
 
         positions = np.zeros(0, dtype=np.uint64)
         exception_bytes = b""
-        if k:
+        residual_stream = None
+        if version == 4:
+            if method not in (ResidualCompressionMethod.NONE, ResidualCompressionMethod.LZMA,
+                              ResidualCompressionMethod.ZLIB, ResidualCompressionMethod.BITDELTA) \
+                    or header.get('quant_bits') is not None:
+                raise ValueError(f"version 4 is lossless: method {method.value} is not read")
+            plain = _decompress_plain(method, compressed_data)
+            n = int(np.prod(shape))
+            rw = 8 if header['residual_dtype'] == 'float64' else 4
+            width = np.dtype(header['dtype']).itemsize
+            if len(plain) != n * rw + k * (8 + width):
+                raise ValueError(
+                    f"version 4 payload holds {len(plain)} bytes, expected "
+                    f"{n * rw + k * (8 + width)}")
+            residual_stream = plain[:n * rw]
+            positions = np.frombuffer(plain[n * rw:n * rw + 8 * k], dtype='<u8').astype(np.uint64)
+            if k and (np.any(positions[1:] <= positions[:-1]) or int(positions[-1]) >= n):
+                raise ValueError(
+                    f"exception positions must ascend strictly and stay below {n}")
+            exception_bytes = plain[n * rw + 8 * k:]
+        elif k:
             if method == ResidualCompressionMethod.QUANTIZED or header.get('quant_bits') is not None:
                 raise ValueError("a quantized residual cannot keep exceptions (it is not lossless)")
             width = np.dtype(header['dtype']).itemsize
@@ -314,6 +356,9 @@ class ResidualData:
             rust_container=(method == ResidualCompressionMethod.QUANTIZED and 'min_val' in header),
             exception_positions=positions,
             exception_bytes=exception_bytes,
+            layout=version if version in (3, 4) else 2,
+            residual_dtype=header.get('residual_dtype', 'float32'),
+            residual_stream=residual_stream,
         )
 
 
@@ -460,10 +505,16 @@ class ResidualCompressor:
             Decompressed residual array (float32)
         """
         out = np.asarray(self._decode_residual(residual_data))
-        return out.astype(np.float32, copy=False)
+        return out.astype(np.dtype(residual_data.residual_dtype), copy=False)
 
     def _decode_residual(self, residual_data: ResidualData) -> np.ndarray:
         """Decompress residual data (dtype as the method produces it)."""
+        if residual_data.layout == 4:
+            rdt = np.dtype(residual_data.residual_dtype).newbyteorder('<')
+            stream = residual_data.residual_stream
+            if residual_data.method == ResidualCompressionMethod.BITDELTA:
+                return _bit_delta_decode(stream, rdt).reshape(residual_data.original_shape)
+            return np.frombuffer(stream, dtype=rdt).reshape(residual_data.original_shape).copy()
         method = residual_data.method
         compressed = residual_data.compressed_data
         shape = residual_data.original_shape
@@ -548,18 +599,28 @@ class ResidualCompressor:
         Residual of `original` against `generated` that rebuilds the original
         bit for bit with `reconstruct`.
 
-        A position is kept as an exception (the original element itself, the
-        residual there 0) when the original or the generated value is not
-        finite, or when the reconstruct rule applied to generated and the
-        float32 residual does not give the original's bits.
+        The residual is kept in the original's precision: float64 for
+        float64 / int32 / uint32 / int64 / uint64 originals, float32 for the
+        others. A position is kept as an exception (the original element
+        itself, the residual there 0) when the original or the generated value
+        is not finite, or when the reconstruct rule applied to generated and
+        the residual does not give the original's bits. A float32 residual
+        without exceptions is written as version 2; anything else as version
+        4, with the exceptions compressed together with the residual.
 
         Raises:
             ValueError: for a quantizing compressor (lossy, so it cannot keep
-                exceptions), a dtype the writer does not record, or shapes
-                that differ
+                exceptions), a method that is not lossless, a dtype the writer
+                does not record, or shapes that differ
         """
         if self.method == ResidualCompressionMethod.QUANTIZED or self.quantization_bits is not None:
             raise ValueError("a quantized residual is not lossless: use a lossless method")
+        method = self.method
+        if method == ResidualCompressionMethod.DELTA:
+            method = ResidualCompressionMethod.BITDELTA
+        if method not in (ResidualCompressionMethod.NONE, ResidualCompressionMethod.LZMA,
+                          ResidualCompressionMethod.ZLIB, ResidualCompressionMethod.BITDELTA):
+            raise ValueError(f"compress_original writes none, lzma, zlib or bitdelta, not {method.value}")
         original = np.asarray(original)
         dtype = original.dtype
         if dtype.name not in _WRITER_DTYPES:
@@ -567,21 +628,44 @@ class ResidualCompressor:
         generated = np.asarray(generated, dtype=np.float64)
         if generated.shape != original.shape:
             raise ValueError(f"Shape mismatch: {original.shape} vs {generated.shape}")
+        rdt = np.dtype(np.float64 if dtype.name in _FLOAT64_RESIDUAL else np.float32)
         o = original.ravel()
         g = generated.ravel()
         with np.errstate(over="ignore", invalid="ignore"):
             # a signaling NaN is quieted here; it is an exception either way
             of = o.astype(np.float64)
             finite = np.isfinite(g) & np.isfinite(of)
-            r = np.where(finite, of - np.where(finite, g, 0.0), 0.0).astype(np.float32)
+            r = np.where(finite, of - np.where(finite, g, 0.0), 0.0).astype(rdt)
         rebuilt, invalid = _rebuild(g, r, dtype)
         uint = np.dtype(f"u{dtype.itemsize}")
         exceptions = ~finite | invalid | (rebuilt.view(uint) != o.view(uint))
         r[exceptions] = 0.0
-        rd = self.compress_residual(r.reshape(original.shape), original_dtype=dtype.name)
-        rd.exception_positions = np.nonzero(exceptions)[0].astype(np.uint64)
-        rd.exception_bytes = o[exceptions].astype(dtype.newbyteorder('<')).tobytes()
-        return rd
+        positions = np.nonzero(exceptions)[0].astype(np.uint64)
+        elements = o[exceptions].astype(dtype.newbyteorder('<')).tobytes()
+        if method == ResidualCompressionMethod.BITDELTA:
+            stream = _bit_delta_encode(r, rdt)
+        else:
+            stream = r.astype(rdt.newbyteorder('<')).tobytes()
+        plain = stream + positions.astype('<u8').tobytes() + elements
+        if method == ResidualCompressionMethod.NONE:
+            compressed = plain
+        elif method == ResidualCompressionMethod.ZLIB:
+            compressed = zlib.compress(plain, level=self.zlib_level)
+        else:
+            compressed = lzma.compress(plain, preset=self.lzma_preset)
+        layout = 2 if rdt == np.float32 and len(positions) == 0 else 4
+        return ResidualData(
+            method=method,
+            compressed_data=compressed,
+            original_shape=original.shape,
+            original_dtype=dtype.name,
+            compression_ratio=original.nbytes / len(compressed) if compressed else 0.0,
+            exception_positions=positions if layout == 4 else np.zeros(0, dtype=np.uint64),
+            exception_bytes=elements,
+            layout=layout,
+            residual_dtype=rdt.name,
+            residual_stream=stream,
+        )
 
     def _quantize_residual(self, residual: np.ndarray, bits: int) -> bytes:
         """
@@ -812,6 +896,8 @@ def decompress_delta_differences(residual_data: "ResidualData") -> np.ndarray:
 
 
 _QUIET64 = np.uint64(0x7FF8000000000000)
+# originals whose residual is kept in float64 (float32 cannot carry their precision)
+_FLOAT64_RESIDUAL = frozenset({"float64", "int32", "uint32", "int64", "uint64"})
 
 
 def _sum_nan_bits(generated: np.ndarray, residual: np.ndarray) -> np.ndarray:
@@ -822,9 +908,13 @@ def _sum_nan_bits(generated: np.ndarray, residual: np.ndarray) -> np.ndarray:
     quiet bit set; else the residual's NaN widened (sign, quiet bit, its 23
     payload bits at the top of the 52); else (inf + -inf) 0x7FF8000000000000."""
     gb = generated.view(np.uint64)
-    rb = residual.astype(np.float32, copy=False).view(np.uint32).astype(np.uint64)
-    widened = ((rb >> np.uint64(31)) << np.uint64(63)) | _QUIET64 | \
-        ((rb & np.uint64(0x7FFFFF)) << np.uint64(29))
+    if residual.dtype == np.float64:
+        # a float64 residual's NaN with the quiet bit set
+        widened = residual.view(np.uint64) | np.uint64(1 << 51)
+    else:
+        rb = residual.astype(np.float32, copy=False).view(np.uint32).astype(np.uint64)
+        widened = ((rb >> np.uint64(31)) << np.uint64(63)) | _QUIET64 | \
+            ((rb & np.uint64(0x7FFFFF)) << np.uint64(29))
     bits = np.where(np.isnan(residual), widened, _QUIET64)
     return np.where(np.isnan(generated), gb | np.uint64(1 << 51), bits)
 
@@ -846,7 +936,7 @@ def _nan_as(bits: np.ndarray, dtype: np.dtype) -> np.ndarray:
 
 
 def _rebuild(generated: np.ndarray, residual: np.ndarray, dtype: np.dtype):
-    """generated (float64) + residual (float32) as `dtype`, by the reconstruct
+    """generated (float64) + residual (float32 or float64) as `dtype`, by the reconstruct
     rule; returns the values and a mask of the integer positions that are NaN
     (refused unless an exception covers them)."""
     with np.errstate(invalid="ignore"):
@@ -883,7 +973,19 @@ def _to_integer(values: np.ndarray, dtype: np.dtype) -> np.ndarray:
     return out
 
 
-def _bit_delta_encode(values: np.ndarray) -> bytes:
+def _bit_delta_encode(values: np.ndarray, dtype=np.dtype('<f4')) -> bytes:
+    """See _bit_delta_encode32 (float32, the default); with a float64 dtype,
+    the stream of the float64 bit patterns as wrapping uint64 the same way."""
+    if np.dtype(dtype).itemsize == 8:
+        bits = np.ascontiguousarray(values.astype('<f8')).view('<u8').ravel()
+        out = np.empty_like(bits)
+        out[:1] = bits[:1]
+        out[1:] = bits[1:] - bits[:-1]  # uint64 arithmetic wraps
+        return out.astype('<u8').tobytes()
+    return _bit_delta_encode32(values)
+
+
+def _bit_delta_encode32(values: np.ndarray) -> bytes:
     """The bitdelta stream of float32 values (before compression): the
     difference of consecutive bit patterns as wrapping uint32, little endian,
     the first difference being the first pattern. Integer arithmetic, so every
@@ -896,10 +998,22 @@ def _bit_delta_encode(values: np.ndarray) -> bytes:
     return out.astype('<u4').tobytes()
 
 
-def _bit_delta_decode(stream: bytes) -> np.ndarray:
-    """float32 values from a bitdelta stream (inverts _bit_delta_encode)."""
+def _bit_delta_decode(stream: bytes, dtype=np.dtype('<f4')) -> np.ndarray:
+    """float32 (or float64) values from a bitdelta stream (inverts _bit_delta_encode)."""
+    if np.dtype(dtype).itemsize == 8:
+        d = np.frombuffer(stream, dtype='<u8')
+        return np.cumsum(d, dtype=np.uint64).astype('<u8').view('<f8')
     d = np.frombuffer(stream, dtype='<u4')
     return np.cumsum(d, dtype=np.uint32).astype('<u4').view('<f4')
+
+
+def _decompress_plain(method: 'ResidualCompressionMethod', data: bytes) -> bytes:
+    """The payload of a version 4 file before the method's compression."""
+    if method == ResidualCompressionMethod.NONE:
+        return data
+    if method == ResidualCompressionMethod.ZLIB:
+        return zlib.decompress(data)
+    return lzma.decompress(data)
 
 
 def _decode_rust_quantized_container(data: bytes) -> np.ndarray:

@@ -219,6 +219,15 @@ pub struct ResidualMetadata {
     /// The original elements at `exception_positions`, the dtype's
     /// little-endian bytes one after another.
     pub exception_bytes: Vec<u8>,
+    /// The file's layout: 2 (no exceptions, `f32` residual), 3 (exceptions
+    /// as a raw block after the compressed residual) or 4 (`residual_dtype`,
+    /// the exceptions compressed with the residual).
+    pub layout: u8,
+    /// (version 4) The residual is `f64` (`"residual_dtype":"float64"`).
+    pub residual_f64: bool,
+    /// (version 4) The residual stream before the method's compression,
+    /// without the exceptions (`f32` / `f64` little endian, or their bitdelta).
+    pub residual_stream: Vec<u8>,
 }
 
 impl Default for ResidualMetadata {
@@ -232,6 +241,9 @@ impl Default for ResidualMetadata {
             legacy_container: false,
             exception_positions: Vec::new(),
             exception_bytes: Vec::new(),
+            layout: 2,
+            residual_f64: false,
+            residual_stream: Vec::new(),
         }
     }
 }
@@ -411,7 +423,18 @@ impl ResidualData {
             (false, None) => fields.push(r#""quant_bits":null"#.to_owned()),
         }
         let k = self.metadata.exception_positions.len();
-        if k == 0 {
+        if self.metadata.layout == 4 {
+            // the residual in the original's precision, the exceptions
+            // compressed with it (inside `compressed`)
+            fields.push(r#""version":4"#.to_owned());
+            let rdt = if self.metadata.residual_f64 {
+                "float64"
+            } else {
+                "float32"
+            };
+            fields.push(format!(r#""residual_dtype":"{rdt}""#));
+            fields.push(format!(r#""exceptions":{k}"#));
+        } else if k == 0 {
             fields.push(r#""version":2"#.to_owned());
         } else {
             // exceptions: version 3, and a raw block after the compressed
@@ -440,10 +463,12 @@ impl ResidualData {
         out.extend_from_slice(&header_len.to_le_bytes());
         out.extend_from_slice(header_bytes);
         out.extend_from_slice(&self.compressed);
-        for p in &self.metadata.exception_positions {
-            out.extend_from_slice(&p.to_le_bytes());
+        if self.metadata.layout != 4 {
+            for p in &self.metadata.exception_positions {
+                out.extend_from_slice(&p.to_le_bytes());
+            }
+            out.extend_from_slice(&self.metadata.exception_bytes);
         }
-        out.extend_from_slice(&self.metadata.exception_bytes);
         out
     }
 
@@ -494,7 +519,7 @@ impl ResidualData {
                         };
                         // only versions 1 and 2 were written; a later one is
                         // refused rather than read as version 2
-                        if version > 3 {
+                        if version > 4 {
                             return Err(ResidualError::UnsupportedVersion(version));
                         }
                         if version >= 2 {
@@ -632,12 +657,105 @@ impl ResidualData {
         Ok(map)
     }
 
+    /// A version 4 file: checked as version 2 (method, shape, dtype), then
+    /// `residual_dtype`, `exceptions`, and the decompressed payload split into
+    /// the residual stream, the positions and the original elements.
+    fn from_header_map_v4(
+        map: &HashMap<String, Json>,
+        compressed: Vec<u8>,
+    ) -> Result<Self, ResidualError> {
+        let residual_f64 = match map.get("residual_dtype") {
+            Some(Json::Str(d)) if d == "float32" => false,
+            Some(Json::Str(d)) if d == "float64" => true,
+            Some(other) => {
+                return Err(ResidualError::InvalidHeader(format!(
+                    "residual_dtype must be float32 or float64, got {other:?}"
+                )))
+            }
+            None => return Err(ResidualError::MissingField("residual_dtype".to_owned())),
+        };
+        let k = match map.get("exceptions") {
+            Some(v) => v.as_usize().ok_or_else(|| {
+                ResidualError::InvalidHeader(format!(
+                    "exceptions must be an integer >= 0, got {v:?}"
+                ))
+            })?,
+            None => return Err(ResidualError::MissingField("exceptions".to_owned())),
+        };
+        let mut base: HashMap<String, Json> = map.clone();
+        base.remove("residual_dtype");
+        base.remove("exceptions");
+        let mut rd = Self::from_header_map(&base, Vec::new(), 2)?;
+        if !matches!(
+            rd.method,
+            ResidualCompressionMethod::None
+                | ResidualCompressionMethod::Lzma
+                | ResidualCompressionMethod::Zlib
+                | ResidualCompressionMethod::BitDelta
+        ) || rd.metadata.quant_bits.is_some()
+        {
+            return Err(ResidualError::InvalidHeader(format!(
+                "version 4 is lossless: method {} is not read",
+                rd.method.as_str()
+            )));
+        }
+        let plain = match rd.method {
+            ResidualCompressionMethod::None => compressed.clone(),
+            ResidualCompressionMethod::Zlib => crate::compression::zlib_decompress(&compressed)?,
+            _ => lzma_or_xz_decompress(&compressed)?,
+        };
+        let n = rd.original_len;
+        let rw = if residual_f64 { 8 } else { 4 };
+        let width = dtype_width(&rd.dtype).ok_or_else(|| {
+            ResidualError::InvalidHeader(format!("unsupported dtype {}", rd.dtype))
+        })?;
+        let expected = n
+            .checked_mul(rw)
+            .and_then(|a| k.checked_mul(8 + width).and_then(|b| a.checked_add(b)));
+        if expected != Some(plain.len()) {
+            return Err(ResidualError::Corrupted(format!(
+                "version 4 payload holds {} bytes, expected {expected:?}",
+                plain.len()
+            )));
+        }
+        let (stream, rest) = plain.split_at(n * rw);
+        let (pos, elems) = rest.split_at(8 * k);
+        let positions: Vec<u64> = pos
+            .chunks_exact(8)
+            .map(|c| u64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]))
+            .collect();
+        let ascending = positions.windows(2).all(|w| w[0] < w[1]);
+        let below = positions.last().is_none_or(|&p| (p as u128) < n as u128);
+        if !(ascending && below) {
+            return Err(ResidualError::InvalidHeader(format!(
+                "exception positions must ascend strictly and stay below {n}"
+            )));
+        }
+        rd.compressed = compressed;
+        rd.metadata.layout = 4;
+        rd.metadata.residual_f64 = residual_f64;
+        rd.metadata.residual_stream = stream.to_vec();
+        rd.metadata.exception_positions = positions;
+        rd.metadata.exception_bytes = elems.to_vec();
+        Ok(rd)
+    }
+
     /// Construct `ResidualData` from a parsed header map and a compressed payload.
     fn from_header_map(
         map: &HashMap<String, Json>,
         mut compressed: Vec<u8>,
         version: u32,
     ) -> Result<Self, ResidualError> {
+        // version 4: the residual dtype, the number of exceptions (0 or
+        // more), and both compressed together
+        if version == 4 {
+            return Self::from_header_map_v4(map, compressed);
+        }
+        if map.contains_key("residual_dtype") {
+            return Err(ResidualError::InvalidHeader(
+                "residual_dtype is only read with version 4".to_owned(),
+            ));
+        }
         // version 3 is a file with exceptions, and only it
         let exceptions = match (version, map.get("exceptions")) {
             (3, Some(v)) => match v.as_usize() {
@@ -834,6 +952,7 @@ impl ResidualData {
             }
             metadata.exception_positions = positions;
             metadata.exception_bytes = elems.to_vec();
+            metadata.layout = 3;
         }
 
         Ok(Self {
@@ -1204,6 +1323,28 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
     if rd.original_len == 0 {
         return Ok(Vec::new());
     }
+    if rd.metadata.layout == 4 {
+        if rd.metadata.residual_f64 {
+            return Err(ResidualError::UnsupportedLayout(
+                "a float64 residual: read it with decompress_f64 or reconstruct_bytes".to_owned(),
+            ));
+        }
+        let s = &rd.metadata.residual_stream;
+        let words = s
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]));
+        return Ok(if rd.method == ResidualCompressionMethod::BitDelta {
+            let mut acc = 0u32;
+            words
+                .map(|d| {
+                    acc = acc.wrapping_add(d);
+                    f32::from_bits(acc)
+                })
+                .collect()
+        } else {
+            words.map(f32::from_bits).collect()
+        });
+    }
 
     let raw = match rd.method {
         ResidualCompressionMethod::None => rd.compressed.clone(),
@@ -1259,7 +1400,7 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
 /// for a dtype outside the eleven the writers record.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub fn reconstruct_bytes(generated: &[f64], rd: &ResidualData) -> Result<Vec<u8>, ResidualError> {
-    let residual = decompress(rd)?;
+    let residual = decompress_f64(rd)?;
     if residual.len() != generated.len() {
         return Err(ResidualError::Corrupted(format!(
             "{} generated values for {} residual values",
@@ -1314,7 +1455,7 @@ fn dtype_width(dtype: &str) -> Option<usize> {
 /// Appends `generated + residual` as `dtype` (the reconstruct rule); `false`
 /// for an integer dtype whose value would be NaN (nothing is appended).
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn rebuild_element(g: f64, r: f32, dtype: &str, out: &mut Vec<u8>) -> bool {
+fn rebuild_element(g: f64, r: f64, dtype: &str, out: &mut Vec<u8>) -> bool {
     let s = sum(g, r);
     if dtype.contains("int") && s.is_nan() {
         return false;
@@ -1368,32 +1509,88 @@ pub fn compress_original(
             generated.len()
         )));
     }
-    let mut residual = Vec::with_capacity(generated.len());
+    // the residual in the original's precision: f64 where f32 cannot
+    // carry it (float64, int32, uint32, int64, uint64)
+    let residual_f64 = matches!(dtype, "float64" | "int32" | "uint32" | "int64" | "uint64");
+    let mut residual: Vec<f64> = Vec::with_capacity(generated.len());
     let mut positions = Vec::new();
     let mut kept = Vec::new();
     let mut rebuilt = Vec::with_capacity(width);
     for (i, (o, &g)) in original.chunks_exact(width).zip(generated).enumerate() {
         let of = element_as_f64(o, dtype);
-        let r = if g.is_finite() && of.is_finite() {
-            (of - g) as f32
+        let r = if !(g.is_finite() && of.is_finite()) {
+            None
+        } else if residual_f64 {
+            Some(of - g)
         } else {
-            f32::NAN
+            Some(f64::from((of - g) as f32))
         };
         rebuilt.clear();
-        let same = !r.is_nan() && rebuild_element(g, r, dtype, &mut rebuilt) && rebuilt == o;
+        let same = r.is_some_and(|r| rebuild_element(g, r, dtype, &mut rebuilt) && rebuilt == o);
         if same {
-            residual.push(r);
+            residual.push(r.unwrap_or(0.0));
         } else {
             residual.push(0.0);
             positions.push(i as u64);
             kept.extend_from_slice(o);
         }
     }
-    let mut rd = compress_with_method(&residual, method);
-    rd.dtype = dtype.to_owned();
-    rd.metadata.exception_positions = positions;
-    rd.metadata.exception_bytes = kept;
-    Ok(rd)
+    let bitdelta = matches!(
+        method,
+        ResidualCompressionMethod::Delta | ResidualCompressionMethod::BitDelta
+    );
+    let mut stream = Vec::with_capacity(residual.len() * if residual_f64 { 8 } else { 4 });
+    let mut prev64 = 0u64;
+    let mut prev32 = 0u32;
+    for &r in &residual {
+        if residual_f64 {
+            let b = r.to_bits();
+            let w = if bitdelta { b.wrapping_sub(prev64) } else { b };
+            prev64 = b;
+            stream.extend_from_slice(&w.to_le_bytes());
+        } else {
+            let b = (r as f32).to_bits();
+            let w = if bitdelta { b.wrapping_sub(prev32) } else { b };
+            prev32 = b;
+            stream.extend_from_slice(&w.to_le_bytes());
+        }
+    }
+    let mut plain = stream.clone();
+    for p in &positions {
+        plain.extend_from_slice(&p.to_le_bytes());
+    }
+    plain.extend_from_slice(&kept);
+    let method = if bitdelta {
+        ResidualCompressionMethod::BitDelta
+    } else {
+        method
+    };
+    let compressed = match method {
+        ResidualCompressionMethod::None => plain,
+        ResidualCompressionMethod::Zlib => crate::compression::zlib_compress(&plain, 6)?,
+        _ => xz_compress(&plain)
+            .ok_or_else(|| ResidualError::Corrupted("xz encoding failed".to_owned()))?,
+    };
+    let layout = if residual_f64 || !positions.is_empty() {
+        4
+    } else {
+        2
+    };
+    Ok(ResidualData {
+        method,
+        compressed,
+        original_len: generated.len(),
+        shape: vec![generated.len()],
+        dtype: dtype.to_owned(),
+        metadata: ResidualMetadata {
+            exception_positions: if layout == 4 { positions } else { Vec::new() },
+            exception_bytes: if layout == 4 { kept } else { Vec::new() },
+            layout,
+            residual_f64,
+            residual_stream: stream,
+            ..ResidualMetadata::default()
+        },
+    })
 }
 
 /// One element of `dtype` (little-endian bytes) as `f64`: exact for the
@@ -1433,21 +1630,58 @@ fn f16_bits_to_f64(h: u16) -> f64 {
 /// the NaN of inf + -inf): `generated`'s NaN with the quiet bit set; else the
 /// residual's NaN widened (sign, quiet bit, its 23 payload bits at the top of
 /// the 52); else (inf + -inf) `0x7FF8_0000_0000_0000`.
-fn sum(generated: f64, residual: f32) -> f64 {
+fn sum(generated: f64, residual: f64) -> f64 {
     const QUIET: u64 = 0x7FF8_0000_0000_0000;
     if generated.is_nan() {
         return f64::from_bits(generated.to_bits() | 1 << 51);
     }
     if residual.is_nan() {
-        let r = u64::from(residual.to_bits());
-        return f64::from_bits((r >> 31) << 63 | QUIET | (r & 0x7F_FFFF) << 29);
+        return f64::from_bits(residual.to_bits() | 1 << 51);
     }
-    let s = generated + f64::from(residual);
+    let s = generated + residual;
     if s.is_nan() {
         f64::from_bits(QUIET)
     } else {
         s
     }
+}
+
+/// An `f32` residual value as `f64`: exact for numbers; a NaN by rule (sign,
+/// quiet bit, its 23 payload bits at the top of the 52), not by the hardware.
+fn widen(r: f32) -> f64 {
+    if r.is_nan() {
+        let b = u64::from(r.to_bits());
+        f64::from_bits((b >> 31) << 63 | 0x7FF8_0000_0000_0000 | (b & 0x7F_FFFF) << 29)
+    } else {
+        f64::from(r)
+    }
+}
+
+/// The residual values as `f64`, whatever the residual's precision (an `f32`
+/// residual widened by [`widen`]'s rule).
+///
+/// # Errors
+///
+/// The errors of [`decompress`].
+pub fn decompress_f64(rd: &ResidualData) -> Result<Vec<f64>, ResidualError> {
+    if rd.metadata.layout == 4 && rd.metadata.residual_f64 {
+        let s = &rd.metadata.residual_stream;
+        let words = s
+            .chunks_exact(8)
+            .map(|c| u64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]));
+        return Ok(if rd.method == ResidualCompressionMethod::BitDelta {
+            let mut acc = 0u64;
+            words
+                .map(|d| {
+                    acc = acc.wrapping_add(d);
+                    f64::from_bits(acc)
+                })
+                .collect()
+        } else {
+            words.map(f64::from_bits).collect()
+        });
+    }
+    Ok(decompress(rd)?.into_iter().map(widen).collect())
 }
 
 /// `x` rounded once to `f32`; a NaN keeps its sign, the quiet bit and the top

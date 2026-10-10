@@ -439,13 +439,21 @@ class ProceduralCompressionDesigner:
                 # lossless: a residual written from the original; positions the
                 # generated values plus a float32 residual cannot rebuild bit
                 # for bit are kept as they are (ResidualCompressor.compress_original)
-                from .residual_compression import ResidualCompressor
+                from .residual_compression import ResidualCompressor, _WRITER_DTYPES
+                # what LZMA of the input stores: lossless, and the bound the
+                # procedural result must beat
+                fallback = compress_with_lzma(data)
+                if data.dtype.name not in _WRITER_DTYPES:
+                    # a dtype the residual cannot carry (complex, ...)
+                    return fallback
                 rd = ResidualCompressor().compress_original(
                     data, regenerated.astype(np.float64))
                 result.residual_data = rd.to_bytes()
                 result.metadata['residual_format'] = RESIDUAL_FORMAT
                 result.is_lossless = True
                 result.error_metric = 0.0
+                if adaptive_fallback and result.total_compressed_size >= fallback.compressed_size:
+                    return fallback
                 return result
 
             # Calculate residual
