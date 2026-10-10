@@ -272,6 +272,14 @@ pub enum ContainerError {
         /// `payload_type` in the header; `None` for version 1.0.
         payload_type: Option<u8>,
     },
+    /// An `ALICE_ZIP` file states an `original_size` larger than the caller
+    /// accepts.
+    LegacyTooLarge {
+        /// `original_size` in the header.
+        stated: u64,
+        /// The limit the caller gave.
+        limit: u64,
+    },
     /// An `ALICE_ZIP` LZMA fallback payload is not as the writer produces
     /// it: the metadata length, the metadata JSON, the xz stream, or a
     /// result longer than `original_size` or not of the size the metadata's
@@ -331,6 +339,10 @@ impl fmt::Display for ContainerError {
                 Some(t) => write!(f, "ALICE_ZIP: payload_type {t:#04x} is not decoded here"),
                 None => write!(f, "ALICE_ZIP: a version 1.0 payload is not decoded here"),
             },
+            Self::LegacyTooLarge { stated, limit } => write!(
+                f,
+                "ALICE_ZIP: original_size {stated} exceeds the limit {limit}"
+            ),
             Self::LegacyPayload => {
                 write!(f, "ALICE_ZIP: the LZMA fallback payload is malformed")
             }
@@ -1052,11 +1064,22 @@ pub struct LegacyArray {
 ///
 /// The payload is `meta_len` (u32 LE) ‖ metadata JSON ‖ an xz stream, as the
 /// Python writer (`ALICEZip.compress`) produces it. The metadata must be in
-/// the writer's form, `{"shape":[..],"dtype":".."}`, with a dtype whose size
-/// is known, and the decoded bytes must be exactly the shape's element count
-/// times that size. Decoding stops as soon as the result exceeds
-/// `original_size`, so a payload cannot make the reader produce more than
-/// the header states.
+/// the writer's form, `{"shape":[..],"dtype":".."}`, with a native-order
+/// dtype name whose size is known (a byte-order prefix such as `>f8` is
+/// refused), and the decoded bytes must be exactly the shape's element count
+/// times that size.
+///
+/// # Memory
+///
+/// `original_size` comes from the file, and a few bytes of LZMA2 can expand
+/// to megabytes, so the caller states how large a result it accepts:
+/// `limit` bounds `original_size`. Before anything is decoded, the xz
+/// container is parsed (one stream with a CRC-64 check, one block whose only
+/// filter is LZMA2, its index and footer, nothing after it, as the writer
+/// produces it) and the LZMA2 chunk headers are read; the unpacked sizes they
+/// state must add up to `original_size`. The decoder then produces each
+/// chunk only up to its stated size, so memory stays proportional to
+/// `original_size` (at most `limit`), whatever the payload claims.
 ///
 /// Procedural, media and texture payloads store generator parameters that
 /// only the Python package regenerates; they are refused here.
@@ -1065,10 +1088,15 @@ pub struct LegacyArray {
 ///
 /// As [`parse_legacy_alice_zip_header`]; [`ContainerError::Layout`] (the
 /// payload length differs from the header);
-/// [`ContainerError::UnsupportedPayload`]; [`ContainerError::LegacyPayload`];
-/// [`ContainerError::OriginalSize`] or [`ContainerError::OriginalHash`].
+/// [`ContainerError::UnsupportedPayload`];
+/// [`ContainerError::LegacyTooLarge`] (`original_size` exceeds `limit`);
+/// [`ContainerError::LegacyPayload`]; [`ContainerError::OriginalSize`] or
+/// [`ContainerError::OriginalHash`].
 #[cfg(feature = "lzma")]
-pub fn decompress_legacy_alice_zip(bytes: &[u8]) -> Result<LegacyArray, ContainerError> {
+pub fn decompress_legacy_alice_zip(
+    bytes: &[u8],
+    limit: u64,
+) -> Result<LegacyArray, ContainerError> {
     let (header, header_len) = parse_legacy_alice_zip_header(bytes)?;
     let payload = &bytes[header_len..];
     if header.compressed_size != payload.len() as u64 {
@@ -1077,6 +1105,12 @@ pub fn decompress_legacy_alice_zip(bytes: &[u8]) -> Result<LegacyArray, Containe
     if header.payload_type != Some(LEGACY_LZMA_FALLBACK) {
         return Err(ContainerError::UnsupportedPayload {
             payload_type: header.payload_type,
+        });
+    }
+    if header.original_size > limit {
+        return Err(ContainerError::LegacyTooLarge {
+            stated: header.original_size,
+            limit,
         });
     }
     let bad = ContainerError::LegacyPayload;
@@ -1089,46 +1123,254 @@ pub fn decompress_legacy_alice_zip(bytes: &[u8]) -> Result<LegacyArray, Containe
     let (shape, dtype) = parse_legacy_meta(&payload[4..meta_end]).ok_or(bad)?;
     let item = legacy_dtype_size(dtype).ok_or(bad)?;
 
-    let mut out = CappedWriter {
-        data: Vec::new(),
-        cap: header.original_size,
-    };
-    lzma_rs::xz_decompress(&mut &payload[meta_end..], &mut out).map_err(|_| bad)?;
-    header.verify_original(&out.data)?;
+    let xz = xz::parse(&payload[meta_end..]).ok_or(bad)?;
+    if xz.unpacked != header.original_size {
+        return Err(bad);
+    }
+    // The chunk headers bound what the decoder produces (each chunk stops at
+    // its stated size), so the output stays near `original_size`.
+    let mut data = Vec::new();
+    if !xz.chunks.is_empty() {
+        lzma_rs::lzma2_decompress(&mut &*xz.chunks, &mut data).map_err(|_| bad)?;
+    }
+    if xz::crc64(&data) != xz.check {
+        return Err(bad);
+    }
+    header.verify_original(&data)?;
 
     let elements = shape
         .iter()
         .try_fold(1_u64, |n, &d| n.checked_mul(d))
         .ok_or(bad)?;
-    if elements.checked_mul(item) != Some(out.data.len() as u64) {
+    if elements.checked_mul(item) != Some(data.len() as u64) {
         return Err(bad);
     }
     Ok(LegacyArray {
         shape,
         dtype: dtype.into(),
-        data: out.data,
+        data,
     })
 }
 
-/// Collects decoded bytes and fails once they would exceed `cap`.
+/// The xz container (`.xz`, version 1.2.0 of the format) as Python's
+/// `lzma.compress` writes it: one stream, CRC-64 check, one block whose only
+/// filter is LZMA2, no stream padding. Every field is checked; anything else
+/// is `None`.
 #[cfg(feature = "lzma")]
-struct CappedWriter {
-    data: Vec<u8>,
-    cap: u64,
-}
+mod xz {
+    use crc::{Crc, CRC_32_ISO_HDLC, CRC_64_XZ};
 
-#[cfg(feature = "lzma")]
-impl std::io::Write for CappedWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if (self.data.len() + buf.len()) as u64 > self.cap {
-            return Err(std::io::Error::other("longer than original_size"));
-        }
-        self.data.extend_from_slice(buf);
-        Ok(buf.len())
+    const MAGIC: [u8; 6] = [0xFD, b'7', b'z', b'X', b'Z', 0x00];
+    const FOOTER_MAGIC: [u8; 2] = *b"YZ";
+    /// Stream flags: check type 0x04 (CRC-64).
+    const FLAGS_CRC64: [u8; 2] = [0x00, 0x04];
+    const FILTER_LZMA2: u64 = 0x21;
+    /// Largest LZMA2 dictionary size byte the format defines (4 GiB − 1).
+    const MAX_DICT_BYTE: u8 = 40;
+
+    pub(super) fn crc32(b: &[u8]) -> u32 {
+        Crc::<u32>::new(&CRC_32_ISO_HDLC).checksum(b)
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+    pub(super) fn crc64(b: &[u8]) -> u64 {
+        Crc::<u64>::new(&CRC_64_XZ).checksum(b)
+    }
+
+    /// The parts of a parsed stream the decoder needs.
+    pub(super) struct Stream<'a> {
+        /// The LZMA2 chunks of the block, up to and including the end marker.
+        pub chunks: &'a [u8],
+        /// Sum of the unpacked sizes the chunk headers state.
+        pub unpacked: u64,
+        /// CRC-64 of the uncompressed data, from the block.
+        pub check: u64,
+    }
+
+    fn u32_le(b: &[u8], at: usize) -> Option<u32> {
+        Some(u32::from_le_bytes(b.get(at..at + 4)?.try_into().ok()?))
+    }
+
+    /// Reads a multibyte integer (7 bits per byte, at most 9 bytes, no
+    /// redundant trailing zero byte) and returns it with its length.
+    fn varint(b: &[u8]) -> Option<(u64, usize)> {
+        let mut v = 0_u64;
+        for (i, &byte) in b.iter().enumerate().take(9) {
+            v |= u64::from(byte & 0x7F) << (7 * i);
+            if byte & 0x80 == 0 {
+                if i > 0 && byte == 0 {
+                    return None;
+                }
+                return Some((v, i + 1));
+            }
+        }
+        None
+    }
+
+    /// Walks the LZMA2 chunk headers without decoding and returns the length
+    /// of the chunk data (end marker included) and the unpacked total.
+    fn scan_lzma2(b: &[u8]) -> Option<(usize, u64)> {
+        let mut at = 0_usize;
+        let mut total = 0_u64;
+        loop {
+            let control = *b.get(at)?;
+            // The first chunk resets the dictionary (uncompressed 0x01, or
+            // LZMA with a dictionary reset, 0xE0 and up), as the format
+            // requires; only an empty block may end at once.
+            if at == 0 && !matches!(control, 0x00 | 0x01 | 0xE0..=0xFF) {
+                return None;
+            }
+            match control {
+                0x00 => return Some((at + 1, total)),
+                0x01 | 0x02 => {
+                    let size =
+                        usize::from(u16::from_be_bytes(b.get(at + 1..at + 3)?.try_into().ok()?))
+                            + 1;
+                    at = at.checked_add(3 + size)?;
+                    total = total.checked_add(size as u64)?;
+                }
+                0x80..=0xFF => {
+                    let low =
+                        u64::from(u16::from_be_bytes(b.get(at + 1..at + 3)?.try_into().ok()?));
+                    let unpacked = ((u64::from(control & 0x1F) << 16) | low) + 1;
+                    let packed =
+                        usize::from(u16::from_be_bytes(b.get(at + 3..at + 5)?.try_into().ok()?))
+                            + 1;
+                    let props = usize::from(control >= 0xC0);
+                    // Each LZMA chunk starts a range coder, whose first byte
+                    // is always 0 (liblzma refuses anything else).
+                    if *b.get(at + 5 + props)? != 0 {
+                        return None;
+                    }
+                    at = at.checked_add(5 + props + packed)?;
+                    total = total.checked_add(unpacked)?;
+                }
+                _ => return None,
+            }
+            if at > b.len() {
+                return None;
+            }
+        }
+    }
+
+    /// Index at `at`: indicator, record count (1 with `record`, 0 without),
+    /// the record (unpadded size, unpacked size), padding, CRC-32. Returns
+    /// the index length.
+    fn index(b: &[u8], at: usize, record: Option<(u64, u64)>) -> Option<usize> {
+        if *b.get(at)? != 0x00 {
+            return None;
+        }
+        let mut i = at + 1;
+        let (records, n) = varint(b.get(i..)?)?;
+        i += n;
+        match record {
+            None if records == 0 => {}
+            Some((unpadded, unpacked)) if records == 1 => {
+                let (u, n) = varint(b.get(i..)?)?;
+                i += n;
+                let (v, n) = varint(b.get(i..)?)?;
+                i += n;
+                if u != unpadded || v != unpacked {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+        let end = at + (i - at).next_multiple_of(4);
+        if b.get(i..end)?.iter().any(|&x| x != 0) || u32_le(b, end)? != crc32(&b[at..end]) {
+            return None;
+        }
+        Some(end + 4 - at)
+    }
+
+    /// Stream footer at `at`: CRC-32, backward size, flags, magic, and
+    /// nothing after it.
+    fn footer(b: &[u8], at: usize, index_size: usize) -> Option<()> {
+        (b.len() == at + 12
+            && u32_le(b, at)? == crc32(&b[at + 4..at + 10])
+            && u64::from(u32_le(b, at + 4)?) == (index_size / 4 - 1) as u64
+            && b[at + 8..at + 10] == FLAGS_CRC64
+            && b[at + 10..at + 12] == FOOTER_MAGIC)
+            .then_some(())
+    }
+
+    pub(super) fn parse(b: &[u8]) -> Option<Stream<'_>> {
+        // Stream header: magic, flags, CRC-32 of the flags.
+        if b.get(..6)? != MAGIC || b.get(6..8)? != FLAGS_CRC64 || u32_le(b, 8)? != crc32(&b[6..8]) {
+            return None;
+        }
+        // Empty input: no block, an index with no record.
+        if *b.get(12)? == 0x00 {
+            let index_size = index(b, 12, None)?;
+            footer(b, 12 + index_size, index_size)?;
+            return Some(Stream {
+                chunks: &[],
+                unpacked: 0,
+                check: crc64(&[]),
+            });
+        }
+        // Block header.
+        let block = 12;
+        let header_len = (usize::from(b[block]) + 1) * 4;
+        let h = b.get(block..block + header_len)?;
+        if u32_le(h, header_len - 4)? != crc32(&h[..header_len - 4]) {
+            return None;
+        }
+        let flags = h[1];
+        // One filter, optional sizes, reserved bits zero.
+        if flags & 0x3C != 0 || flags & 0x03 != 0 {
+            return None;
+        }
+        let mut at = 2;
+        let mut stated_packed = None;
+        let mut stated_unpacked = None;
+        if flags & 0x40 != 0 {
+            let (v, n) = varint(&h[at..header_len - 4])?;
+            stated_packed = Some(v);
+            at += n;
+        }
+        if flags & 0x80 != 0 {
+            let (v, n) = varint(&h[at..header_len - 4])?;
+            stated_unpacked = Some(v);
+            at += n;
+        }
+        let (id, n) = varint(&h[at..header_len - 4])?;
+        at += n;
+        let (props_len, n) = varint(&h[at..header_len - 4])?;
+        at += n;
+        if id != FILTER_LZMA2 || props_len != 1 || *h.get(at)? > MAX_DICT_BYTE {
+            return None;
+        }
+        at += 1;
+        if at > header_len - 4 || h[at..header_len - 4].iter().any(|&x| x != 0) {
+            return None;
+        }
+
+        // Compressed data, block padding, check.
+        let data = block + header_len;
+        let (chunks_len, unpacked) = scan_lzma2(b.get(data..)?)?;
+        if stated_packed.is_some_and(|v| v != chunks_len as u64)
+            || stated_unpacked.is_some_and(|v| v != unpacked)
+        {
+            return None;
+        }
+        let unpadded = header_len + chunks_len + 8;
+        let padded_end = data + chunks_len.next_multiple_of(4);
+        if b.get(data + chunks_len..padded_end)?
+            .iter()
+            .any(|&x| x != 0)
+        {
+            return None;
+        }
+        let check = u64::from_le_bytes(b.get(padded_end..padded_end + 8)?.try_into().ok()?);
+
+        let at = padded_end + 8;
+        let index_size = index(b, at, Some((unpadded as u64, unpacked)))?;
+        footer(b, at + index_size, index_size)?;
+        Some(Stream {
+            chunks: &b[data..data + chunks_len],
+            unpacked,
+            check,
+        })
     }
 }
 

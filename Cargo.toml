@@ -48,7 +48,7 @@ fft = ["std", "dep:rustfft"]
 parallel = ["std", "dep:rayon"]
 # LZMA + the `.alice` residual containers (`compression::{lzma_*, *_residual_*}`);
 # implies `std`.
-lzma = ["std", "dep:lzma-rs"]
+lzma = ["std", "dep:lzma-rs", "dep:crc"]
 
 # needs the `compression` module and the LZMA residual containers
 [[example]]
@@ -80,6 +80,11 @@ rand_chacha = { version = "0.3", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 rustfft = { version = "6.2", optional = true }
 lzma-rs = { version = "0.3", optional = true }
+# CRC-32 / CRC-64 of the xz container around an `ALICE_ZIP` LZMA fallback
+# payload (`container::decompress_legacy_alice_zip` parses that container
+# itself so that it can bound the output before decoding). Already in the
+# tree through `lzma-rs`.
+crc = { version = "3", optional = true }
 rayon = { version = "1.10", optional = true }
 
 [dev-dependencies]

@@ -28,6 +28,7 @@ name = "alice-zip"
 version = "0.8.0"
 dependencies = [
  "alice-det-math",
+ "crc",
  "flate2",
  "libm",
  "lzma-rs",

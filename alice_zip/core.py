@@ -487,6 +487,11 @@ class ALICEZip:
         meta_len = struct.pack('<I', len(meta_json))
         return meta_len + meta_json + result.compressed_data
 
+    # Largest original_size the LZMA fallback reader decodes (4 GiB). The
+    # header states original_size and a few bytes of xz can expand to
+    # gigabytes, so the reader decodes at most this much; lower it on an
+    # instance (`zipper.MAX_OUTPUT_SIZE = n`) to bound memory further.
+    MAX_OUTPUT_SIZE = 4 * 1024 * 1024 * 1024
     # Soft limit for warning about large files (1GB)
     LARGE_FILE_WARNING_SIZE = 1024 * 1024 * 1024
     # Maximum JSON payload size (for procedural parameters) - 100MB should be plenty
@@ -804,7 +809,7 @@ class ALICEZip:
 
         elif header.payload_type == AlicePayloadType.LZMA_FALLBACK:
             # LZMA fallback: binary format (meta_len + meta JSON + LZMA data)
-            return self._decompress_lzma_fallback(payload_data)
+            return self._decompress_lzma_fallback(payload_data, header.original_size)
 
         else:
             # PROCEDURAL: parse JSON payload
@@ -908,18 +913,30 @@ class ALICEZip:
 
         return decompress_from_lzma(compressed_bytes, shape, dtype)
 
-    def _decompress_lzma_fallback(self, payload_data: bytes) -> np.ndarray:
+    def _decompress_lzma_fallback(self, payload_data: bytes, original_size: int) -> np.ndarray:
         """
         Decompress LZMA fallback payload (binary format).
 
-        Format: 4-byte meta_len + meta JSON + LZMA compressed data
+        Format: 4-byte meta_len + meta JSON + xz stream (CRC-64 check), as
+        `_serialize_lzma_payload` writes it.
+
+        The output is bounded before it is produced: original_size must not
+        exceed MAX_OUTPUT_SIZE, and the xz stream is decoded with
+        max_length = original_size + 1, so a stream that expands further is
+        refused without being held in memory. The stream must end exactly
+        there, with nothing after it.
 
         Args:
             payload_data: Raw payload bytes
+            original_size: original_size from the header
 
         Returns:
             Decompressed numpy array
         """
+        if original_size > self.MAX_OUTPUT_SIZE:
+            raise MemoryError(
+                f"original_size {original_size} exceeds MAX_OUTPUT_SIZE {self.MAX_OUTPUT_SIZE}"
+            )
         if len(payload_data) < 4:
             raise ValueError("LZMA fallback payload too short")
 
@@ -940,12 +957,18 @@ class ALICEZip:
         shape = tuple(metadata.get('shape', []))
         dtype = metadata.get('dtype', 'uint8')
 
-        # Decompress LZMA data
-        lzma_data = payload_data[4 + meta_len:]
+        # Decompress the xz stream, at most original_size + 1 bytes
+        decoder = lzma.LZMADecompressor(format=lzma.FORMAT_XZ)
         try:
-            raw_bytes = lzma.decompress(lzma_data)
+            raw_bytes = decoder.decompress(payload_data[4 + meta_len:], max_length=original_size + 1)
         except lzma.LZMAError as e:
             raise ValueError(f"LZMA decompression failed: {e}")
+        if len(raw_bytes) > original_size:
+            raise ValueError(f"LZMA fallback payload expands beyond original_size {original_size}")
+        if not decoder.eof or decoder.unused_data:
+            raise ValueError("LZMA fallback payload is not exactly one complete xz stream")
+        if decoder.check != lzma.CHECK_CRC64:
+            raise ValueError(f"LZMA fallback payload has check type {decoder.check}, the writer uses CRC-64")
 
         # Reconstruct array
         return np.frombuffer(raw_bytes, dtype=dtype).reshape(shape)

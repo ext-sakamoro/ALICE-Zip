@@ -335,8 +335,11 @@ header, the section table and the integrity of the file.
   `container::decompress_legacy_alice_zip` (`lzma` feature) decodes the
   payload the Python writer falls back to (LZMA, the one that reproduces the
   original exactly) and checks the result against the header's
-  `original_size` and `original_hash`; procedural payloads store generator
-  parameters and are decoded by the Python package only. <!-- claim-test: python_lzma_fallback_files_decode_to_the_original_bytes -->
+  `original_size` and `original_hash`. The caller passes the largest
+  `original_size` it accepts, and the xz chunk sizes are checked against
+  `original_size` before decoding, so a small payload cannot expand in
+  memory; procedural payloads store generator parameters and are decoded by
+  the Python package only. <!-- claim-test: python_lzma_fallback_files_decode_to_the_original_bytes -->
 
 <!-- claim-test: every_single_bit_flip_is_refused_by_the_expected_check -->
 Changing any single bit of a container is refused (checked for every bit of a

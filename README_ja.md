@@ -269,7 +269,9 @@ SHA-256 で識別する section は既存の形式の bytes をそのまま運�
   読み (header と payload の 2 section)、書かれたことのない値は拒否する
   `container::decompress_legacy_alice_zip` (`lzma` feature) は Python の書き手が
   LZMA に退避した payload (元データをそのまま再現する唯一の種類) を復元し、header の
-  `original_size` と `original_hash` に照合する procedural の payload は生成器の
+  `original_size` と `original_hash` に照合する 受け入れる `original_size` の上限は
+  呼び出し側が渡し、展開の前に xz の chunk の大きさを `original_size` と照合するので、
+  小さな payload がメモリ上で膨らむことはない procedural の payload は生成器の
   parameter なので Python package だけが復元する <!-- claim-test: python_lzma_fallback_files_decode_to_the_original_bytes -->
 
 <!-- claim-test: every_single_bit_flip_is_refused_by_the_expected_check -->
