@@ -62,13 +62,20 @@ def rust_sources() -> list[Path]:
     return out
 
 
+def python_test_sources() -> list[Path]:
+    base = ROOT / "tests"
+    return sorted(base.glob("test_*.py")) if base.is_dir() else []
+
+
 def defined_test_names(files: list[Path]) -> dict[str, Path]:
-    """Every `fn <name>` in the Rust sources, mapped to where it was found."""
+    """Every `fn <name>` in the Rust sources and `def test_<name>` in the
+    Python tests, mapped to where it was found."""
     fn_re = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*[(<]")
+    def_re = re.compile(r"^def\s+(test_[A-Za-z0-9_]*)\s*\(", re.M)
     found: dict[str, Path] = {}
     for f in files:
         text = f.read_text(encoding="utf-8", errors="replace")
-        for m in fn_re.finditer(text):
+        for m in (def_re if f.suffix == ".py" else fn_re).finditer(text):
             found.setdefault(m.group(1), f)
     return found
 
@@ -85,7 +92,7 @@ def main() -> int:
     args = ap.parse_args()
 
     sources = rust_sources()
-    defined = defined_test_names(sources)
+    defined = defined_test_names(sources + python_test_sources())
 
     per_doc: dict[str, list[str]] = {}
     for rel in REQUIRED_DOCS:
@@ -133,7 +140,7 @@ def main() -> int:
                 problems.append(f"{base_rel}: `{name}` の marker が無い ({rel} にはある)")
 
     if args.list:
-        print(f"Rust source {len(sources)} file / fn {len(defined)} 個")
+        print(f"Rust source {len(sources)} file + Python test {len(python_test_sources())} file / 試験名 {len(defined)} 個")
         for rel, names in per_doc.items():
             print(f"\n{rel}: marker {len(names)} 件")
             for name in names:
@@ -150,7 +157,7 @@ def main() -> int:
 
     print(
         f"claim-check: OK (marker {total} 件を {len(per_doc)} 文書で検査、"
-        f"Rust source {len(sources)} file の fn {len(defined)} 個と突合)"
+        f"Rust source {len(sources)} file と Python test {len(python_test_sources())} file の名前 {len(defined)} 個と突合)"
     )
     return 0
 

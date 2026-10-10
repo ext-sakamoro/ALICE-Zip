@@ -49,15 +49,15 @@ same size as plain zlib rather than worse. Every figure on this page comes from
 | Path | What | Where it ships |
 |------|------|----------------|
 | `/` (`alice-zip`) | **Rust core crate** — compression primitives (LZ77, dictionary, BPE, entropy, quantisation, zlib / LZMA residual containers) + every generator law (polynomial / Fourier / Perlin), `no_std + alloc` | [crates.io](https://crates.io/crates/alice-zip) · [docs.rs](https://docs.rs/alice-zip) |
-| `libalice/` (`alice-zip-cli`) | CLI `alice`, C FFI (`cdylib`), PyO3 native module; thin re-export of the core generators and compression | C# / UE5 bindings, pip `libalice` |
-| `alice_zip/` | Python package (`ALICEZip` analyzer + `.alice` container) | pip `alice-zip` |
+| `libalice/` (`alice-zip-cli`) | CLI `alice`, C FFI (`cdylib`), PyO3 native module; thin re-export of the core generators and compression | C# / UE5 bindings, Python module built with maturin from `libalice/` |
+| `alice_zip/` | Python package (`ALICEZip` analyzer + `.alice` container) | from this repository (not on PyPI) |
 | `bindings/` | C++ / C# (Unity) / UE5 wrappers over `libalice/include/alice.h` | |
 
 ## Installation
 
 ```bash
-# Python
-pip install alice-zip
+# Python (not on PyPI: install from the repository)
+pip install git+https://github.com/ext-sakamoro/ALICE-Zip
 
 # Rust
 cargo add alice-zip                       # std (default): + zlib wrappers
@@ -135,6 +135,34 @@ print(f"Ratio: {data.nbytes / len(compressed):.1f}x")
 # Decompress
 restored = zipper.decompress(compressed)
 ```
+
+### Lossless mode (Python)
+
+```python
+from alice_zip import ProceduralCompressionDesigner
+
+designer = ProceduralCompressionDesigner()
+result = designer.compress(data, enable_lossless=True)
+restored = designer.decompress(result)   # same dtype, same bytes as data
+```
+
+- `decompress` returns the input bit for bit, dtype included, for the eleven
+  real dtypes (`float16/32/64`, `int8`–`int64`, `uint8`–`uint64`), NaN payloads
+  and infinities included. <!-- claim-test: test_lossless_gives_back_the_input_bit_for_bit -->
+- The residual is written from the original and kept in its precision
+  (`float64` for float64 / int32 / uint32 / int64 / uint64 originals, `float32`
+  otherwise). A value that the generated value plus the residual cannot
+  rebuild exactly (NaN, an infinity, or a difference that is not exact) is
+  stored as it is. The residual is a `ResidualData` file, version 4 (version 2
+  when the residual is `float32` and nothing is stored as it is).
+- When the parameters plus the residual are not smaller than LZMA of the
+  input, the LZMA result is returned instead; so is a dtype the residual
+  cannot carry (complex, …). <!-- claim-test: test_a_lossless_result_is_not_larger_than_lzma_of_the_input -->
+- `quantize_residual=8` / `16` is lossy (`is_lossless` is `False`): each value
+  is within half a quantisation step. <!-- claim-test: test_a_quantized_residual_is_off_by_at_most_half_a_step -->
+- A result made by an earlier version (a `float32` residual, which was not
+  lossless) is refused by `decompress`; compress the input again, or pass
+  `allow_approximate=True` to read its approximate values. <!-- claim-test: test_a_result_of_the_earlier_residual_path_is_refused -->
 
 ## How It Works
 

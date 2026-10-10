@@ -15,13 +15,13 @@
 </p>
 
 > **手続き的生成圧縮エンジン**
-> *データではなく、アルゴリズムを保存する。*
+> *データではなく、アルゴリズムを保存する*
 
 [English README](README.md)
 
 ---
 
-ALICE-Zipは、データそのものではなく**「データの生成方法」**を保存する次世代圧縮ツールです。
+ALICE-Zip は、データそのものではなく**「データの生成方法」**を保存する次世代圧縮ツール
 
 パターン、波形、数学的データに対して**元のサンプルをビット単位で復元したまま 75 倍〜806 倍**、
 1e-12 の誤差を許すなら 160 倍〜1286 倍 法則が当たらないデータは byte 圧縮に落ち、
@@ -47,15 +47,15 @@ ALICE-Zipは、データそのものではなく**「データの生成方法」
 | パス | 内容 | 配布先 |
 |------|------|--------|
 | `/` (`alice-zip`) | **Rust core crate** — 圧縮 primitive (LZ77 / 辞書 / BPE / エントロピー / 量子化 / zlib・LZMA residual container) + 全 generator 法則 (多項式 / Fourier / Perlin)、`no_std + alloc` | [crates.io](https://crates.io/crates/alice-zip) · [docs.rs](https://docs.rs/alice-zip) |
-| `libalice/` (`alice-zip-cli`) | CLI `alice`、C FFI (`cdylib`)、PyO3 native module core generators / compression の thin re-export | C# / UE5 binding、pip `libalice` |
-| `alice_zip/` | Python package (`ALICEZip` analyzer + `.alice` container) | pip `alice-zip` |
+| `libalice/` (`alice-zip-cli`) | CLI `alice`、C FFI (`cdylib`)、PyO3 native module core generators / compression の thin re-export | C# / UE5 binding、`libalice/` から maturin で build する Python module |
+| `alice_zip/` | Python package (`ALICEZip` analyzer + `.alice` container) | 本 repository から (PyPI には未公開) |
 | `bindings/` | C++ / C# (Unity) / UE5 wrapper (`libalice/include/alice.h`) | |
 
 ## インストール
 
 ```bash
-# Python
-pip install alice-zip
+# Python (PyPI には未公開: 本 repository から入れる)
+pip install git+https://github.com/ext-sakamoro/ALICE-Zip
 
 # Rust
 cargo add alice-zip                       # std (default): zlib wrapper 付き
@@ -133,9 +133,25 @@ print(f"圧縮率: {data.nbytes / len(compressed):.1f}x")
 restored = zipper.decompress(compressed)
 ```
 
+### lossless モード (Python)
+
+```python
+from alice_zip import ProceduralCompressionDesigner
+
+designer = ProceduralCompressionDesigner()
+result = designer.compress(data, enable_lossless=True)
+restored = designer.decompress(result)   # data と同じ dtype、同じ byte
+```
+
+- `decompress` は実数の 11 種の dtype (`float16/32/64`、`int8`〜`int64`、`uint8`〜`uint64`) で、NaN の payload や無限大を含めて入力を dtype ごと bit 単位で返す <!-- claim-test: test_lossless_gives_back_the_input_bit_for_bit -->
+- residual は元データから書き、元データの精度で持つ (float64 / int32 / uint32 / int64 / uint64 の元データは `float64`、それ以外は `float32`) 生成値と residual で正確に復元できない値 (NaN、無限大、差が正確でない値) はそのまま持つ residual は `ResidualData` の file で version 4 (residual が `float32` でそのまま持つ値が無ければ version 2)
+- parameter と residual の合計が入力の LZMA より小さくなければ LZMA の結果を返す residual が運べない dtype (complex など) も同じ <!-- claim-test: test_a_lossless_result_is_not_larger_than_lzma_of_the_input -->
+- `quantize_residual=8` / `16` は lossy (`is_lossless` は `False`) で、各値の誤差は量子化の半 step 以内 <!-- claim-test: test_a_quantized_residual_is_off_by_at_most_half_a_step -->
+- 以前の版で作った結果 (`float32` の residual で lossless でなかったもの) は `decompress` が拒否する 入力から圧縮し直すか、近似値でよければ `allow_approximate=True` で読む <!-- claim-test: test_a_result_of_the_earlier_residual_path_is_refused -->
+
 ## 仕組み
 
-従来の圧縮は**バイト列**のパターンを探します。ALICEは**数学的**パターンを探します。
+従来の圧縮は**バイト列**のパターンを探す ALICE は**数学的**パターンを探す
 
 ```
 元データ = 生成関数(パラメータ) + 残差
@@ -340,6 +356,21 @@ scripts/preflight.sh
 cargo build --manifest-path libalice/Cargo.toml --release
 ```
 
+## 関連プロジェクト
+
+同じ考え方を別の領域に当てたもの 本 crate は*信号*の作り方を保存し、こちらは形・物理状態・frame の作り方を保存する
+
+| プロジェクト | 内容 | リンク |
+|---------|-------------|-------|
+| **ALICE-SDF** | 3D の形を polygon でなく法則で持つ — GLSL / WGSL / HLSL への変換、SVO、marching cubes、platform をまたいで bit 一致の評価 | [crates.io](https://crates.io/crates/alice-sdf) · [docs.rs](https://docs.rs/alice-sdf) · [GitHub](https://github.com/ext-sakamoro/ALICE-SDF) |
+| **ALICE-DetMath** | 本 crate の Fourier / Perlin generator と ALICE-SDF が共に評価する bit 一致の超越関数層 (`sin` / `exp` / `atan2` / …) 同じ法則がどの platform でも同じ bit を出す | [crates.io](https://crates.io/crates/alice-det-math) · [docs.rs](https://docs.rs/alice-det-math) · [GitHub](https://github.com/ext-sakamoro/ALICE-DetMath) |
+| ALICE-DB | model ベースの時系列 database | [crates.io](https://crates.io/crates/alice-db) · [GitHub](https://github.com/ext-sakamoro/ALICE-DB) |
+| ALICE-Edge | 組込み / IoT 向けの model generator (`no_std`) | [crates.io](https://crates.io/crates/alice-edge) · [GitHub](https://github.com/ext-sakamoro/ALICE-Edge) |
+| ALICE-Streaming-Protocol | 超低帯域の映像 streaming | [crates.io](https://crates.io/crates/libasp) · [GitHub](https://github.com/ext-sakamoro/ALICE-Streaming-Protocol) |
+| ALICE-Eco-System | Edge から Cloud までの pipeline の demo | [GitHub](https://github.com/ext-sakamoro/ALICE-Eco-System) |
+
+どれも同じ考え方を共有する: **データそのものでなく、生成の手順を符号化する**
+
 ## ライセンス
 
 - Rust core crate `alice-zip` (`/`): [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE) (選択可)
@@ -352,4 +383,4 @@ cargo build --manifest-path libalice/Cargo.toml --release
 
 ---
 
-*「最良の圧縮とは、データを保存することではなく、それを生成するレシピを保存することである。」*
+*「最良の圧縮とは、データを保存することではなく、それを生成するレシピを保存することである」*
