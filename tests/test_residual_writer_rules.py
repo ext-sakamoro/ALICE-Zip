@@ -49,10 +49,14 @@ def test_finite_residuals_are_the_float64_difference():
     assert r.tolist() == [1.0, -3.75, 2e300]
 
 
+@pytest.mark.parametrize("dtype", [np.float64, np.float32], ids=["float64", "float32"])
 @pytest.mark.parametrize("bits", [8, 16])
-def test_a_quantized_residual_is_off_by_at_most_half_a_step(bits):
+def test_a_quantized_residual_is_off_by_at_most_half_a_step(bits, dtype):
+    # oracle: each value is within half a quantisation step of the original,
+    # plus the rounding of the residual stored as float32 and of the output
+    # to its dtype (half a unit in the last place of each, per value)
     t = np.linspace(0, 20, 2000)
-    x = (np.sin(t) * 100 + np.random.default_rng(2).normal(0, 0.3, 2000)).astype(np.float64)
+    x = (np.sin(t) * 100 + np.random.default_rng(2).normal(0, 0.3, 2000)).astype(dtype)
     d = ProceduralCompressionDesigner()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -60,9 +64,15 @@ def test_a_quantized_residual_is_off_by_at_most_half_a_step(bits):
         out = np.asarray(d.decompress(r))
     assert r.engine_used == CompressionEngine.PROCEDURAL
     assert not r.is_lossless
+    assert out.dtype == x.dtype
     from alice_zip.generators import decompress_from_params
     g = decompress_from_params(r.generator_params).astype(np.float64)
-    span = (x - g).max() - (x - g).min()
-    step = span / (2 ** bits - 1)
-    # half a step, plus the float32 rounding of the dequantized value
-    assert np.max(np.abs(out - x)) <= step / 2 + np.max(np.abs(x - g)) * 2 ** -23 + 1e-12
+    res = x.astype(np.float64) - g
+    step = (res.max() - res.min()) / (2 ** bits - 1)
+    rounding = (np.spacing(np.abs(res).astype(np.float32)).astype(np.float64) / 2
+                + np.spacing(np.abs(x)).astype(np.float64) / 2)
+    err = np.abs(out.astype(np.float64) - x.astype(np.float64))
+    assert np.all(err <= step / 2 + rounding + 1e-12)
+    # the step dominates here, so a quantizer that truncates (up to a whole
+    # step) is caught
+    assert step / 2 > 4 * rounding.max()
