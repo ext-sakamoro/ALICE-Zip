@@ -36,4 +36,4 @@ by the library are freed with `alice_free_buffer` / `alice_free_float_buffer`
 
 ## Versioning / license
 
-`2.4.0` — see [CHANGELOG.md](CHANGELOG.md). MIT (`../LICENSE-MIT`).
+`3.0.0` — see [CHANGELOG.md](CHANGELOG.md). MIT (`../LICENSE-MIT`).
