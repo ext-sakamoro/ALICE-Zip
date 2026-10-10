@@ -4,6 +4,9 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- `residual::reconstruct_bytes`: generated (`f64`) と residual から元データを記録 dtype の little endian の byte で返す 和は `f64` で取り、整数 dtype は NaN を `ResidualError::Corrupted` で拒否し、それ以外は偶数への丸めのあと型の範囲で飽和 (無限大も) 浮動小数 dtype は 1 回だけ丸め、桁あふれは無限大 Python の `ResidualCompressor.reconstruct` と同じ規則で、両方を同じ vector 表 (`tests/data/residual/reconstruct_vectors.txt`、11 種の dtype の 286 行) で照合する
+
 ### Changed (破壊的変更)
 - `residual::ResidualData` は Python の書き手と同じ file を読み書きする header は Python の鍵 (`method` / `shape` / `dtype` / `quant_bits` / `version`) で書き、`shape` からも旧来の `original_len` からも長さを取る (両方あって食い違えば `InvalidHeader`) 新しい欄 `shape` と `dtype` に元の配列の形と dtype (実数の 11 種、それ以外は `InvalidHeader`) を持ち、値は dtype によらず平らな `f32` で返す (dtype は元データの型で、residual は浮動小数の差分) 量子化は Python の形式 (`min: f64 · scale: f64 · 符号`、xz) で書き、`quant_bits` があれば方式 (none / lzma / zlib / quantized) によらず Python と同じく逆量子化して読む 本 crate の旧量子化コンテナ (header に `min_val`) も読み、書き戻しても同じ header になる 量子化は `f64` で計算し (32 bit の最上位符号が `f32` では表せないため)、NaN と無限大を含む値は量子化しない (書き手は lossless の方式を選び、内部の量子化は新しい `ResidualError::NotFinite` を返す) `quant_bits` が 8 / 16 / 32 以外なら `ResidualError::UnsupportedLayout` どちらの読み手がどの書き手の file を受け付けるかは、各書き手の実際の出力で表 (`tests/data/residual/acceptance.txt`) にしている 移行: `ResidualData` を struct 式で作っている呼び出し側は `shape` / `dtype` を足し、`ResidualError` を網羅的に match している呼び出し側は `NotFinite` を足す 旧版の本 crate は新しい header (`original_len` 無し) を読めない
 - `format::AliceFileHeader::from_bytes` は core crate の `container::parse_legacy_alice_zip_header` で header を検査してから読む (読み手を 1 箇所にする) 書き手が出したことのない値は別の値として読まず拒否する
