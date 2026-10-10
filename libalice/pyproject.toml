@@ -11,7 +11,10 @@ authors = [
     { name = "Moroya Sakamoto", email = "sakamoro@alicelaw.net" }
 ]
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
+# No `license-files`: maturin finds LICENSE-APACHE and NOTICE itself (the
+# PEP 639 default globs), and listing them makes `maturin sdist` add the
+# root copies twice. scripts/dist_license_check.py checks the built files.
 requires-python = ">=3.9"
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -19,7 +22,6 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
     "Topic :: System :: Archiving :: Compression",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 keywords = ["compression", "procedural-generation", "lossless", "kolmogorov"]

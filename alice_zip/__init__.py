@@ -8,8 +8,8 @@ ALICE-Zip is a revolutionary compression system that uses procedural generation
 to achieve extreme compression ratios. Instead of storing raw data, it analyzes
 patterns and stores the algorithms that can regenerate the original content.
 
-License: MIT (Open Core)
-- Basic compression and full decompression are free under MIT license.
+License: Apache-2.0 (Open Core)
+- Basic compression and full decompression are free under the Apache-2.0 license.
 - For advanced Pro/Enterprise features, see: https://github.com/ext-sakamoro/ALICE-Zip
 
 Features:
@@ -41,7 +41,7 @@ from .core import (
     HEADER_V2_SIZE,
 )
 
-# Generators (MIT License - Free)
+# Generators (Apache-2.0 - Free)
 from .generators import (
     CompressionEngine,
     DataDomain,
@@ -58,7 +58,7 @@ from .generators import (
     decompress_from_lzma,
 )
 
-# Analyzers (MIT License - Free for basic compression)
+# Analyzers (Apache-2.0 - Free for basic compression)
 from .analyzers import (
     analyze_data,
     try_sine_fit,
@@ -69,7 +69,7 @@ from .analyzers import (
     ProceduralCompressionDesigner,
 )
 
-# Media generators (MIT License - Free for decompression)
+# Media generators (Apache-2.0 - Free for decompression)
 try:
     from .media_generators import (
         ImagePattern,
@@ -99,7 +99,7 @@ __all__ = [
     'HEADER_V1_SIZE',
     'HEADER_V2_SIZE',
 
-    # Generators (MIT)
+    # Generators (Apache-2.0)
     'CompressionEngine',
     'DataDomain',
     'GeneratorType',
@@ -114,7 +114,7 @@ __all__ = [
     'decompress_from_params',
     'decompress_from_lzma',
 
-    # Analyzers (MIT)
+    # Analyzers (Apache-2.0)
     'analyze_data',
     'try_sine_fit',
     'try_fourier_fit',
@@ -144,4 +144,4 @@ if HAS_MEDIA_GENERATORS:
 
 __version__ = '2.0.0'
 __author__ = 'Moroya Sakamoto'
-__license__ = 'MIT'
+__license__ = 'Apache-2.0'

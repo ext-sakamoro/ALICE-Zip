@@ -10,7 +10,7 @@
   <a href="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/ci.yml"><img src="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/security-audit.yml"><img src="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/security-audit.yml/badge.svg" alt="Security"></a>
   <a href="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/fuzz.yml"><img src="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/fuzz.yml/badge.svg" alt="Fuzz"></a>
-  <a href="#ライセンス"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-green.svg" alt="License"></a>
+  <a href="#ライセンス"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg" alt="License"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.9+-yellow.svg" alt="Python"></a>
 </p>
 
@@ -379,8 +379,13 @@ cargo build --manifest-path libalice/Cargo.toml --release
 
 ## ライセンス
 
-- Rust core crate `alice-zip` (`/`): [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE) (選択可)
-- CLI / FFI crate (`libalice/`)、Python package (`alice_zip/`)、bindings: [MIT](LICENSE-MIT)
+- [Apache License, Version 2.0](LICENSE-APACHE): Rust core crate `alice-zip` (`/`)、
+  CLI / FFI crate と Python の wheel (`libalice/`)、Python package (`alice_zip/`)、bindings
+- 再配布 (source でも binary でも) には [LICENSE-APACHE](LICENSE-APACHE) と
+  [NOTICE](NOTICE) を添える (Apache-2.0 第 4 条) application の画面に表示する必要は無い
+- 以前の release は公開した時のライセンスのまま: core crate の 0.8.0 までは
+  MIT OR Apache-2.0、libalice の 2.7.0 までと Python package の 1.0.0 までは MIT
+- 「ALICE」の名前はライセンスによらず [TRADEMARK_NOTICE](TRADEMARK_NOTICE) の対象
 - `libalice-enterprise/`: 別建ての非公開 proprietary crate (同 dir の [LICENSE](libalice-enterprise/LICENSE) 参照)
 
 ## 作者

@@ -131,7 +131,7 @@ class TestALICEZipCompress:
 
 
 class TestALICEZipDecompress:
-    """Test ALICEZip decompression (Core/MIT functionality)"""
+    """Test ALICEZip decompression (Core functionality)"""
 
     def setup_method(self):
         self.zipper = ALICEZip()

@@ -3,7 +3,7 @@
 ALICE-Zip Test Suite
 ====================
 
-Tests for the ALICE-Zip compression library (MIT/Core version).
+Tests for the ALICE-Zip compression library (Core version).
 Note: Compression features are Pro-only, so we test decompression and utilities.
 """
 

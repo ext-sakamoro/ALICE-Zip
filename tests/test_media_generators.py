@@ -4,7 +4,7 @@ ALICE-Zip Media Generators Test Suite
 =======================================
 
 Comprehensive tests for media generators (Image, Audio, Video).
-These tests check the MIT-licensed decompression/generation capabilities.
+These tests check the decompression/generation capabilities.
 """
 
 import pytest

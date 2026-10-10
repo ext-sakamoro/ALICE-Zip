@@ -1,4 +1,4 @@
-// Copyright (c) 2024-2026 Moroya Sakamoto. MIT License.
+// Copyright (c) 2024-2026 Moroya Sakamoto. Apache-2.0.
 
 #pragma once
 

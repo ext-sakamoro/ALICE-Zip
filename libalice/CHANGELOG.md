@@ -4,6 +4,10 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
 ## [Unreleased]
 
+### ライセンス
+
+- 3.0.0 から Apache License 2.0 (2.7.0 までは MIT) crate と wheel に `LICENSE-APACHE` と `NOTICE` を入れる (repository の root と同じ内容の写し)
+
 ### 破壊的変更のまとめ (3.0.0)
 
 版: 2.7.0 → 3.0.0 (crate `alice-zip-cli` と Python の wheel `libalice`、wheel の版は `Cargo.toml` から取る) 各項目の詳細は下の Changed (破壊的変更)

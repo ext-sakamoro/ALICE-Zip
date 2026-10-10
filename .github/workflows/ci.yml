@@ -65,6 +65,21 @@ jobs:
           PY=$(command -v python3 || command -v python)
           "$PY" scripts/test_version_check.py
           "$PY" scripts/version_check.py
+      # Apache-2.0 everywhere it is stated, NOTICE + LICENSE-APACHE shipped in
+      # both crates (libalice carries identical copies); 0 comparisons fail
+      - name: Licence agrees and its files are packaged
+        run: |
+          PY=$(command -v python3 || command -v python)
+          "$PY" scripts/test_license_check.py
+          "$PY" scripts/license_check.py
+          "$PY" scripts/test_dist_license_check.py
+          for m in Cargo.toml libalice/Cargo.toml; do
+            list=$(cargo package --list --allow-dirty --manifest-path "$m")
+            for f in LICENSE-APACHE NOTICE; do
+              printf '%s\n' "$list" | grep -qx "$f" || { echo "::error::$m: the package lacks $f"; exit 1; }
+            done
+            echo "$m: LICENSE-APACHE and NOTICE packaged"
+          done
       # A suite gated on a feature compiles to an empty test binary when the
       # feature is missing, which passes with 0 tests. Each of these must
       # report at least one passed test on every OS.
@@ -298,6 +313,14 @@ jobs:
           pip install maturin numpy pytest
           (cd libalice && maturin build --release --out ../target/wheels)
           pip install target/wheels/libalice-*.whl
+      # LICENSE-APACHE and NOTICE inside every built archive, and the
+      # Apache-2.0 expression in its metadata (libalice and alice-zip)
+      - name: Licence files in the wheels and sdists
+        run: |
+          pip install build
+          (cd libalice && maturin sdist --out ../target/wheels)
+          python -m build --outdir target/pydist .
+          python scripts/dist_license_check.py 'target/wheels/libalice-*.whl' 'target/wheels/libalice-*.tar.gz' 'target/pydist/*.whl' 'target/pydist/*.tar.gz'
       - name: pytest (native accelerator enabled)
         run: |
           pip install -e .
