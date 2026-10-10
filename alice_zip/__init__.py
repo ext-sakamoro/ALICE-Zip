@@ -142,6 +142,6 @@ if HAS_MEDIA_GENERATORS:
         'MediaDecompressor',
     ])
 
-__version__ = '1.0.0'
+__version__ = '2.0.0'
 __author__ = 'Moroya Sakamoto'
 __license__ = 'MIT'

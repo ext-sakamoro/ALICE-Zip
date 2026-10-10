@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### 破壊的変更 (package ごと)
+
+版: Rust crate `alice-zip` 0.8.0 → 0.9.0、Python package `alice-zip` 1.0.0 → 2.0.0、libalice (crate `alice-zip-cli` と Python の wheel `libalice`) 2.7.0 → 3.0.0 各項目の詳細は本 file の Changed (破壊的変更) / Fixed と [libalice/CHANGELOG.md](libalice/CHANGELOG.md)
+
+- **Rust crate `alice-zip` 0.9.0**
+  - 公開 API の削除や型の変更は無い (`cargo semver-checks` を 0.8.0 に対して実行し、必要な版の更新は無し) `ContainerError` は `#[non_exhaustive]` で、variant を足しただけ
+  - 0.x の caret (`"0.8"`) は 0.9.0 を受け取らないので、依存する側は `alice-zip = "0.9"` に上げる
+  - `lzma` feature は `crc` crate に直接依存する (`lzma-rs` を通して既に依存木にあった)
+- **Python package `alice-zip` 2.0.0**
+  - `decompress_residual` は保存された float32 の bit のまま float32 で返す 記録 dtype を適用するのは `reconstruct` だけ
+  - ResidualData の `delta` は `base_value` が無ければ `ValueError` 書き手は `bitdelta` で書く
+  - ResidualData の JSON header: `"version"` は整数の 1〜4 だけ、鍵は `method` / `shape` / `dtype` / `quant_bits` / `version`
+  - procedural payload は書き手が記録した dtype で返る (以前は常に float32)
+  - `compress(quantize_residual=8 / 16)` は偶数への丸め (以前は切り捨て)
+  - `compute_residual` の NaN と `reconstruct` の整数の飽和は規則で決まる (以前は環境で変わった)
+  - `compress(enable_lossless=True)` は元データから residual を書き、以前の結果は `decompress` が拒否する (`allow_approximate=True` で近似として読める)
+  - ALICE_ZIP の読み手は書き手が出したことのない値を拒否し、lossless な payload は `original_size` と `original_hash` に照合する
+  - LZMA fallback の読み手は `original_size` を超える展開・`MAX_OUTPUT_SIZE` を超える `original_size`・xz の後ろの byte・CRC-64 以外の check・64 MiB を超える辞書を拒否する
+- **libalice 3.0.0** (`alice-zip-cli` crate と wheel `libalice`)
+  - wheel の版は crate の版と同じになり、2.4.0 から 3.0.0 に進む (2.5〜2.7 の wheel は存在しない)
+  - 詳細は [libalice/CHANGELOG.md](libalice/CHANGELOG.md) の Changed (破壊的変更): ResidualData の header を型のまま読む、header の鍵を Python にそろえる、`AliceFileHeader::from_bytes` と `.alz` header が出したことのない値を拒否する、`FormatError` / `ResidualError` の variant の追加
+
 ### Removed
 
 - `alice-zip-enterprise` (未公開) の `security::ENCRYPTED_MAGIC` を削除 暗号化した archive はこの magic を書かず、読む側もこの値を見ていなかった (どの repo にも参照が無い) 暗号化した archive の形式を識別する値として残ると、実在しない形式を示す
@@ -37,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `container::LegacyHeader::original_hash_checkable` — ALICE_ZIP の payload を復元すると元データが再現されるか (`original_hash` を照合できるか) LZMA fallback (`0x30`) だけが true Python の `alice_zip.core.original_hash_checkable` と同じ規則で、両方の試験が同じ表 (`tests/container_oracle.rs` の `CHECKABLE`) を読む
 
 ### Changed (破壊的変更)
-- libalice (Python の wheel) の版は `libalice/Cargo.toml` の版を使う (`libalice/pyproject.toml` は `dynamic = ["version"]`) pyproject に 2.4.0 と書いたまま Cargo.toml が 2.7.0 に進んでいたので、wheel の版は 2.7.0 になる (新しい番号を決めたのでなく、Cargo.toml と同じ番号に直した) libalice の `requires-python` は CI で試験している最小の 3.9 にした (`>=3.8` と書いていた)
+- libalice (Python の wheel) の版は `libalice/Cargo.toml` の版を使う (`libalice/pyproject.toml` は `dynamic = ["version"]`) pyproject に 2.4.0 と書いたまま Cargo.toml が 2.7.0 に進んでいたので、wheel の版は crate の版と同じになる (以前の wheel は 2.4.0 のまま、crate は 2.5.0〜2.7.0 に進んでいた 本 release で crate とともに 3.0.0 になるので、wheel の番号は 2.4.0 から 3.0.0 に進み、2.5〜2.7 の wheel は存在しない) libalice の `requires-python` は CI で試験している最小の 3.9 にした (`>=3.8` と書いていた)
 - Python package の `ProceduralCompressionDesigner.compress(quantize_residual=8 / 16)` は residual を `ResidualCompressor` の量子化 (偶数への丸め、xz) で ResidualData の file にする 以前は切り捨て (`astype(uint8)`) で 1 step 近くずれていた 誤差は半 step に、float32 で持つ residual と出力 dtype への丸めを足した範囲 `residual_format` を持たない以前の量子化の結果は以前と同じく読む
 - Python package の `ResidualCompressor.compute_residual` は差が NaN になる時の値を規則で決める (元データの NaN に quiet bit を立てたもの、なければ generated の NaN、inf - inf は正の quiet NaN) x86 では inf - inf が負の NaN になり、同じ入力で書く residual が環境で変わっていた
 - Python package の `ProceduralCompressionDesigner.compress(enable_lossless=True)` は residual を元データから書き (`ResidualCompressor.compress_original`)、`decompress` は入力を bit 単位で返す 以前は float32 の residual を足すだけで、float32 の sin 2000 点で 17 点、float64 の sin で 1999 点、float64 の多項式で 1536 点が一致していなかった (`is_lossless` は True のまま) 小さい residual を捨てて lossless とする経路も除いた `residual_data` は ResidualData の file になり、`metadata["residual_format"]` が `"alice-residual"` 移行: 以前の版で作った `CompressionResult` (residual_format が無く量子化もしていない residual) は `decompress` が `ValueError` を返す 入力から圧縮し直すか、近似値でよければ `decompress(result, allow_approximate=True)` で読む 結果 (generator の parameter と residual) が入力の lzma 以上の大きさなら lzma の結果を返す (adaptive_fallback が True の時、既定) residual が運べない dtype (complex など) は lzma の結果を返す (以前は ValueError) 大きさは sin 2000 点で float32 3,291 B (lzma 5,172 B)、float64 10,375 B (lzma 13,692 B)

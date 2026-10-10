@@ -4,6 +4,16 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
 ## [Unreleased]
 
+### 破壊的変更のまとめ (3.0.0)
+
+版: 2.7.0 → 3.0.0 (crate `alice-zip-cli` と Python の wheel `libalice`、wheel の版は `Cargo.toml` から取る) 各項目の詳細は下の Changed (破壊的変更)
+
+- wheel の番号: 以前の wheel は `libalice/pyproject.toml` に書いた 2.4.0 のままで、crate は 2.5.0〜2.7.0 に進んでいた 本 release から wheel は crate と同じ版になり、2.4.0 から 3.0.0 に進む (2.5〜2.7 の wheel は存在しない)
+- core crate を `alice-zip` 0.9 に上げた
+- `residual::ResidualData` の header は JSON の型を保って読み、鍵は Python の書き手と同じ (`method` / `shape` / `dtype` / `quant_bits` / `version`)、`"version"` は整数の 1〜4 だけ
+- `format::AliceFileHeader::from_bytes` と `alice decompress` / `alice info` (`.alz`) は書き手が出したことのない値を拒否する
+- `FormatError` / `ResidualError` に variant を足した (`UnsupportedVersion` / `InvalidEngine`)、網羅的に match している呼び出し側は追加が要る
+
 ### Added
 - `residual::compress_original`: 元データ (dtype の little endian の byte) と generated から、`reconstruct_bytes` で bit 単位で元に戻る residual を書く residual は元データの精度で持つ (float64 / int32 / uint32 / int64 / uint64 は `f64`、それ以外は `f32`) 元か generated が有限でない位置と、規則で復元できない位置は例外として元の要素をそのまま持ち (residual はそこで 0)、位置 (u64、昇順) と元の要素を residual と一緒に圧縮する この形は version 4 で、header に `"residual_dtype"` と `"exceptions":k` を持つ 例外の無い `f32` の residual は version 2 のまま 量子化は lossless でないので `ResidualError::NotLossless` `residual::decompress_f64` は residual の精度によらず `f64` で返し、`decompress` は `f64` の residual を `UnsupportedLayout` で返す version 3 (例外を圧縮せずに置く形) も読む Python の `ResidualCompressor.compress_original` と同じ規則・同じ file で、両方の書き手の file と乱数の bit パターン (NaN・無限大・非正規数を含む 11 種の dtype) で照合する
 - `residual::reconstruct_bytes`: generated (`f64`) と residual から元データを記録 dtype の little endian の byte で返す 和は `f64` で取り、整数 dtype は NaN を `ResidualError::Corrupted` で拒否し、それ以外は偶数への丸めのあと型の範囲で飽和 (無限大も) 浮動小数 dtype は 1 回だけ丸め、桁あふれは無限大 和が NaN になる時の NaN は規則で決める (generated の NaN に quiet bit を立てたもの、なければ residual の NaN を広げたもの、どちらでもない inf + -inf は正の quiet NaN) 浮動小数 dtype への変換で NaN は符号・quiet bit・payload の上位 bit を残す (ハードウェアの選び方は環境で違うため書き下した) Python の `ResidualCompressor.reconstruct` と同じ規則で、両方を同じ vector 表 (`tests/data/residual/reconstruct_vectors.txt`、11 種の dtype の 458 行) で照合する
