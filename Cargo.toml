@@ -52,6 +52,11 @@ parallel = ["std", "dep:rayon"]
 # implies `std`.
 lzma = ["std", "dep:lzma-rs"]
 
+# needs the `compression` module and the LZMA residual containers
+[[example]]
+name = "compression_ratio"
+required-features = ["lzma"]
+
 [dependencies]
 # Deterministic transcendentals. A content identifier for a law is only
 # meaningful if evaluating the law returns the same bits everywhere, and the
