@@ -28,7 +28,7 @@ def file_of(version, header):
 
 def test_the_table_has_every_cell():
     assert sorted(BASES) == [2, 3, 4]
-    assert len(ROWS) == 375
+    assert len(ROWS) == 381
     assert {r[1] for r in ROWS} == {"accept", "refuse"}
 
 

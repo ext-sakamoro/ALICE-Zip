@@ -532,6 +532,12 @@ for _version, (_text, _payload) in GATE_BASES.items():
             _header = "{" + ",".join(f'"{k}":{v}' for k, v in _ms) + "}"
             _gate_rows.append(f"{_version} {_gate_verdict(_key, _kind, _version)} "
                               f"{_key}:{_kind} {_header}")
+    # versions no writer wrote: 0 and 5 (both readers: unsupported version)
+    for _tag, _v in (("zero", "0"), ("five", "5")):
+        _ms = [(k, json.dumps(v, separators=(",", ":"))) for k, v in _base if k != "version"]
+        _ms.append(("version", _v))
+        _header = "{" + ",".join(f'"{k}":{v}' for k, v in _ms) + "}"
+        _gate_rows.append(f"{_version} refuse version:{_tag} {_header}")
     # a key given twice, with the same and with another value
     for _key in ["version", "exceptions", "method", "x"]:
         _current = dict(_base).get(_key)

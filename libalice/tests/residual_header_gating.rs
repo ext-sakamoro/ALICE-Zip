@@ -53,5 +53,5 @@ fn the_rust_reader_gives_every_verdict() {
         wrong.len(),
         wrong.join("\n")
     );
-    assert_eq!(compared, 375);
+    assert_eq!(compared, 381);
 }

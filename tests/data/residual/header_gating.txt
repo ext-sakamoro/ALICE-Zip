@@ -121,6 +121,8 @@ base 4 0000000000001440000000000000000000000000000018400000000000001040010000000
 2 refuse x:object {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":2,"x":{"a":1}}
 2 refuse x:array_array {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":2,"x":[[4]]}
 2 refuse x:array_object {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":2,"x":[{"a":1}]}
+2 refuse version:zero {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":0}
+2 refuse version:five {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":5}
 2 refuse version:duplicate_same {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":2,"version":2}
 2 refuse version:duplicate_other {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":2,"version":3}
 2 refuse exceptions:duplicate_same {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":2,"exceptions":1,"exceptions":1}
@@ -246,6 +248,8 @@ base 4 0000000000001440000000000000000000000000000018400000000000001040010000000
 3 refuse x:object {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":3,"exceptions":2,"x":{"a":1}}
 3 refuse x:array_array {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":3,"exceptions":2,"x":[[4]]}
 3 refuse x:array_object {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":3,"exceptions":2,"x":[{"a":1}]}
+3 refuse version:zero {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"exceptions":2,"version":0}
+3 refuse version:five {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"exceptions":2,"version":5}
 3 refuse version:duplicate_same {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":3,"exceptions":2,"version":3}
 3 refuse version:duplicate_other {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":3,"exceptions":2,"version":4}
 3 refuse exceptions:duplicate_same {"method":"none","shape":[4],"dtype":"float32","quant_bits":null,"version":3,"exceptions":2,"exceptions":2}
@@ -371,6 +375,8 @@ base 4 0000000000001440000000000000000000000000000018400000000000001040010000000
 4 refuse x:object {"method":"none","shape":[4],"dtype":"float64","quant_bits":null,"version":4,"residual_dtype":"float64","exceptions":1,"x":{"a":1}}
 4 refuse x:array_array {"method":"none","shape":[4],"dtype":"float64","quant_bits":null,"version":4,"residual_dtype":"float64","exceptions":1,"x":[[4]]}
 4 refuse x:array_object {"method":"none","shape":[4],"dtype":"float64","quant_bits":null,"version":4,"residual_dtype":"float64","exceptions":1,"x":[{"a":1}]}
+4 refuse version:zero {"method":"none","shape":[4],"dtype":"float64","quant_bits":null,"residual_dtype":"float64","exceptions":1,"version":0}
+4 refuse version:five {"method":"none","shape":[4],"dtype":"float64","quant_bits":null,"residual_dtype":"float64","exceptions":1,"version":5}
 4 refuse version:duplicate_same {"method":"none","shape":[4],"dtype":"float64","quant_bits":null,"version":4,"residual_dtype":"float64","exceptions":1,"version":4}
 4 refuse version:duplicate_other {"method":"none","shape":[4],"dtype":"float64","quant_bits":null,"version":4,"residual_dtype":"float64","exceptions":1,"version":3}
 4 refuse exceptions:duplicate_same {"method":"none","shape":[4],"dtype":"float64","quant_bits":null,"version":4,"residual_dtype":"float64","exceptions":1,"exceptions":1}
