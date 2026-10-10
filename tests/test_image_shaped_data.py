@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Test ALICE-Zip with real images (JPEG/PNG).
+ProceduralCompressionDesigner on image-shaped data (2-D uint8), all made in
+the test: a gradient, a noisy texture, a deterministic photograph-like image
+and a sine raster. No network and no image file.
 
 Tests:
-1. Lossless mode: accepted when the reconstruction is an exact match **or**
-   PSNR > 50 dB — so this file does not actually pin bit-exactness, despite the
-   name of the mode. Whether the Python container should be tightened to
-   require an exact match is tracked separately; the Rust side got a container
-   that is exact by construction in 0.8.0
-   (`compression::compress_residual_xor`).
-2. Lossy mode: Visual quality without residual
+1. Lossless mode: the reconstruction equals the input bit for bit (dtype and
+   bytes). The photograph-like and texture images go through the LZMA
+   fallback; the sine raster goes through the procedural path (generator
+   parameters plus a residual), which test_lossless_designer.py also covers
+   for 1-D signals.
+2. Lossy mode: quality without a residual (reported, not asserted)
 3. Adaptive fallback: Ensures compression ratio >= 1.0x
 """
 
@@ -29,13 +30,22 @@ from alice_zip.residual_compression import ResidualCompressionMethod
 
 def photo_like_image(size: int = 256) -> np.ndarray:
     """A deterministic photograph-like grayscale image: smooth shading, a few
-    edges and fine texture (the test needs no network and no image file)."""
+    edges and fine texture (the test needs no network and no image file).
+    Rounded before the cast, so a last-place difference of the platform's
+    sin / cos does not change a pixel (pinned by its SHA-256 below)."""
     rng = np.random.default_rng(123)
     y, x = np.mgrid[0:size, 0:size] / size
     shading = 120 + 80 * np.sin(3 * x + 1) * np.cos(2 * y)
     edges = 40 * ((x - 0.5) ** 2 + (y - 0.4) ** 2 < 0.08)
     texture = rng.normal(0, 12, (size, size))
-    return np.clip(shading + edges + texture, 0, 255).astype(np.uint8)
+    return np.clip(np.round(shading + edges + texture), 0, 255).astype(np.uint8)
+
+
+def sine_raster(size: int = 64) -> np.ndarray:
+    """A sine laid out in raster order as a uint8 image: the designer finds
+    its parameters, so it takes the procedural path."""
+    v = 127.5 + 100 * np.sin(np.linspace(0, 8 * np.pi, size * size))
+    return np.round(v).astype(np.uint8).reshape(size, size)
 
 
 def calculate_psnr(original: np.ndarray, reconstructed: np.ndarray) -> float:
@@ -157,8 +167,8 @@ def test_noisy_texture():
     assert reconstructed.dtype == data.dtype and reconstructed.tobytes() == data.tobytes()
 
 
-def test_real_image():
-    """Test with real photograph"""
+def test_photo_like_image():
+    """Test with a deterministic photograph-like image (synthetic)"""
     print("\n" + "=" * 70)
     print("Test 3: Photograph-like image (synthetic)")
     print("=" * 70)
@@ -280,3 +290,22 @@ if __name__ == "__main__":
 
     print("\n" + ("ALL TESTS PASSED" if all_passed else "SOME TESTS FAILED"))
     sys.exit(0 if all_passed else 1)
+
+
+PHOTO_LIKE_SHA256 = "0bce69979fa8e648abc344fbc2f23a642281364646d38c5fb198ce98b77b07b1"
+
+
+def test_the_photo_like_image_is_the_same_on_every_platform():
+    import hashlib
+    assert hashlib.sha256(photo_like_image().tobytes()).hexdigest() == PHOTO_LIKE_SHA256
+
+
+def test_a_sine_raster_takes_the_procedural_path_and_comes_back():
+    from alice_zip.generators import CompressionEngine
+    data = sine_raster()
+    designer = ProceduralCompressionDesigner()
+    result = designer.compress(data, enable_lossless=True)
+    reconstructed = designer.decompress(result)
+    assert result.engine_used == CompressionEngine.PROCEDURAL
+    assert result.generator_params is not None and result.has_residual
+    assert reconstructed.dtype == data.dtype and reconstructed.tobytes() == data.tobytes()
