@@ -414,3 +414,18 @@ for _i, (_good, _b) in enumerate([('"min_val":4', '"min_val":"4"'), ('"scale":2'
     _raw(f"type_legacy_quantized_{_i}", _LEG_TEXT.replace(_good, _b),
          _LEG[4 + struct.unpack("<I", _LEG[:4])[0]:])
     TYPE_FILES.append(f"residual_type_legacy_quantized_{_i}.bin")
+# integers with a leading zero are not JSON
+for _i, (_text, _good, _b, _payload) in enumerate([
+        (_EXC, '"exceptions":2', '"exceptions":02', _EXC_BLOCK),
+        (_BASE, '"shape":[4]', '"shape":[04]', _P4)]):
+    _raw(f"type_leading_zero_{_i}", _text.replace(_good, _b), _payload)
+    TYPE_FILES.append(f"residual_type_leading_zero_{_i}.bin")
+# quant_bits 8.0 / 8e0 / true on a payload that is a valid 8-bit quantized
+# form, so only the type check can refuse it
+_Q = (HERE / "python_quantized.bin").read_bytes()
+_QN = struct.unpack("<I", _Q[:4])[0]
+_QT = _Q[4:4 + _QN].decode()
+for _i, _b in enumerate(['"quant_bits":8.0', '"quant_bits":8e0', '"quant_bits":true']):
+    assert '"quant_bits":8' in _QT
+    _raw(f"type_quantized_bits_{_i}", _QT.replace('"quant_bits":8', _b), _Q[4 + _QN:])
+    TYPE_FILES.append(f"residual_type_quantized_bits_{_i}.bin")

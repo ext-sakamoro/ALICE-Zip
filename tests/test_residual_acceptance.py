@@ -37,7 +37,7 @@ def rows():
 
 def test_the_python_reader_accepts_exactly_the_files_the_table_lists():
     table = rows()
-    assert len(table) == 143
+    assert len(table) == 148
     for name, writer, _rust, python, values in table:
         try:
             out = ResidualCompressor().decompress_residual(

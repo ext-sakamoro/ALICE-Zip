@@ -155,3 +155,8 @@ residual_type_legacy_quantized_0.bin hand        refuse refuse -
 residual_type_legacy_quantized_1.bin hand        refuse refuse -
 residual_type_legacy_quantized_2.bin hand        refuse refuse -
 residual_type_legacy_quantized_3.bin hand        refuse refuse -
+residual_type_leading_zero_0.bin hand        refuse refuse -
+residual_type_leading_zero_1.bin hand        refuse refuse -
+residual_type_quantized_bits_0.bin hand        refuse refuse -
+residual_type_quantized_bits_1.bin hand        refuse refuse -
+residual_type_quantized_bits_2.bin hand        refuse refuse -
