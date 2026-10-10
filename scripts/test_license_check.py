@@ -14,7 +14,7 @@ import license_check  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 FILES = ["Cargo.toml", "libalice/Cargo.toml", "pyproject.toml", "libalice/pyproject.toml",
          "alice_zip/__init__.py", "LICENSE-APACHE", "NOTICE", "libalice/LICENSE-APACHE",
-         "libalice/NOTICE", "README.md", "README_ja.md", "libalice/README.md"]
+         "libalice/NOTICE", "README.md", "README_ja.md", "libalice/README.md", "deny.toml"]
 
 
 class LicenseCheck(unittest.TestCase):
@@ -46,7 +46,7 @@ class LicenseCheck(unittest.TestCase):
 
     def test_the_repository_agrees(self):
         *problems, compared = license_check.check(self.root)
-        self.assertEqual((problems, compared), ([], 21))
+        self.assertEqual((problems, compared), ([], 22))
 
     def test_a_manifest_with_another_licence(self):
         self.edit("Cargo.toml", 'license = "Apache-2.0"', 'license = "MIT OR Apache-2.0"')
@@ -102,6 +102,11 @@ class LicenseCheck(unittest.TestCase):
     def test_readme_link(self):
         self.edit("README.md", "[LICENSE-APACHE](LICENSE-APACHE)", "[LICENSE-MIT](LICENSE-MIT)")
         self.assertOneProblem("links LICENSE-MIT")
+
+
+    def test_a_stale_deny_comment(self):
+        self.edit("deny.toml", "# Licenses (allow-list", "# alice-zip は MIT OR Apache-2.0\n# Licenses (allow-list")
+        self.assertOneProblem("deny.toml")
 
 
 if __name__ == "__main__":

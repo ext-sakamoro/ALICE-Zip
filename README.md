@@ -457,9 +457,10 @@ All projects share the core philosophy: **encode the generation process, not the
 - Redistributions, in source or binary form, carry [LICENSE-APACHE](LICENSE-APACHE)
   and [NOTICE](NOTICE) (Apache-2.0 §4); the notice need not appear in an
   application's user interface
-- Earlier releases keep the licence they were published under: the core crate
-  up to 0.8.0 is MIT OR Apache-2.0, libalice up to 2.7.0 and the Python
-  package up to 1.0.0 are MIT
+- Earlier versions keep the licence they were released under: `alice-zip` up
+  to 0.8.0 on crates.io is MIT OR Apache-2.0; `alice-zip-cli` (libalice) up to
+  2.6.0 on crates.io, and libalice up to 2.7.0 from git, are MIT; the Python
+  package (installed from git, not on PyPI) up to 1.0.0 is MIT
 - The "ALICE" names are covered by [TRADEMARK_NOTICE](TRADEMARK_NOTICE), whatever
   the licence
 - `libalice-enterprise/`: separate, unpublished proprietary crate (see its own [LICENSE](libalice-enterprise/LICENSE))

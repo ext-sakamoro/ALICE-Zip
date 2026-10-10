@@ -383,8 +383,9 @@ cargo build --manifest-path libalice/Cargo.toml --release
   CLI / FFI crate と Python の wheel (`libalice/`)、Python package (`alice_zip/`)、bindings
 - 再配布 (source でも binary でも) には [LICENSE-APACHE](LICENSE-APACHE) と
   [NOTICE](NOTICE) を添える (Apache-2.0 第 4 条) application の画面に表示する必要は無い
-- 以前の release は公開した時のライセンスのまま: core crate の 0.8.0 までは
-  MIT OR Apache-2.0、libalice の 2.7.0 までと Python package の 1.0.0 までは MIT
+- それより前の版は出した時のライセンスのまま: crates.io の `alice-zip` 0.8.0 までは
+  MIT OR Apache-2.0、crates.io の `alice-zip-cli` (libalice) 2.6.0 までと git の libalice
+  2.7.0 までは MIT、git から入れる Python package (PyPI には無い) の 1.0.0 までは MIT
 - 「ALICE」の名前はライセンスによらず [TRADEMARK_NOTICE](TRADEMARK_NOTICE) の対象
 - `libalice-enterprise/`: 別建ての非公開 proprietary crate (同 dir の [LICENSE](libalice-enterprise/LICENSE) 参照)
 
