@@ -171,9 +171,9 @@ class ResidualData:
                     # Use standard json.loads - header size already validated
                     header = _load_header(header_json)
 
-                    # v2 format has 'version' field; only versions 1 and 2
-                    # were written, so a later one is refused rather than
-                    # read as version 2 (same rule as the Rust reader)
+                    # versions 1 to 4 were written; any other (0, or later
+                    # than 4) is refused rather than read as another version
+                    # (same rule as the Rust reader)
                     version = header.get('version', 1)
                     # the writers emit an integer; a float or a string is
                     # refused (the Rust reader takes only a bare integer too)

@@ -64,7 +64,7 @@ pub enum ResidualError {
     /// first value, so the data cannot be reconstructed; recompress from the
     /// original.
     DeltaWithoutBase,
-    /// A header `"version"` later than 2, which no writer produced.
+    /// A header `"version"` other than 1 to 4, which no writer produced.
     UnsupportedVersion(u32),
 }
 
@@ -72,7 +72,7 @@ impl std::fmt::Display for ResidualError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnsupportedVersion(v) => {
-                write!(f, "unsupported residual header version {v} (1 and 2 exist)")
+                write!(f, "unsupported residual header version {v} (1 to 4 exist)")
             }
             Self::DataTooShort { got, expected } => {
                 write!(
@@ -482,9 +482,10 @@ impl ResidualData {
     /// - **v2**: 4-byte `header_len` (LE u32) + JSON + payload
     /// - **v1** (legacy): 2-byte `header_len` (LE u16) + JSON + payload
     ///
-    /// v1 is detected by the absence of a `"version"` field (or `version < 2`)
-    /// in the parsed JSON after a successful v2 parse attempt. A `"version"`
-    /// later than 2 is refused with [`ResidualError::UnsupportedVersion`].
+    /// v1 is detected by the absence of a `"version"` field (or `"version":1`)
+    /// in the parsed JSON after a successful v2 parse attempt. Versions 2 to 4
+    /// are read with the 4-byte length; any other `"version"` (0, or later
+    /// than 4) is refused with [`ResidualError::UnsupportedVersion`].
     pub fn from_bytes(data: &[u8]) -> Result<Self, ResidualError> {
         if data.len() < 4 {
             return Err(ResidualError::DataTooShort {
@@ -521,16 +522,17 @@ impl ResidualData {
                                 )))
                             }
                         };
-                        // only versions 1 and 2 were written; a later one is
-                        // refused rather than read as version 2
-                        if version > 4 {
+                        // versions 1 to 4 were written; any other is refused
+                        // rather than read as another version (0 would fall
+                        // through to the version 1 layout)
+                        if version == 0 || version > 4 {
                             return Err(ResidualError::UnsupportedVersion(version));
                         }
                         if version >= 2 {
                             let compressed = data[v2_end..].to_vec();
                             return Self::from_header_map(&parsed, compressed, version);
                         }
-                        // version < 2 — fall through to v1
+                        // version 1 — fall through to the 2-byte length layout
                     } else {
                         // Not valid JSON — fall through to v1
                     }
