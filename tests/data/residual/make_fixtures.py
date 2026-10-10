@@ -197,17 +197,54 @@ def _vectors(dtype):
                   3 * 2.0 ** -16, 1.5 * 2.0 ** -15, 2.0 ** -14 - 2.0 ** -25, 2.0 ** -14 - 2.0 ** -23,
                   2.0 ** -14, 2.0 ** -14 + 2.0 ** -25):
             pairs.append((g, 0.0))
+    bit_pairs = [(struct.unpack("<Q", struct.pack("<d", g))[0],
+                  struct.unpack("<I", struct.pack("<f", _f32(r)))[0]) for g, r in pairs]
+    # NaNs with payloads, signaling NaNs, negative NaNs, a NaN on each side and
+    # on both, and inf + -inf (whose NaN the hardware gives differently)
+    one, inf_b, ninf_b = 0x3FF0000000000000, 0x7FF0000000000000, 0xFFF0000000000000
+    bit_pairs += [(0x7FF4000000000000, 0), (0x7FFFFFFFFFFFFFFF, 0), (0xFFF0040000000000, 0),
+                  (0x7FF0000000000001, 0), (0x7FF0040000000000, 0), (0xFFF8000000000123, 0),
+                  (one, 0x7F800001), (one, 0xFFC12345), (one, 0x7FFFFFFF), (one, 0xFF800001),
+                  (0x7FF4000000000000, 0xFFC00001), (0x7FF8000000000001, 0x7F800001),
+                  (inf_b, 0xFF800000), (ninf_b, 0x7F800000)]
     rows = []
-    for g, r in pairs:
-        r = _f32(r)
-        s = g + r
-        if dtype in FLOATS and s != s:
-            # a NaN original: only the canonical quiet NaN (payloads differ by writer)
-            g, r, s = nan, 0.0, nan
-        gb = struct.unpack("<Q", struct.pack("<d", g))[0]
-        rb = struct.unpack("<I", struct.pack("<f", r))[0]
-        rows.append(f"{dtype} {gb:016x} {rb:08x} {_expected(dtype, s)}")
+    for gb, rb in bit_pairs:
+        rows.append(f"{dtype} {gb:016x} {rb:08x} {_expected_bits(dtype, gb, rb)}")
     return rows
+
+
+# The NaN of generated + residual, chosen by rule rather than by the
+# hardware (which differs in which NaN it keeps and in the sign of the NaN of
+# inf + -inf): generated's NaN with the quiet bit set; else the residual's NaN
+# widened (sign, quiet bit, its 23 payload bits as the top of the 52); else
+# (inf + -inf) the positive quiet NaN 0x7FF8000000000000
+def _sum_nan_bits(gb, rb):
+    g_nan = (gb >> 52) & 0x7FF == 0x7FF and gb & (2 ** 52 - 1)
+    r_nan = (rb >> 23) & 0xFF == 0xFF and rb & (2 ** 23 - 1)
+    if g_nan:
+        return gb | 1 << 51
+    if r_nan:
+        return (rb >> 31) << 63 | 0x7FF8000000000000 | (rb & 0x7FFFFF) << 29
+    return None
+
+
+def _expected_bits(dtype, gb, rb):
+    nan_bits = _sum_nan_bits(gb, rb)
+    g = struct.unpack("<d", struct.pack("<Q", gb))[0]
+    r = struct.unpack("<f", struct.pack("<I", rb))[0] if nan_bits is None else 0.0
+    if nan_bits is None and abs(g) == float("inf") and abs(r) == float("inf") and g != r:
+        nan_bits = 0x7FF8000000000000
+    if nan_bits is None:
+        return _expected(dtype, g + r)
+    if dtype in INTS:
+        return "error"
+    # a NaN keeps its sign, the quiet bit and the top of its payload
+    sign = nan_bits >> 63
+    if dtype == "float16":
+        return (sign << 15 | 0x7E00 | (nan_bits >> 42) & 0x3FF).to_bytes(2, "little").hex()
+    if dtype == "float32":
+        return (sign << 31 | 0x7FC00000 | (nan_bits >> 29) & 0x3FFFFF).to_bytes(4, "little").hex()
+    return nan_bits.to_bytes(8, "little").hex()
 
 
 import math  # noqa: E402

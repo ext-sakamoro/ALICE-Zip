@@ -35,7 +35,7 @@ fn reconstruct_gives_every_vector() {
         dtypes.insert(c[0].to_owned());
         compared += 1;
     }
-    assert_eq!((compared, dtypes.len()), (304, 11));
+    assert_eq!((compared, dtypes.len()), (458, 11));
 }
 
 #[test]
