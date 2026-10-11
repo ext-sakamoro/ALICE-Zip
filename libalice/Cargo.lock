@@ -19,13 +19,13 @@ dependencies = [
 
 [[package]]
 name = "alice-det-math"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eef90265249a97cc0fac787cf918f62639991513c0219c33e1853de7f1a28a03"
+checksum = "98c80b31a6e6751c58fd3f2794a12dbb5304946f1cd5bf791840b4df041444d2"
 
 [[package]]
 name = "alice-zip"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "alice-det-math",
  "crc",
@@ -41,7 +41,7 @@ dependencies = [
 
 [[package]]
 name = "alice-zip-cli"
-version = "3.0.0"
+version = "3.1.0"
 dependencies = [
  "alice-codec",
  "alice-det-math",
