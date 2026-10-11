@@ -116,7 +116,7 @@ fn integer_signal(n: usize) -> Vec<f32> {
 fn semantics_id_is_the_recorded_value() {
     assert_eq!(
         hex(&SEMANTICS_ID),
-        "d2209b30f6f1f45baa1b638bcdfee34ac64773b2e63b9c083b2e77afc691398e",
+        "135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000",
         "the numeric semantics changed: every law identifier published under \
          the old value now describes different arithmetic"
     );
@@ -150,7 +150,7 @@ fn law_id_and_evaluation_are_the_recorded_bits() {
         "law_id and evaluate",
         bits,
         32 + 41 * 8,
-        "06f9beb9dcfaca1786bb8c6b195471bd8049d0159bd8355d92caf94e8464cb28",
+        "1943c25822640df80db50589039bced433cf6a55f02df5862e0f7a414eb5e7b7",
     );
 }
 
@@ -171,6 +171,13 @@ fn law_id_and_evaluation_are_the_recorded_bits() {
 // generators are now a `map` over the point evaluator, which
 // `tests/law_single_source.rs` pins bit for bit alongside the error against
 // the closed form.
+//
+// alice-det-math 0.5.0 changed `SEMANTICS_ID` (d2209b30… → 135c407d…), so
+// the two pins above that hold it were re-recorded in 0.10.0. The evaluation
+// bits of `law_id_and_evaluation_are_the_recorded_bits` did not move: under
+// 0.5.0 the same scenario with the old identifier passed to `law_id` hashes to
+// the old digest 06f9beb9…; the digests of the transcendental paths below are
+// unchanged as well.
 //
 // `polynomial_generation_is_the_recorded_bits` and
 // `law_id_and_evaluation_are_the_recorded_bits` are unchanged: the polynomial
