@@ -113,6 +113,55 @@ fn the_reference_fixture_opens_and_is_not_trusted_either() {
     );
 }
 
+/// Names of the `pub fn` items in `src` whose signature (from `pub fn` up to
+/// the opening `{` or the `;` of a declaration, across lines) mentions
+/// `LawIdEntry`. Line endings are normalised first, so a checkout with CRLF
+/// reads the same as one with LF.
+fn law_id_readers(src: &str) -> Vec<String> {
+    let src = src.replace("\r\n", "\n");
+    let mut found = Vec::new();
+    let mut rest = src.as_str();
+    while let Some(at) = rest.find("pub fn ") {
+        let after = &rest[at + "pub fn ".len()..];
+        let end = after.find(['{', ';']).unwrap_or(after.len());
+        let signature = &after[..end];
+        if signature.contains("LawIdEntry") {
+            let name: String = signature
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            found.push(name);
+        }
+        rest = &after[end..];
+    }
+    found.sort();
+    found
+}
+
+/// The body of `pub fn {name}` in `src`, from its signature to the closing
+/// brace at the method's indentation (LF-normalised).
+fn method_body(src: &str, name: &str) -> String {
+    let src = src.replace("\r\n", "\n");
+    let from = src
+        .find(&format!("pub fn {name}"))
+        .unwrap_or_else(|| panic!("`pub fn {name}` exists"));
+    let tail = &src[from..];
+    let end = tail.find("\n    }\n").expect("end of the fn");
+    tail[..end].to_owned()
+}
+
+#[test]
+fn the_reader_scan_sees_one_line_and_multi_line_signatures_with_crlf() {
+    let src = "impl V {\r\n    pub fn one(&self) -> Vec<LawIdEntry> {\r\n    }\r\n    pub fn \
+               two(\r\n        &self,\r\n    ) -> Result<\r\n        Vec<LawIdEntry>,\r\n        E,\r\n    > {\r\n    }\r\n    \
+               pub fn other(&self) -> u8 {\r\n    }\r\n}\r\n";
+    assert_eq!(
+        law_id_readers(src),
+        vec!["one".to_owned(), "two".to_owned()]
+    );
+    assert!(method_body(src, "one").contains("Vec<LawIdEntry>"));
+}
+
 /// Every `pub fn` of the container module that returns law identifier rows
 /// is listed here with its role. A new one fails this test until it is
 /// classified, so a path that hands out law ids cannot appear without a
@@ -121,16 +170,7 @@ fn the_reference_fixture_opens_and_is_not_trusted_either() {
 fn every_reader_of_law_ids_is_classified() {
     let src = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/container.rs"))
         .expect("read src/container.rs");
-    let mut found: Vec<String> = Vec::new();
-    for line in src.lines() {
-        let t = line.trim_start();
-        if let Some(rest) = t.strip_prefix("pub fn ") {
-            if t.contains("LawIdEntry") {
-                found.push(rest.split(['(', '<']).next().unwrap().to_owned());
-            }
-        }
-    }
-    found.sort();
+    let found = law_id_readers(&src);
     // (name, trusts the ids as claims about the running arithmetic)
     let classified = [
         ("law_ids", false),
@@ -149,24 +189,14 @@ fn every_reader_of_law_ids_is_classified() {
     // the trusting readers go through the arithmetic check
     for (name, trusts) in classified {
         if trusts {
-            let body = src
-                .split(&format!("pub fn {name}("))
-                .nth(1)
-                .expect("the classified reader exists");
-            let body = &body[..body.find("\n    }\n").expect("end of the fn")];
             assert!(
-                body.contains("check_semantics"),
+                method_body(&src, name).contains("check_semantics"),
                 "{name} trusts law ids but does not call check_semantics"
             );
         }
     }
-    let verify = src
-        .split("pub fn verify_law_ids")
-        .nth(1)
-        .expect("verify_law_ids exists");
-    let verify = &verify[..verify.find("\n    }\n").expect("end of the fn")];
     assert!(
-        verify.contains("self.law_ids_for_this_arithmetic()"),
+        method_body(&src, "verify_law_ids").contains("self.law_ids_for_this_arithmetic()"),
         "verify_law_ids must read the rows through the trusting reader"
     );
 }
