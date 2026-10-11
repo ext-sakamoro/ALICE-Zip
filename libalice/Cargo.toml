@@ -1,6 +1,6 @@
 [package]
 name = "alice-zip-cli"
-version = "3.0.0"
+version = "3.1.0"
 edition = "2021"
 # Same MSRV as the core crate; verified by the CI `msrv` job (`cargo +1.87 check`).
 # Declared so clippy's MSRV-aware lints do not suggest newer std APIs.
