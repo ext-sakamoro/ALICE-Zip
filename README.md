@@ -50,14 +50,14 @@ same size as plain zlib rather than worse. Every figure on this page comes from
 |------|------|----------------|
 | `/` (`alice-zip`) | **Rust core crate** — compression primitives (LZ77, dictionary, BPE, entropy, quantisation, zlib / LZMA residual containers) + every generator law (polynomial / Fourier / Perlin), `no_std + alloc` | [crates.io](https://crates.io/crates/alice-zip) · [docs.rs](https://docs.rs/alice-zip) |
 | `libalice/` (`alice-zip-cli`) | CLI `alice`, C FFI (`cdylib`), PyO3 native module; thin re-export of the core generators and compression | C# / UE5 bindings, Python module built with maturin from `libalice/` |
-| `alice_zip/` | Python package (`ALICEZip` analyzer + `.alice` container) | from this repository (not on PyPI) |
+| `alice_zip/` | Python package (`ALICEZip` analyzer + `.alice` container) | [PyPI `alice-zip`](https://pypi.org/project/alice-zip/); the native accelerator is [PyPI `libalice`](https://pypi.org/project/libalice/) |
 | `bindings/` | C++ / C# (Unity) / UE5 wrappers over `libalice/include/alice.h` | |
 
 ## Installation
 
 ```bash
-# Python (not on PyPI: install from the repository)
-pip install git+https://github.com/ext-sakamoro/ALICE-Zip
+# Python (PyPI); `libalice` is the optional native accelerator
+pip install alice-zip libalice
 
 # Rust
 cargo add alice-zip                       # std (default): + zlib wrappers

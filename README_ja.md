@@ -48,14 +48,14 @@ ALICE-Zip は、データそのものではなく**「データの生成方法�
 |------|------|--------|
 | `/` (`alice-zip`) | **Rust core crate** — 圧縮 primitive (LZ77 / 辞書 / BPE / エントロピー / 量子化 / zlib・LZMA residual container) + 全 generator 法則 (多項式 / Fourier / Perlin)、`no_std + alloc` | [crates.io](https://crates.io/crates/alice-zip) · [docs.rs](https://docs.rs/alice-zip) |
 | `libalice/` (`alice-zip-cli`) | CLI `alice`、C FFI (`cdylib`)、PyO3 native module core generators / compression の thin re-export | C# / UE5 binding、`libalice/` から maturin で build する Python module |
-| `alice_zip/` | Python package (`ALICEZip` analyzer + `.alice` container) | 本 repository から (PyPI には未公開) |
+| `alice_zip/` | Python package (`ALICEZip` analyzer + `.alice` container) | [PyPI `alice-zip`](https://pypi.org/project/alice-zip/)、native の高速化は [PyPI `libalice`](https://pypi.org/project/libalice/) |
 | `bindings/` | C++ / C# (Unity) / UE5 wrapper (`libalice/include/alice.h`) | |
 
 ## インストール
 
 ```bash
-# Python (PyPI には未公開: 本 repository から入れる)
-pip install git+https://github.com/ext-sakamoro/ALICE-Zip
+# Python (PyPI) `libalice` は任意の native 高速化
+pip install alice-zip libalice
 
 # Rust
 cargo add alice-zip                       # std (default): zlib wrapper 付き
