@@ -329,6 +329,15 @@ header, the section table and the integrity of the file.
   compared with the semantics id in the header and, through
   `ContainerView::verify_law_ids`, with identifiers recomputed from the
   payloads.
+- **Which reader trusts a law identifier**: a container stays readable under
+  any arithmetic (`Container::from_bytes`, `ContainerView::law_ids` and
+  `law_ids_unchecked_semantics` are structural, so a file written by an older
+  release can be read and migrated). A law identifier is trusted as a claim
+  about this build's bits only through `ContainerView::law_ids_for_this_arithmetic`
+  or `verify_law_ids`: they require the header's semantics id to be one the
+  running `alice-det-math` reproduces (`check_semantics(..).is_reproducible()`)
+  and otherwise refuse with `ContainerError::NotThisArithmetic`, before any row
+  is compared. <!-- claim-test: a_container_stamped_by_0_4_0_opens_but_its_law_ids_are_not_trusted -->
 - **Earlier files**: `container::read_any` also reads an `ALICE_ZIP` file of
   version 1.0 or 1.1 (header and payload as two sections) and refuses values
   that were never written.

@@ -265,6 +265,14 @@ SHA-256 で識別する section は既存の形式の bytes をそのまま運�
   payload も 1 回だけ置かれ、無い section への参照は拒否される `LIDS`
   section は法則の識別子を並べ、header の semantics id と、
   `ContainerView::verify_law_ids` を通して payload から再計算した識別子と照合する
+- **法則の識別子を信用する読み手**: container はどの算術の下でも読める
+  (`Container::from_bytes` / `ContainerView::law_ids` / `law_ids_unchecked_semantics`
+  は構造だけを見るので、古い版が書いた file を読んで移行できる) 法則の識別子を
+  この build の bit についての主張として使えるのは
+  `ContainerView::law_ids_for_this_arithmetic` と `verify_law_ids` を通した時だけで、
+  header の semantics id を実行中の `alice-det-math` が再現できること
+  (`check_semantics(..).is_reproducible()`) を求め、できなければ行を比べる前に
+  `ContainerError::NotThisArithmetic` で拒否する <!-- claim-test: a_container_stamped_by_0_4_0_opens_but_its_law_ids_are_not_trusted -->
 - **以前の file**: `container::read_any` は版 1.0 / 1.1 の `ALICE_ZIP` file も
   読み (header と payload の 2 section)、書かれたことのない値は拒否する
   `container::decompress_legacy_alice_zip` (`lzma` feature) は Python の書き手が

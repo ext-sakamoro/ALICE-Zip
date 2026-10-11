@@ -235,6 +235,16 @@ pub enum ContainerError {
         /// Semantics id in the [`Tag::LIDS`] row.
         section: [u8; 32],
     },
+    /// The container was stamped with a semantics id the running arithmetic
+    /// does not reproduce (`alice_det_math::check_semantics` reads it as a
+    /// mismatch), so its law identifiers are not claims about the bits this
+    /// build computes. The container itself still opens.
+    NotThisArithmetic {
+        /// Semantics id in the header.
+        container: [u8; 32],
+        /// Semantics id of the running build ([`crate::law::SEMANTICS_ID`]).
+        running: [u8; 32],
+    },
     /// A law identifier differs from the one recomputed from the section.
     LawIdMismatch {
         /// Index of the section that holds the law.
@@ -317,6 +327,11 @@ impl fmt::Display for ContainerError {
             Self::SemanticsMismatch { .. } => write!(
                 f,
                 "container: a law identifier was computed under other semantics than the header"
+            ),
+            Self::NotThisArithmetic { .. } => write!(
+                f,
+                "container: stamped with a semantics id this build's arithmetic does not reproduce, \
+                 so its law identifiers are not trusted"
             ),
             Self::LawIdMismatch { section } => write!(
                 f,
@@ -803,6 +818,13 @@ impl<'a> ContainerView<'a> {
     /// Rows of every [`Tag::LIDS`] section. A row computed under other
     /// semantics than the header states is refused.
     ///
+    /// This reader is structural: it does not compare the header with the
+    /// running arithmetic, so it reads a container written by any release (a
+    /// migration tool needs that). To use a row as a claim about the bits this
+    /// build computes, read it with [`Self::law_ids_for_this_arithmetic`]
+    /// (or check with [`Self::verify_law_ids`]), which refuses a foreign
+    /// arithmetic with [`ContainerError::NotThisArithmetic`].
+    ///
     /// # Errors
     ///
     /// [`ContainerError::Malformed`], [`ContainerError::SectionHash`] or
@@ -820,6 +842,8 @@ impl<'a> ContainerView<'a> {
 
     /// Rows of every [`Tag::LIDS`] section without comparing their
     /// semantics id with the header; the caller sees both in each row.
+    /// Like [`Self::law_ids`], it does not trust the rows; the trusting reader
+    /// is [`Self::law_ids_for_this_arithmetic`].
     ///
     /// # Errors
     ///
@@ -852,18 +876,42 @@ impl<'a> ContainerView<'a> {
         Ok(out)
     }
 
-    /// Compares every [`Tag::LIDS`] row with the identifier `recompute`
-    /// derives from the section's payload. `recompute` returns `None` for a
-    /// payload it cannot interpret, which is refused as a mismatch.
+    /// Rows of every [`Tag::LIDS`] section, trusted as claims about this
+    /// build's arithmetic: the header's semantics id must be one the running
+    /// `alice-det-math` reproduces (`check_semantics(..).is_reproducible()`),
+    /// and every row must carry the header's id (as [`Self::law_ids`]).
     ///
     /// # Errors
     ///
-    /// As [`Self::law_ids`], and [`ContainerError::LawIdMismatch`].
+    /// [`ContainerError::NotThisArithmetic`] when the header's id is not
+    /// reproduced (checked first, before any row is read), then as
+    /// [`Self::law_ids`].
+    pub fn law_ids_for_this_arithmetic(&self) -> Result<Vec<LawIdEntry>, ContainerError> {
+        if !alice_det_math::check_semantics(&self.semantics_id).is_reproducible() {
+            return Err(ContainerError::NotThisArithmetic {
+                container: self.semantics_id,
+                running: alice_det_math::SEMANTICS_ID,
+            });
+        }
+        self.law_ids()
+    }
+
+    /// Compares every [`Tag::LIDS`] row with the identifier `recompute`
+    /// derives from the section's payload. `recompute` returns `None` for a
+    /// payload it cannot interpret, which is refused as a mismatch. The rows
+    /// are read with [`Self::law_ids_for_this_arithmetic`], so a container
+    /// stamped under another arithmetic is refused up front, before
+    /// `recompute` is called.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::law_ids_for_this_arithmetic`], and
+    /// [`ContainerError::LawIdMismatch`].
     pub fn verify_law_ids<F>(&self, mut recompute: F) -> Result<(), ContainerError>
     where
         F: FnMut(usize, &[u8], &[u8; 32]) -> Option<[u8; 32]>,
     {
-        for row in self.law_ids()? {
+        for row in self.law_ids_for_this_arithmetic()? {
             let payload = self.section(row.section)?;
             if recompute(row.section, payload, &row.semantics_id) != Some(row.law_id) {
                 return Err(ContainerError::LawIdMismatch {
