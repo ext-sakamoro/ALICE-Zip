@@ -137,6 +137,9 @@ step "ci.yml / claim-check: include の参照先が git で追跡されている
 step "ci.yml / test: Versions agree"
 ( python3 scripts/test_version_check.py && python3 scripts/version_check.py && python3 scripts/test_pypi_tag_check.py )
 
+step "ci.yml / test: Tracked lock files match their manifests"
+( python3 scripts/test_lock_check.py && python3 scripts/lock_check.py )
+
 step "ci.yml / test: Licence agrees and its files are packaged"
 (
   python3 scripts/test_license_check.py && python3 scripts/license_check.py

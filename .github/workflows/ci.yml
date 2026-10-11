@@ -66,6 +66,14 @@ jobs:
           "$PY" scripts/test_version_check.py
           "$PY" scripts/version_check.py
           "$PY" scripts/test_pypi_tag_check.py
+      # every tracked Cargo.lock (root, libalice, fuzz, libalice-enterprise) is the
+      # one cargo would write: a stale sub-workspace lock is repaired silently by
+      # every build, so only `cargo metadata --locked` sees it; 0 lock files fail
+      - name: Tracked lock files match their manifests
+        run: |
+          PY=$(command -v python3 || command -v python)
+          "$PY" scripts/test_lock_check.py
+          "$PY" scripts/lock_check.py
       # Apache-2.0 everywhere it is stated, NOTICE + LICENSE-APACHE shipped in
       # both crates (libalice carries identical copies); 0 comparisons fail
       - name: Licence agrees and its files are packaged

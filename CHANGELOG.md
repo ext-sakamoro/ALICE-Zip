@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- CI: 追跡している `Cargo.lock` (root / `libalice` / `fuzz` / `libalice-enterprise`) が manifest と合っているかを `scripts/lock_check.py` (`cargo metadata --locked`、試験 `scripts/test_lock_check.py`) で検査する CI と preflight で走り、検査した lock が 0 なら失敗する `fuzz/Cargo.lock` と `libalice-enterprise/Cargo.lock` は `alice-det-math` 0.4.0 / `alice-zip` 0.9.0 (と `alice-zip-cli` 3.0.0) を解決したままで、build のたびに作業 tree で直されていたので気付かれなかった 両方を 0.5.0 / 0.10.0 / 3.1.0 に作り直した (公開 package には入らない file)
+
+## [0.10.0] - 2026-10-12
+
 ### Added
 - `ContainerView::law_ids_for_this_arithmetic` と `ContainerError::NotThisArithmetic`: header の semantics id を実行中の `alice-det-math` が再現できる時だけ (`check_semantics(..).is_reproducible()`) `LIDS` の行を返す、法則の識別子をこの build の bit についての主張として使う読み手 試験 `tests/container_arithmetic.rs` (0.9.0 以前の識別子・参照実装の fixture の識別子で押した container は開けるが、この読み手と `verify_law_ids` は行を比べる前に拒否する、実行中の識別子なら通る、`LawIdEntry` を返す公開関数はすべて信用するか否かを分類し、信用する読み手が `check_semantics` を呼ぶことを検査 source の走査は改行を LF にそろえ、複数行の signature も読む)
 - PyPI への公開 workflow を 2 本足した (trusted publishing、token も secret も置かない、publish する job だけが `id-token: write` を持ち、environment は `pypi`) `.github/workflows/pypi.yml` は tag `py-alice-zip-v<版>` で Python package `alice-zip` (pyproject.toml) の sdist と wheel を、`.github/workflows/pypi-libalice.yml` は tag `py-libalice-v<版>` で wheel `libalice` を Linux (x86_64 / aarch64) / macOS (universal2) / Windows (x64) の各 interpreter 向けと sdist を作って出す tag の版が pyproject.toml / libalice/Cargo.toml の版と違えば失敗する (`scripts/pypi_tag_check.py`、試験 `scripts/test_pypi_tag_check.py` を CI と preflight で走らせる) どの job にも上限時間 (wheel の build は 45 分、他は 15 分) を付けた 公開前に archive ごとの版 (名前が tag の版と完全に一致)、Apache-2.0 と `LICENSE-APACHE` / `NOTICE` の同梱、`twine check --strict` を見る tag `v<版>` と `alice-zip-cli-v<版>` は crates.io の crate で、PyPI には何も出さない
@@ -471,7 +476,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Initial crates.io release: `lz77`, `dictionary`, `entropy`, `bpe`, `error`,
   `prelude` (split from a single `lib.rs`, 102 tests)
 
-[Unreleased]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/ext-sakamoro/ALICE-Zip/compare/v0.6.0...v0.7.0

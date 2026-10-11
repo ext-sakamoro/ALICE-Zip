@@ -4,6 +4,8 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-12
+
 ### Changed
 
 - core crate を `alice-zip` 0.10 / `alice-det-math` 0.5 に上げた 識別子 (`SEMANTICS_ID` と law の識別子) の値が変わる 出力の数値で変わるのは `alice-det-math` 0.5.0 の変更点 (三角関数の零点付近・`-0`・NaN の扱い) を通るものだけ
