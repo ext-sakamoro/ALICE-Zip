@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,7 +39,8 @@ def check(runner: Runner) -> tuple[list[str], int]:
     problems = []
     checked = 0
     for lock in tracked_locks(runner):
-        manifest = str(Path(lock).parent / "Cargo.toml")
+        # git prints paths with "/" on every OS; keep them that way (cargo accepts it on Windows)
+        manifest = str(PurePosixPath(lock).parent / "Cargo.toml")
         # not --no-deps: without the dependency resolution cargo does not look at the
         # lock file at all, and a stale one passes
         res = runner(["cargo", "metadata", "--locked", "--format-version", "1",

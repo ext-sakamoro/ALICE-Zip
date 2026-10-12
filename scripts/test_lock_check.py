@@ -6,7 +6,7 @@
 import subprocess
 import sys
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import lock_check  # noqa: E402
@@ -20,7 +20,7 @@ def runner(locks, stale=()):
         if cmd[0] == "git":
             return subprocess.CompletedProcess(cmd, 0, "\n".join(locks) + "\n", "")
         manifest = cmd[cmd.index("--manifest-path") + 1]
-        lock = str(Path(manifest).parent / "Cargo.lock")
+        lock = str(PurePosixPath(manifest).parent / "Cargo.lock")
         if lock in stale:
             return subprocess.CompletedProcess(
                 cmd, 101, "", f"error: cannot update the lock file {lock} because --locked was passed\n")
