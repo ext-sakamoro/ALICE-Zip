@@ -57,6 +57,7 @@ jobs:
   audit:
     name: cargo audit (RustSec CVE scan, 3 lockfiles)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -74,6 +75,7 @@ jobs:
   deny:
     name: cargo-deny (license + advisories + bans + sources)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -93,6 +95,7 @@ jobs:
   unused-deps:
     name: cargo-machete (unused dependencies)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -104,6 +107,7 @@ jobs:
   package-integrity:
     name: Package integrity (publish される .crate が build できるか)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -141,6 +145,7 @@ jobs:
   coverage:
     name: Coverage (cargo-llvm-cov、informational)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # Informational by design (not a test gate): coverage is a number to
     # watch, no threshold is enforced. `alice-strict-eval` 16 counts only
     # test / build steps.
@@ -168,6 +173,7 @@ jobs:
   semver-checks:
     name: cargo-semver-checks (API compat vs crates.io)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # Hard gate: a breaking change must come with the matching version bump
     # (0.x: minor). The tool reads `version` in Cargo.toml and fails only when
     # the bump is insufficient for the detected API change.
@@ -205,6 +211,7 @@ jobs:
   stub-guard:
     name: Stub / mock / dbg guard (grep)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       # core src/ + libalice/src/ の

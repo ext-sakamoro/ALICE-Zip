@@ -24,6 +24,7 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     # bash on every OS: under PowerShell (the Windows default) "$ALL_FEATURES"
     # is an undefined PowerShell variable, not the environment variable, so the
     # feature set was empty there and the lzma-gated suites ran 0 tests
@@ -103,6 +104,7 @@ jobs:
   wasm:
     name: wasm32-wasip1 (container, same bytes and identifiers)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       # the target comes from rust-toolchain.toml (the pinned toolchain cargo
@@ -143,6 +145,7 @@ jobs:
   clippy:
     name: Clippy (-D warnings)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -159,6 +162,7 @@ jobs:
   no_std:
     name: no_std (rlib, thumbv7em-none-eabihf)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       # rust-toolchain.toml carries the pin and the bare-metal target
@@ -186,6 +190,7 @@ jobs:
   msrv:
     name: MSRV (rust-version = 1.87)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install MSRV toolchain
@@ -205,6 +210,7 @@ jobs:
   feature-powerset:
     name: Feature powerset (cargo-hack)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -218,6 +224,7 @@ jobs:
   doc:
     name: Doc (RUSTDOCFLAGS=-Dwarnings)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -230,6 +237,7 @@ jobs:
   fmt:
     name: Format
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -243,6 +251,7 @@ jobs:
   claim-check:
     name: README の主張と test の対応
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       # README の `<!-- claim-test: NAME -->` は「この主張には試験がある」と
@@ -269,6 +278,7 @@ jobs:
   libalice:
     name: libalice (CLI / FFI crate)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -292,6 +302,7 @@ jobs:
   libalice-python:
     name: libalice Python module (PyO3) + pytest (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # the oldest Python the packages declare (requires-python) and a current
     # one, so the declared minimum is the one that is tested
     strategy:
@@ -344,6 +355,7 @@ jobs:
   actionlint:
     name: actionlint (workflow YAML 検証)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - name: Run actionlint
@@ -351,3 +363,9 @@ jobs:
         with:
           fail_level: error
           reporter: github-check
+      # every job has a job-level timeout-minutes (a hung step otherwise holds a shared
+      # runner for GitHub's 6-hour limit); the checker's own tests run first
+      - name: workflow-timeouts
+        run: |
+          python3 scripts/test_workflow_timeouts.py
+          python3 scripts/workflow_timeouts.py
