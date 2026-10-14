@@ -12,7 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - 符号付きゼロと桁落ちの bit 一致 golden `tests/float_edge_golden.rs` (20 件、`polynomial_at` / `fit_polynomial` / `multi_sine_at` / `fourier_at` / `quantize_8bit` / `quantize_16bit` / `SignalLaw::evaluate` / 残差 RMS) と、release profile で `analytic_law_id` / `float_edge_golden` / `determinism_golden` を走らせる workflow `release-profile.yml` (ubuntu / macos、`scripts/run_tests.sh` が各 suite の 1 件以上の通過を検査、preflight の full でも走る)
 
+### Fixed
+
+- 符号の異なるゼロが混ざる入力で、`SignalLaw::fit_polynomial` の定義域の端 (lo / hi) と `quantize_8bit` / `quantize_16bit` の `min` が arm64 と x86_64 で違っていた 等しいゼロ同士の `f64::min` / `f32::min` (と max) は結果が規定されておらず、arm64 は -0 < +0 として扱い x86_64 は第 2 引数を返す 4 箇所を alice-det-math 0.5.1 の符号を決めた `min` / `max` / `min64` / `max64` に替え、`tests/minmax_sign_golden.rs` で両方の並びを固定した 68 の法則と 21 の量子化の入力で測ると、修正後は arm64 と x86_64 (debug / release) の出力が一致し、変わるのは x86_64 の混在ゼロの入力 (法則 10 件の定義域の端と law_id、係数が 0 の時の evaluate(-0.0)、量子化 3 件の min) だけで、他の入力の bit は変わらない これらの law_id は元から arch ごとに違い 1 つの値として再現できなかったので、旧い識別子を受理する表は追加しない
+
 ### Changed
+- alice-det-math を 0.5.1 に上げた `SEMANTICS_ID` が 135c407d… から 85e08846… に変わる (0.5.1 は 135c407d… を `PREVIOUS_SEMANTICS_IDS` に持つので、0.5.0 の識別子で書いた container は読める) `tests/determinism_golden.rs` の識別子と law_id の 2 つの pin を記録し直した 動いたのは識別子の入力だけで、0.5.0 の識別子を渡すと law_id と evaluate の digest は以前の 1943c258… のまま (同じ file の試験で固定)
 - `tests/float_edge_golden.rs`: QR の丸めを計算したまま記録していた 2 つの pin (1e8 + 8x の傾き 8 − 2 ulp、最小二乗の直線の定数 1 − 1 ulp) に、正確な解から決めた上限 (傾きは 8 から 4 ulp 以内、定数と傾きは 2 ulp 以内、残差は最大値 3 の 2 ulp 以内) を足した bit の pin は変えていない
 - CI: ci / fuzz / security-audit の concurrency を、main では commit ごとに group を分けて run を取り消さず、取り消すのは branch の古い run だけにした (以前は main への後の送信が main の run を取り消し、結果が cancelled のまま残りえた) `scripts/workflow_concurrency.py` (試験 `scripts/test_workflow_concurrency.py`、ALICE-LOL / ALICE-SDF / ALICE-DetMath と byte 一致) が branch への送信で走る全 workflow を検査し、workflow を 1 つも読めなければ失敗する CI (actionlint job) と preflight で走る
 - CI: clippy の禁止一覧に `f32::sin_cos` / `f64::sin_cos` を足した (ALICE-Law G1 の一覧と揃える)

@@ -17,8 +17,18 @@ use alloc::vec::Vec;
 
 /// `(min, scale)` of the data with the constant-data guard applied
 fn range(data: &[f32]) -> (f64, f64) {
-    let min_val = f64::from(data.iter().copied().fold(f32::INFINITY, f32::min));
-    let max_val = f64::from(data.iter().copied().fold(f32::NEG_INFINITY, f32::max));
+    // Defined zero sign (`f32::min` / `f32::max` differ between targets for
+    // `-0.0` against `+0.0`), so `min` is the same bits everywhere
+    let min_val = f64::from(
+        data.iter()
+            .copied()
+            .fold(f32::INFINITY, alice_det_math::min),
+    );
+    let max_val = f64::from(
+        data.iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, alice_det_math::max),
+    );
     let scale = max_val - min_val;
     // Constant data: scale = 1.0 avoids the division by zero and quantises
     // every sample to 0 (= min), which is the exact reconstruction
