@@ -1,0 +1,111 @@
+# ALICE-Law conformance manifest for this crate (alice-zip). One entry per
+# gate defined in ALICE-Law's conformance/gates.toml. Schema (status /
+# evidence / since / note / reference_repo) is docs/CONFORMANCE.md's
+# "Manifest" section in that repository; for a `pass` or `n/a` entry the note
+# also names the red mutant (the gate's **Mutant**, as carried out here).
+#
+# Entries here are written from what this repository's own commits, CI
+# workflows and test suites actually show at origin/main, checked directly
+# rather than assumed: a gate without concrete evidence is `unverified`, not
+# guessed `pass`. The published crate is `alice-zip` (the workspace root);
+# evidence that lives in libalice / libalice-enterprise / bindings is in a
+# crate that `alice-zip` excludes from its package (Cargo.toml `exclude`), and
+# is marked as such where it is cited.
+
+[G1]
+status = "fail-known"
+evidence = ["clippy.toml", ".github/workflows/ci.yml clippy job", "scripts/preflight.sh"]
+since = ""
+note = "clippy.toml bans 25 of the 26 f32/f64 methods the G1 list marks `banned` and bans `powi` (the pending default); the one missing is the combined `f32::sin_cos` / `f64::sin_cos`, which the G1 methods list marks `banned` and this crate's list omits (C2). No src/ file calls `sin_cos` today, so the gap is latent rather than an active violation, but per the gate's \"Look at\" a missing banned entry is a gap unless the manifest justifies it, and this crate does not. CI runs `cargo clippy --all-targets -- -D warnings` for the default, docs.rs (std,fft,parallel,lzma) and no-default-features builds (ci.yml clippy job), plus a no_std clippy on thumbv7em (no_std job), all mirrored in preflight.sh — the lint fires, the list is just short one method."
+reference_repo = ""
+
+[G2]
+status = "fail-known"
+evidence = ["src/law.rs:318", "src/law.rs:319", "src/law.rs:550", "src/law.rs:597", "src/generators/polynomial.rs:231"]
+since = ""
+note = "the published crate computes f64 max/min on runtime values in Law-bearing paths with the std inherent `f64::max`/`f64::min`, not an IEEE maximumNumber/minimumNumber Law helper, and has no `raw_*` default-deny manifest and no clippy ban on max/min (C5). Sites: src/law.rs:318-319 (domain lo/hi folded from the evidence points — these feed law_id directly), src/law.rs:550 (residual max_abs), src/law.rs:597 (ingest band), src/generators/polynomial.rs:231 (least_squares_fit r_max). alice-zip computes these only at scalar f64 width (it builds no SIMD max/min of its own), so the per-SIMD-width clause has no additional width here, but nothing asserts even the scalar claim through a Law helper. (The `.max`/`.min` elsewhere in src — compression.rs, lz77.rs, polynomial.rs:48/120/156 — are on integer widths, out of G2 scope.)"
+reference_repo = ""
+
+[G3]
+status = "fail-known"
+evidence = ["src/generators/polynomial.rs:63"]
+since = ""
+note = "no library source calls `mul_add`/`fma` at all (src/generators/polynomial.rs:63 is a doc comment deliberately keeping Horner as separate multiply-and-add rather than `f64::mul_add`), so there is no outer-negation-of-fma to catch today; but the gate's mechanism — a syntax-tree checker over src/ of every published member, with its own tests over each negation shape — does not exist, so nothing ratchets the absence if a `mul_add` is introduced later (C5). The gate's dynamic backstop (G4's release-profile aarch64 cancellation leg) is also absent here (see G4/G5)."
+reference_repo = ""
+
+[G4]
+status = "fail-known"
+evidence = ["tests/determinism_golden.rs", "tests/analytic_law_id.rs", "tests/residual_container_oracle.rs", ".github/workflows/ci.yml test job"]
+since = ""
+note = "the bit-pattern goldens exist — tests/determinism_golden.rs records fixed digests of generator/analysis output (with an emptiness gate: hashes >= min_bytes), tests/analytic_law_id.rs::negative_zero_is_observable_in_evaluation_so_it_changes_the_id and tests/residual_container_oracle.rs exercise signed-zero/denormal cases — but CI runs the whole test suite only under the DEBUG profile, on ubuntu-latest (x86_64), macos-latest (aarch64) and windows-latest (x86_64) (ci.yml test job: `cargo test`, `cargo test --no-default-features`; no `--release`). The {debug,release} x {x86_64,aarch64} matrix this gate requires is therefore missing both release legs (C5). The only `--release` in CI is `cargo run --release --example compression_ratio` on x86_64 ubuntu, which is not the golden suite and not aarch64. Mutant once release legs exist: flip one digest in determinism_golden.rs -> fails on every leg."
+reference_repo = ""
+
+[G5]
+status = "fail-known"
+evidence = [".github/workflows/ci.yml", "scripts/preflight.sh"]
+since = ""
+note = "no job anywhere runs the Law-bearing test suite under `--release`, on aarch64 or any arch: the ci.yml test matrix runs `cargo test` in debug only (macos-latest provides an aarch64 runner, but debug), and the sole `--release` invocations are an example run (`cargo run --release --example compression_ratio`, x86_64 ubuntu), the libalice cdylib/CLI build, and the maturin wheel build — none of which runs the Law tests. The required aarch64 release leg (the one leg that executes a hardware fma and can catch a G3/G4 regression) does not exist (C5)."
+reference_repo = ""
+
+[G6]
+status = "fail-known"
+evidence = ["src/law.rs:84", "src/law.rs:63", "src/law.rs:70", "tests/analytic_law_id.rs"]
+since = ""
+note = "`src/law.rs:84` is `pub use alice_det_math::SEMANTICS_ID;` — a re-export of the upstream arithmetic identifier, not an identifier of this crate's own that folds alice-zip's Law pins (LAW_ID_DOMAIN at src/law.rs:63, SIGNAL_LAW_KIND at src/law.rs:70) together with upstream ids and is guarded by this crate's version and toolchain. `SignalLaw::law_id` (src/law.rs:525) is a per-law content hash over domain+coeffs+semantics_id, pinned and injectivity-tested in tests/analytic_law_id.rs (changes with each coefficient, the count, the domain, the semantics id, and -0.0), but that is a per-value identifier, not the crate-level G6 fold with a staleness guard. What alice-zip's own meaning pin should be, and whether to fold it, is the design memo C4 opens; classified fail-known C4, located at src/law.rs:84."
+reference_repo = "alice-det-math"
+
+[G7]
+status = "pass"
+evidence = ["src/container.rs:232", "src/container.rs:243", "src/container.rs:249", "src/container.rs:832", "src/container.rs:889", "src/container.rs:910", "tests/container_arithmetic.rs", "tests/container_oracle.rs"]
+since = ""
+note = "the published crate's only type-erasing boundaries that receive a Law-bearing identifier are the container decode paths (serialized bytes / file; the crate has no FFI, PyO3 or wasm-bindgen exports of its own — those live in the excluded libalice crate). A container carries the producer's arithmetic id (alice-det-math's SEMANTICS_ID, in the 32-byte header) and, per law, the law_id and the semantics id it was computed under (Tag::LIDS rows). The reading functions compare them and return dedicated, distinctly-typed errors naming both sides: ContainerError::SemanticsMismatch{container,section} (src/container.rs:232, LIDS row vs header), NotThisArithmetic{container,running} (:243, header vs the running build via alice_det_math::check_semantics), LawIdMismatch{section} (:249, stored vs recomputed). Readers: law_ids (:832), law_ids_for_this_arithmetic (:889), verify_law_ids (:910). tests/container_arithmetic.rs feeds mismatched ids (a container stamped by the alice-det-math 0.4.0 id, and an independent fixture id) and asserts NotThisArithmetic, and its every_reader_of_law_ids_is_classified test is a closed audit: a new `pub fn` returning LawIdEntry fails the test until it is classified and, if trusting, shown to call check_semantics. Mutant: remove the check_semantics call in law_ids_for_this_arithmetic -> the 0.4.0 and fixture tests in container_arithmetic.rs fail, and every_reader_of_law_ids_is_classified fails."
+reference_repo = ""
+
+[G8]
+status = "pass"
+evidence = ["src/container.rs:155", "src/container.rs:175", "src/container.rs:492", "src/container.rs:832", "src/container.rs:910", "tests/container_arithmetic.rs", "tests/container_oracle.rs", "tests/residual_container_oracle.rs"]
+since = ""
+note = "the durable container format carries persisted identifiers and the reader compares the STORED id, not its own build's. Write path: Container::new(semantics_id) / push (src/container.rs:466/:475), to_bytes writes the 32-byte semantics id into the header (src/container.rs:492), and Tag::LIDS rows persist, per law, the law_id and the semantics id it was computed under (LawIdEntry, src/container.rs:175-181). Read path: law_ids (:832) refuses a LIDS row whose semantics id differs from the header's (SemanticsMismatch), and Container::from_bytes keeps whatever id the file was stamped with (so an old file stays readable). Roundtrip mismatch tests: tests/container_arithmetic.rs reads a container stamped with the alice-det-math 0.4.0 id and gets NotThisArithmetic (compared against the running id, not silently accepted); tests/container_oracle.rs and tests/residual_container_oracle.rs compare bytes and ids against independent fixtures. Mutant: drop the stored-id comparison from law_ids (or alter one stored law_id) -> the container_arithmetic / container_oracle mismatch tests fail. NOTE (flag for C4): the persisted arithmetic id in the header is the same value as G6's re-exported alice-det-math SEMANTICS_ID, not a separately-scoped persisted-meaning id; the distinct persisted-meaning identifier here is the per-law law_id (domain+coeffs). Whether that satisfies G8's 'distinct from G6's in-process one' is coupled to the C4 decision and should be confirmed."
+reference_repo = ""
+
+[G9]
+status = "pass"
+evidence = ["CHANGELOG.md", "tests/determinism_golden.rs", "tests/analytic_law_id.rs"]
+since = ""
+note = "the one identifier move in this crate's history is recorded as a breaking release naming both ids: CHANGELOG.md [0.10.0] (a 0.x minor, the semver-major equivalent for a 0.x crate) states the alice-det-math bump to 0.5 moved SEMANTICS_ID from d2209b30... to 135c407d... and therefore every SignalLaw::law_id folding it, a meaning change (0.5 changed sin/cos/sin_cos near zeros, -0, NaN, powf(1,y)), with the two pins re-recorded in tests/determinism_golden.rs and law_id. The non-moves are stated as such: the earlier moves of the transcendentals into alice-det-math and the f64-accumulate change both note 'law_id is unaffected' (CHANGELOG [0.8.0]/[0.7.0]), i.e. no cross-architecture fix moved the identifier. Mutant: none (G9 is a property of the history; the audit is re-done at each major release). FLAG: I could not run the full `git log -S` over the identifier definition here (the blobless cache is a promisor clone), so the completeness of the move list rests on the CHANGELOG audit above — the parent should confirm with `git log -S` over SEMANTICS_ID / LAW_ID_DOMAIN."
+reference_repo = ""
+
+[G10]
+status = "fail-known"
+evidence = ["src/generators/perlin.rs:60", "libalice-enterprise/src/license/key.rs:161", "libalice-enterprise/src/security/crypto.rs:60", "libalice/src/bin/alice.rs:247"]
+since = ""
+note = "the published crate's library src/ reads no wall clock, no unseeded RNG and no UUID: the only randomness is a seeded ChaCha8Rng (src/generators/perlin.rs:60, `ChaCha8Rng::seed_from_u64(seed)` — the seed is an explicit input, which is compliant). But the gate's evidence is a lint/scan with a canary, and clippy.toml bans only the transcendentals, not SystemTime::now / Instant::now / Uuid::new_v4 / thread_rng / rand::random / from_entropy, and there is no CI scan — so the absence is a manual snapshot, not a ratcheted gate (C3). The clock/rng uses that do exist are all non-Law and outside the published crate: libalice-enterprise/src/license/key.rs:161/250/257 (Utc::now for license expiry dates — a timestamp, not Law output), libalice-enterprise/src/security/crypto.rs:60/141/161 (OsRng for AEAD nonces — crypto, not Law output), libalice/src/bin/alice.rs:247/335/455/485 (Instant::now for CLI timing display). None is in alice-zip's Law path; the gap is the missing lint+canary, not an active violation."
+reference_repo = ""
+
+[G11]
+status = "fail-known"
+evidence = ["scripts/test_public_text.py", ".github/public-text-pin", "tests/determinism_golden.rs", ".github/workflows/security-audit.yml semver-checks job", "scripts/claim_check.py", "scripts/fuzz_runs.py", ".github/workflows/quality-deep.yml"]
+since = ""
+note = "the three self-test ideas exist, but ad hoc per-check rather than as a per-gate triad, and most gates have no machine checker here to self-test (C5). Present: (b) compared-nothing guards are pervasive — public_text.sh exits 2 when it compared nothing, determinism_golden.rs asserts hashes >= min_bytes, semver-checks fails when `ran == 0` (security-audit.yml), claim_check.py fails on 0 markers, fuzz_runs.py fails on 0 runs, quality-deep.yml fails a weekly shard with 0 mutants tested, the ci.yml feature-gated/wasm suites grep for `[1-9][0-9]* passed`; (a) canaries exist for the shared public-text checker (scripts/test_public_text.py); (c) the one shared checker (ALICE-Law's public_text_check.py) has its cross-repo byte-identity via the .github/public-text-pin sha256. What is missing is the uniform 'every machine-pass gate carries (a),(b),(c)' structure the gate asks for, which cannot be complete while G1-G6/G10/G13/G14 lack their checkers."
+reference_repo = ""
+
+[G12]
+status = "pass"
+evidence = [".github/workflows/public-text.yml", "scripts/public_text.sh", ".github/public-text-pin", "scripts/test_public_text.py", "scripts/preflight.sh"]
+since = ""
+note = "the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names (rev ca96d9214ffe0da43e9cb034417a4f6c041ba4be) and refuses it unless its SHA-256 matches the pin (3aef3cdd095b374153dbb74f228828d559cb88f78b33f36570c96cbcb80eb6d5) — so a crate's own checker does not count, it is ALICE-Law's byte-identical file. It checks the tree at HEAD and the pushed commit range, and exits 2 (fails) when it compared nothing or cannot know what to compare; scripts/test_public_text.py runs first as the checker's own test, and the whole thing is mirrored in scripts/preflight.sh. Mutant: add one of the refused internal words to a tracked document -> the public-text step fails."
+reference_repo = "ALICE-Law"
+
+[G13]
+status = "fail-known"
+evidence = ["src/generators/perlin.rs"]
+since = ""
+note = "the published crate's library src/ names HashMap / HashSet / BTreeMap nowhere (a full scan of src/*.rs returned zero), so no Law-bearing output iterates an unspecified-order collection today; the `parallel` feature's rayon use generates each 2D Perlin row independently into its own slot (src/generators/perlin.rs), a per-row write with no float reduction whose combination order could vary. But the gate's evidence is a lint banning HashMap/HashSet iteration in the Law modules (or a reasoned allowlist), and there is none, so nothing ratchets the absence (C6). Classified fail-known C6: the property holds as a current snapshot (0 sites) but is not a machine-checked gate. (libalice/src/residual.rs uses std::collections::HashMap, but that is the excluded libalice crate, not alice-zip, and is residual-reconstruction bookkeeping, not a Law-bearing float output.)"
+reference_repo = ""
+
+[G14]
+status = "fail-known"
+evidence = ["Cargo.toml", ".github/workflows/ci.yml", "tests/analytic_law_id.rs:208"]
+since = ""
+note = "no build configuration sets a fast-math-style flag or target-cpu=native: there is no .cargo/config* in the tree at all, and a scan of every workflow, Cargo.toml profile and build.rs found only RUSTFLAGS=\"-D warnings\" (ci.yml no_std job) and no reassociation / flush-to-zero / native-cpu flag. But the gate requires both (a) a CI scan step over those files and (b) two tests asserting round-to-nearest-even and that subnormals are not flushed to zero — neither exists here (C5). Subnormals are used as inputs in determinism tests (tests/analytic_law_id.rs:208 feeds the smallest subnormal above 0; tests/residual_container_oracle.rs exercises denormals) but none asserts the floating-point environment itself. Classified fail-known C5: the good state (no bad flags) is relied upon, not asserted, and there is no scan to keep it."
+reference_repo = ""

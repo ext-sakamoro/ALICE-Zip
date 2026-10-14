@@ -398,24 +398,22 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 
 ### 適合 (G1-G14)
 
-この repository には `alice-law-conformance.toml` が無い すべての gate は未申告
-
 | gate | 状態 | 注記 |
 |---|---|---|
-| G1 no-libm-direct | 未申告 |  |
-| G2 ieee-max-min | 未申告 |  |
-| G3 no-outer-fneg-of-fma | 未申告 |  |
-| G4 debug-release-arch-goldens | 未申告 |  |
-| G5 release-profile-test-leg | 未申告 |  |
-| G6 semantics-id | 未申告 |  |
-| G7 handshake-carries-id | 未申告 |  |
-| G8 persisted-semantics-id | 未申告 |  |
-| G9 persisted-meaning-change-is-major | 未申告 |  |
-| G10 no-run-varying-artifacts | 未申告 |  |
-| G11 gate-self-tests | 未申告 |  |
-| G12 public-repo-text-rules | 未申告 |  |
-| G13 no-unspecified-order | 未申告 |  |
-| G14 float-environment-invariants | 未申告 |  |
+| G1 no-libm-direct | 未達 | clippy.toml bans 25 of the 26 f32/f64 methods the G1 list marks `banned` and bans `powi` (the pending default); the one missing is the combined `f32::sin_cos` … |
+| G2 ieee-max-min | 未達 | the published crate computes f64 max/min on runtime values in Law-bearing paths with the std inherent `f64::max`/`f64::min`, not an IEEE … |
+| G3 no-outer-fneg-of-fma | 未達 | no library source calls `mul_add`/`fma` at all (src/generators/polynomial.rs:63 is a doc comment deliberately keeping Horner as separate multiply-and-add … |
+| G4 debug-release-arch-goldens | 未達 | the bit-pattern goldens exist — tests/determinism_golden.rs records fixed digests of generator/analysis output (with an emptiness gate: hashes >= min_bytes), … |
+| G5 release-profile-test-leg | 未達 | no job anywhere runs the Law-bearing test suite under `--release`, on aarch64 or any arch: the ci.yml test matrix runs `cargo test` in debug only (macos-latest … |
+| G6 semantics-id | 未達 | `src/law.rs:84` is `pub use alice_det_math::SEMANTICS_ID;` — a re-export of the upstream arithmetic identifier, not an identifier of this crate's own that … |
+| G7 handshake-carries-id | 未確認 | the published crate's only type-erasing boundaries that receive a Law-bearing identifier are the container decode paths (serialized bytes / file; the crate has … |
+| G8 persisted-semantics-id | 未確認 | the durable container format carries persisted identifiers and the reader compares the STORED id, not its own build's. Write path: Container::new(semantics_id) … |
+| G9 persisted-meaning-change-is-major | 未確認 | the one identifier move in this crate's history is recorded as a breaking release naming both ids: CHANGELOG.md [0.10.0] (a 0.x minor, the semver-major … |
+| G10 no-run-varying-artifacts | 未達 | the published crate's library src/ reads no wall clock, no unseeded RNG and no UUID: the only randomness is a seeded ChaCha8Rng (src/generators/perlin.rs:60, … |
+| G11 gate-self-tests | 未達 | the three self-test ideas exist, but ad hoc per-check rather than as a per-gate triad, and most gates have no machine checker here to self-test (C5). Present: … |
+| G12 public-repo-text-rules | 未確認 | the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names … |
+| G13 no-unspecified-order | 未達 | the published crate's library src/ names HashMap / HashSet / BTreeMap nowhere (a full scan of src/*.rs returned zero), so no Law-bearing output iterates an … |
+| G14 float-environment-invariants | 未達 | no build configuration sets a fast-math-style flag or target-cpu=native: there is no .cargo/config* in the tree at all, and a scan of every workflow, … |
 
 ### feature と保証の範囲
 
