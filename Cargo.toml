@@ -4,7 +4,7 @@ version = "0.10.0"
 edition = "2021"
 # MSRV-aware dependency resolution (cargo 1.84+): `cargo update` never picks a
 # dependency whose own `rust-version` exceeds ours, so the lockfile cannot
-# silently drift away from the declared MSRV (canonical template trap #35).
+# silently drift away from the declared MSRV.
 resolver = "3"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "Compression primitives (LZ77, dictionary coding, BPE, entropy, quantisation) + procedural signal generators (polynomial / Fourier / Perlin) + zlib / LZMA residual containers, no_std + alloc"

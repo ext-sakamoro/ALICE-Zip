@@ -1,4 +1,4 @@
-# quality-deep — 週次 / 手動 / PR 差分の深い品質検査 (karikari-review §13、2026-09-15 制定)
+# quality-deep — 週次 / 手動 / PR 差分の深い品質検査
 #
 # mutants : cargo-mutants (test が bug を検出できるかの逆検査) PR では --in-diff で差分のみ、
 #           週次 / 手動は crate 全体を 8 shard 並列 (910 mutant、1 mutant ≈ 15 s build + 5 s test on GH

@@ -197,7 +197,6 @@ jobs:
         uses: dtolnay/rust-toolchain@1.87
       - uses: Swatinem/rust-cache@v2
       # `rust-version` is only true if this compiles; bump both together
-      # (canonical template trap #27 / #35)
       - name: cargo check on MSRV (lib, default features)
         run: cargo +1.87 check --lib --locked
       - name: cargo check on MSRV (lib, docs.rs feature set)
