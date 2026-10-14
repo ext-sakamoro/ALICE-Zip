@@ -82,6 +82,7 @@ pub const SIGNAL_LAW_KIND: &[u8] = b"signal-law/polynomial/v1";
 /// identifier whose arithmetic half is invented does not identify the
 /// arithmetic.
 pub use alice_det_math::SEMANTICS_ID;
+use alice_det_math::{max64, min64};
 
 /// Length prefix, so that concatenating two fields cannot be confused with a
 /// single longer one (`"ab" + "c"` and `"a" + "bc"` must not collide).
@@ -315,8 +316,13 @@ impl SignalLaw {
         if points.iter().any(|(x, y)| !x.is_finite() || !y.is_finite()) {
             return Err(LawError::NonFinite);
         }
-        let lo = points.iter().fold(f64::INFINITY, |a, p| a.min(p.0));
-        let hi = points.iter().fold(f64::NEG_INFINITY, |a, p| a.max(p.0));
+        // `f64::min` / `f64::max` leave the sign of the result unspecified
+        // when both operands are zeros, and targets differ (aarch64 returns
+        // `-0.0` for the min of `-0.0` and `+0.0`, x86_64 returns the second
+        // operand). The bounds go into `law_id` as raw bits and into
+        // `evaluate`, so they use the comparison with a defined zero sign.
+        let lo = points.iter().fold(f64::INFINITY, |a, p| min64(a, p.0));
+        let hi = points.iter().fold(f64::NEG_INFINITY, |a, p| max64(a, p.0));
         if hi <= lo {
             return Err(LawError::DegenerateDomain);
         }
