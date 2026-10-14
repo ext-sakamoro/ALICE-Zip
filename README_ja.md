@@ -406,12 +406,12 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 | G4 debug-release-arch-goldens | 未達 | the bit-pattern goldens exist — tests/determinism_golden.rs records fixed digests of generator/analysis output (with an emptiness gate: hashes >= min_bytes), … |
 | G5 release-profile-test-leg | 未達 | no job anywhere runs the Law-bearing test suite under `--release`, on aarch64 or any arch: the ci.yml test matrix runs `cargo test` in debug only (macos-latest … |
 | G6 semantics-id | 未達 | `src/law.rs:84` is `pub use alice_det_math::SEMANTICS_ID;` — a re-export of the upstream arithmetic identifier, not an identifier of this crate's own that … |
-| G7 handshake-carries-id | 未確認 | the published crate's only type-erasing boundaries that receive a Law-bearing identifier are the container decode paths (serialized bytes / file; the crate has … |
-| G8 persisted-semantics-id | 未確認 | the durable container format carries persisted identifiers and the reader compares the STORED id, not its own build's. Write path: Container::new(semantics_id) … |
-| G9 persisted-meaning-change-is-major | 未確認 | the one identifier move in this crate's history is recorded as a breaking release naming both ids: CHANGELOG.md [0.10.0] (a 0.x minor, the semver-major … |
+| G7 handshake-carries-id | 適合 | the published crate's only type-erasing boundaries that receive a Law-bearing identifier are the container decode paths (serialized bytes / file; the crate has … |
+| G8 persisted-semantics-id | 適合 | the durable container format carries persisted identifiers and the reader compares the STORED id, not its own build's. Write path: Container::new(semantics_id) … |
+| G9 persisted-meaning-change-is-major | 適合 | the one identifier move in this crate's history is recorded as a breaking release naming both ids: CHANGELOG.md [0.10.0] (a 0.x minor, the semver-major … |
 | G10 no-run-varying-artifacts | 未達 | the published crate's library src/ reads no wall clock, no unseeded RNG and no UUID: the only randomness is a seeded ChaCha8Rng (src/generators/perlin.rs:60, … |
 | G11 gate-self-tests | 未達 | the three self-test ideas exist, but ad hoc per-check rather than as a per-gate triad, and most gates have no machine checker here to self-test (C5). Present: … |
-| G12 public-repo-text-rules | 未確認 | the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names … |
+| G12 public-repo-text-rules | 適合 | the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names … |
 | G13 no-unspecified-order | 未達 | the published crate's library src/ names HashMap / HashSet / BTreeMap nowhere (a full scan of src/*.rs returned zero), so no Law-bearing output iterates an … |
 | G14 float-environment-invariants | 未達 | no build configuration sets a fast-math-style flag or target-cpu=native: there is no .cargo/config* in the tree at all, and a scan of every workflow, … |
 
@@ -419,10 +419,10 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 
 | feature | 保証 | 注記 |
 |---|---|---|
-| `fft` | 未申告 |  |
-| `lzma` | 未申告 |  |
-| `parallel` | 未申告 |  |
-| `std` | 未申告 |  |
+| `fft` | 範囲外 | fft enables rustfft-backed generators::analyze_signal_fft, a DIFFERENT algorithm (O(n log n)) from the naive DFT analyze_signal, and rustfft computes its own … |
+| `lzma` | 範囲内 | lzma enables LZMA + the `.alice` residual containers (compression::{lzma_*, *_residual_*}); it is lossless byte compression with no Law float arithmetic of its … |
+| `parallel` | 範囲外 | parallel swaps the 2D Perlin row loop (generate_perlin_2d / generate_perlin_advanced, src/generators/perlin.rs:204-207) from a serial flat_map to rayon … |
+| `std` | 範囲内 | std enables the `compression` module (zlib via flate2) and `std::error::Error` for ZipError; it is lossless byte coding with no Law float arithmetic of its … |
 <!-- law-integration:end -->
 
 ## ライセンス
