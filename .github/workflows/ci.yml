@@ -158,6 +158,14 @@ jobs:
       # used only under std) and targets that need std declare it
       - name: clippy (no default features, all targets)
         run: cargo clippy --all-targets --no-default-features -- -D warnings
+      # 決定論: production の code は OS の entropy も時計も使わない (clippy.toml
+      # disallowed-methods が第一層、これは compile 不要の第二層) この job は
+      # push: branches [main, "ci/**"] に paths filter 無しで乗るため、
+      # security-audit.yml (main のみ・paths filter 付き) から移設した
+      - name: Entropy guard (test first)
+        run: python3 scripts/test_entropy_guard.py
+      - name: Entropy guard (no OS entropy or wall clock in production code)
+        run: python3 scripts/entropy_guard.py
 
   no_std:
     name: no_std (rlib, thumbv7em-none-eabihf)

@@ -268,12 +268,11 @@ jobs:
           print("✓ every extern \"C\" fn is guarded")
           PY
 
-      # 決定論: production の code は OS の entropy も時計も使わない (clippy.toml
-      # disallowed-methods が第一層、これは compile 不要の第二層)
-      - name: Entropy guard (test first)
-        run: python3 scripts/test_entropy_guard.py
-      - name: Entropy guard (no OS entropy or wall clock in production code)
-        run: python3 scripts/entropy_guard.py
+      # 決定論ガード (entropy_guard.py) は ci.yml の clippy job (push:
+      # branches [main, "ci/**"]、paths filter 無し) に移設した
+      # security-audit.yml の push trigger は main のみ + paths filter 付きで、
+      # ci/** では一度も発火せず、ALLOWED table の編集も paths 対象外のため
+      # 発火しなかった (2026-10-15 実測)
 
       # TODO/FIXME/XXX/HACK は informational (block しない)
       - name: Detect TODO / FIXME / XXX / HACK (informational)
