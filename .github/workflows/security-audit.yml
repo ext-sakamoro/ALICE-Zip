@@ -268,6 +268,13 @@ jobs:
           print("✓ every extern \"C\" fn is guarded")
           PY
 
+      # 決定論: production の code は OS の entropy も時計も使わない (clippy.toml
+      # disallowed-methods が第一層、これは compile 不要の第二層)
+      - name: Entropy guard (test first)
+        run: python3 scripts/test_entropy_guard.py
+      - name: Entropy guard (no OS entropy or wall clock in production code)
+        run: python3 scripts/entropy_guard.py
+
       # TODO/FIXME/XXX/HACK は informational (block しない)
       - name: Detect TODO / FIXME / XXX / HACK (informational)
         run: |

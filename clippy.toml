@@ -77,4 +77,18 @@ disallowed-methods = [
     { path = "f64::cbrt", reason = "platform libm is not cross-platform bit-exact; use alice_det_math" },
     { path = "f64::hypot", reason = "platform libm is not cross-platform bit-exact; use alice_det_math" },
     { path = "f64::powi", reason = "lowers to a multiplication tree of unspecified association order; write the multiplications out" },
+
+    # Determinism, second gate: no OS entropy and no wall clock in the crate.
+    # This crate's computed/stored output must be bit-identical given the same
+    # input regardless of when or on what machine it runs, so production code
+    # must not read the OS entropy source or the wall clock (tests that time a
+    # deadline allow these at the test, with a reason).
+    #
+    # Compile-free counterpart: scripts/entropy_guard.py scans src/**/*.rs
+    # outside test modules for the same patterns (plus getrandom / OsRng /
+    # thread_rng / Uuid::new_v4, which clippy has no lint for), with an
+    # ALLOWED allowlist for any legitimate exception.
+    { path = "std::time::Instant::now", reason = "the wall clock makes results depend on timing; pass time in or use a step count" },
+    { path = "std::time::SystemTime::now", reason = "the wall clock makes results depend on timing; pass time in or use a step count" },
+    { path = "std::collections::hash_map::RandomState::new", reason = "seeds from OS randomness; pass a seed in explicitly" },
 ]

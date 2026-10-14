@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - CI: 上限の無かった 20 job に `timeout-minutes` を付けた (止まった step は共有 runner を GitHub の上限の 6 時間まで占有しうる) 値は直近の成功した run 12 本の所要時間の最大の 2 倍・中央値の 4 倍のうち大きい方を 5 分単位に切り上げ、cargo を使う job は最低 15 分 (cache が外れた build のため)、他は最低 10 分 既に上限のある job は変えていない `scripts/workflow_timeouts.py` (試験 `scripts/test_workflow_timeouts.py`) が全 job の上限を検査し、job を 1 つも読めなければ失敗する CI (actionlint job) と preflight で走る
 - CI: 追跡している `Cargo.lock` (root / `libalice` / `fuzz` / `libalice-enterprise`) が manifest と合っているかを `scripts/lock_check.py` (`cargo metadata --locked`、試験 `scripts/test_lock_check.py`) で検査する CI と preflight で走り、検査した lock が 0 なら失敗する `fuzz/Cargo.lock` と `libalice-enterprise/Cargo.lock` は `alice-det-math` 0.4.0 / `alice-zip` 0.9.0 (と `alice-zip-cli` 3.0.0) を解決したままで、build のたびに作業 tree で直されていたので気付かれなかった 両方を 0.5.0 / 0.10.0 / 3.1.0 に作り直した (公開 package には入らない file)
 - CI: 公開する文面の検査 (`Public text` workflow、`scripts/public_text.sh`) を追加 ALICE-Law の `scripts/public_text_check.py` を `.github/public-text-pin` の revision で取得し、SHA-256 が一致した時だけ使って、HEAD の全 tracked file (path と本文) と送った commit (message・追加行・追加 path) を読む 何も比較できなければ失敗する preflight でも走る
+- `clippy.toml` に `std::time::Instant::now` / `std::time::SystemTime::now` / `std::collections::hash_map::RandomState::new` を `disallowed-methods` へ追加 (決定論: `src/` は OS の entropy も時計も読まない) 同じ検査を compile 無しで行う `scripts/entropy_guard.py` (試験 `scripts/test_entropy_guard.py`) も追加、CI (security-audit.yml / stub-guard) と preflight で走る
 
 ## [0.10.0] - 2026-10-12
 
