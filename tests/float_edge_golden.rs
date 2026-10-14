@@ -48,6 +48,15 @@ fn law_with_evidence(coefficients: Vec<f64>, lo: f64, evidence: Vec<(f64, f64)>)
     .expect("the fixture satisfies every from_parts precondition")
 }
 
+/// Distance in units in the last place between two finite `f64` of the same
+/// sign: an independent bound for the pins below that record a QR rounding
+/// "as computed" (the bound comes from the exact answer, not from the
+/// implementation)
+fn ulps_apart(a: f64, b: f64) -> u64 {
+    assert!(a.is_finite() && b.is_finite() && a.is_sign_negative() == b.is_sign_negative());
+    a.to_bits().abs_diff(b.to_bits())
+}
+
 fn f32_bits(values: &[f32]) -> Vec<u32> {
     values.iter().map(|v| v.to_bits()).collect()
 }
@@ -167,6 +176,13 @@ fn fit_polynomial_large_offset_tiny_slope_bits() {
     assert_eq!(err.to_bits(), F64_POS_ZERO);
     let bits: Vec<u64> = coeffs.iter().map(|c| c.to_bits()).collect();
     assert_eq!(bits, [0x4197_d784_0000_0000, 0x401f_ffff_ffff_fffe]); // 1e8, 8 - 2 ulp
+                                                                      // the exact fit is 1e8 + 8x: the offset is exact and the slope within a few ulp of 8
+    assert_eq!(coeffs[0], 1e8);
+    assert!(
+        ulps_apart(coeffs[1], 8.0) <= 4,
+        "slope {} is not within 4 ulp of 8",
+        coeffs[1]
+    );
 }
 
 /// A constant `1e8` series takes the constant branch: the mean is summed in
@@ -398,6 +414,21 @@ fn residual_rms_of_least_squares_line_is_pinned_rounding() {
         assert_eq!(bits, [0x3fef_ffff_ffff_ffff, 0x4000_0000_0000_0000]);
         assert_eq!(l.residual().rms.to_bits(), 0x3c92_79a7_4590_331c);
         assert_eq!(l.residual().max_abs.to_bits(), 0x3ca0_0000_0000_0000);
+        // the exact fit is 1 + 2u: each coefficient within 2 ulp of it, and the
+        // residual of 3 exact samples bounded by 2 ulp of the largest value 3
+        let c = l.coefficients();
+        assert!(
+            ulps_apart(c[0], 1.0) <= 2,
+            "constant {} is not within 2 ulp of 1",
+            c[0]
+        );
+        assert!(
+            ulps_apart(c[1], 2.0) <= 2,
+            "slope {} is not within 2 ulp of 2",
+            c[1]
+        );
+        let bound = 2.0 * f64::EPSILON * 3.0;
+        assert!(l.residual().max_abs <= bound && l.residual().rms <= l.residual().max_abs);
     }
     assert_eq!(
         far.evaluate(1e8 + 1.0).expect("in domain").to_bits(),
