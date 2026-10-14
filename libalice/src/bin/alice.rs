@@ -244,6 +244,7 @@ fn cmd_compress(
     println!("Input: {} ({} bytes)", input.display(), original_size);
     println!("Compression level: {}", level);
 
+    #[allow(clippy::disallowed_methods, reason = "CLI timing diagnostic only, printed not stored, not part of library output")]
     let start = Instant::now();
 
     // Determine compression mode
@@ -332,6 +333,7 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
 
     let payload = &data[32..];
 
+    #[allow(clippy::disallowed_methods, reason = "CLI timing diagnostic only, printed not stored, not part of library output")]
     let start = Instant::now();
 
     // Decompress based on mode
@@ -452,6 +454,7 @@ fn cmd_benchmark(
     let mut zlib_times = Vec::new();
     let mut zlib_size = 0;
     for _ in 0..iterations {
+        #[allow(clippy::disallowed_methods, reason = "CLI timing diagnostic only, printed not stored, not part of library output")]
         let start = Instant::now();
         let compressed = zlib_compress(&data, level)?;
         zlib_times.push(start.elapsed());
@@ -482,6 +485,7 @@ fn cmd_benchmark(
         let mut quant_times = Vec::new();
         let mut quant_size = 0;
         for _ in 0..iterations {
+            #[allow(clippy::disallowed_methods, reason = "CLI timing diagnostic only, printed not stored, not part of library output")]
             let start = Instant::now();
             let (quantized, _, _) = quantize_8bit(&floats);
             let compressed = zlib_compress(&quantized, level)?;
