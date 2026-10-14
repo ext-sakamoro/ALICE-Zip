@@ -1,0 +1,46 @@
+name: Release profile
+
+# The bit-exact goldens run in the release profile too. Optimisation is where
+# a reassociation, an FMA contraction or a folded signed zero would change the
+# bits, and the CI workflow runs every test in the debug profile only.
+# Mirrored in scripts/preflight.sh (full section).
+#
+# scripts/run_tests.sh fails unless each named suite ran and passed at least
+# one test, so a feature or target mismatch cannot turn this into a no-op.
+
+on:
+  push:
+    # ci/** runs the whole workflow on a branch before it is landed on main
+    branches: [main, "ci/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release-goldens:
+    name: Goldens in the release profile (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Bit-exact goldens (cargo test --release)
+        run: >-
+          scripts/run_tests.sh analytic_law_id,float_edge_golden,determinism_golden --
+          cargo test --release
+          --test analytic_law_id --test float_edge_golden --test determinism_golden

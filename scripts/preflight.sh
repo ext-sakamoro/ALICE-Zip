@@ -506,6 +506,9 @@ fi
 step "ci.yml / example: Run the example the README numbers come from"
 ( set -o pipefail; cargo run --release --example compression_ratio --features lzma | tee /tmp/alice-zip-example.txt && python3 scripts/example_check.py /tmp/alice-zip-example.txt )
 
+step "release-profile.yml / release-goldens: Bit-exact goldens (cargo test --release)"
+( export CARGO_TERM_COLOR="always"; scripts/run_tests.sh analytic_law_id,float_edge_golden,determinism_golden -- cargo test --release --test analytic_law_id --test float_edge_golden --test determinism_golden )
+
 step "ci.yml / test: Test (default features)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo test )
 

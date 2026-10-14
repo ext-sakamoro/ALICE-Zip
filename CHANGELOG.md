@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- 符号付きゼロと桁落ちの bit 一致 golden `tests/float_edge_golden.rs` (20 件、`polynomial_at` / `fit_polynomial` / `multi_sine_at` / `fourier_at` / `quantize_8bit` / `quantize_16bit` / `SignalLaw::evaluate` / 残差 RMS) と、release profile で `analytic_law_id` / `float_edge_golden` / `determinism_golden` を走らせる workflow `release-profile.yml` (ubuntu / macos、`scripts/run_tests.sh` が各 suite の 1 件以上の通過を検査、preflight の full でも走る)
+
 ### Changed
 - CI: ci / fuzz / security-audit の concurrency を、main では commit ごとに group を分けて run を取り消さず、取り消すのは branch の古い run だけにした (以前は main への後の送信が main の run を取り消し、結果が cancelled のまま残りえた) `scripts/workflow_concurrency.py` (試験 `scripts/test_workflow_concurrency.py`、ALICE-LOL / ALICE-SDF / ALICE-DetMath と byte 一致) が branch への送信で走る全 workflow を検査し、workflow を 1 つも読めなければ失敗する CI (actionlint job) と preflight で走る
 - CI: 上限の無かった 20 job に `timeout-minutes` を付けた (止まった step は共有 runner を GitHub の上限の 6 時間まで占有しうる) 値は直近の成功した run 12 本の所要時間の最大の 2 倍・中央値の 4 倍のうち大きい方を 5 分単位に切り上げ、cargo を使う job は最低 15 分 (cache が外れた build のため)、他は最低 10 分 既に上限のある job は変えていない `scripts/workflow_timeouts.py` (試験 `scripts/test_workflow_timeouts.py`) が全 job の上限を検査し、job を 1 つも読めなければ失敗する CI (actionlint job) と preflight で走る
