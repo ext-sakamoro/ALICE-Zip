@@ -12,8 +12,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -368,3 +368,8 @@ jobs:
         run: |
           python3 scripts/test_workflow_timeouts.py
           python3 scripts/workflow_timeouts.py
+      # a run on main is never cancelled and each main commit has its own group
+      - name: workflow-concurrency
+        run: |
+          python3 scripts/test_workflow_concurrency.py
+          python3 scripts/workflow_concurrency.py

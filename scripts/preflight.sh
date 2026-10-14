@@ -178,6 +178,10 @@ step "ci.yml / actionlint: workflow-timeouts (every job has timeout-minutes)"
 python3 scripts/test_workflow_timeouts.py
 python3 scripts/workflow_timeouts.py
 
+step "ci.yml / actionlint: workflow-concurrency (main is never cancelled)"
+python3 scripts/test_workflow_concurrency.py
+python3 scripts/workflow_concurrency.py
+
 step "security-audit.yml / deny: cargo deny (core, all features)"
 ( export CARGO_TERM_COLOR="always" CARGO_NET_RETRY="5" CARGO_HTTP_MULTIPLEXING="false"; cargo deny --all-features check all )
 
