@@ -134,6 +134,9 @@ step "ci.yml / claim-check: Python の未定義の名前と上書き (ruff F821 
 step "ci.yml / claim-check: include の参照先が git で追跡されているか"
 ( python3 scripts/test_include_tracked.py && python3 scripts/include_tracked.py )
 
+step "ci.yml / claim-check: build した library を commit していないか"
+( python3 scripts/test_tracked_binaries.py && python3 scripts/tracked_binaries.py )
+
 step "ci.yml / test: Versions agree"
 ( python3 scripts/test_version_check.py && python3 scripts/version_check.py && python3 scripts/test_pypi_tag_check.py )
 

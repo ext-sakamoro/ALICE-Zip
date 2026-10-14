@@ -273,6 +273,14 @@ jobs:
         run: |
           python3 scripts/test_include_tracked.py
           python3 scripts/include_tracked.py
+      # build した library (.so / .dylib / .a / .dll / .wasm 等) を commit すると、
+      # clean な checkout で再現しない成果物が混ざる 名前・内容の両面で検出し、
+      # 正当なものは .github/tracked-binaries.txt に理由付きで列挙する
+      # ⚠️ 走査した file が 0 件でも fail する (空振りを成功と読ませない)
+      - name: build した library を commit していないか
+        run: |
+          python3 scripts/test_tracked_binaries.py
+          python3 scripts/tracked_binaries.py
 
   libalice:
     name: libalice (CLI / FFI crate)
