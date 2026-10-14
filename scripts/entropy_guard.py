@@ -2,21 +2,28 @@
 """No deterministic path of the crate draws OS entropy or reads the wall clock.
 
 The crate's computed/stored output must be bit-identical given the same input
-regardless of when or on what machine it runs, so production code in src/
-must not call an OS entropy source or a wall clock.
+regardless of when or on what machine it runs, so production code must not
+call an OS entropy source or a wall clock.
 
-Checked in every src/**/*.rs file, outside `#[cfg(test)]` modules, with the
-code of a file joined (a call split over lines still matches) and `use .. as`
-aliases of `Instant` / `SystemTime` / `RandomState` resolved:
+Checked in every `*.rs` file under `src/` and `libalice/src/`, outside
+`#[cfg(test)]` modules, with the code of a file joined (a call split over
+lines still matches) and `use .. as` aliases of `Instant` / `SystemTime` /
+`RandomState` resolved:
 
     getrandom  OsRng  thread_rng  rand::random  from_entropy(  try_from_entropy(
     SystemTime::now  Instant::now  UNIX_EPOCH  RandomState::new  Uuid::new_v4
 
+`libalice/` is a separate, non-workspace crate (its own `Cargo.toml`, no
+`[workspace]` on either side), but clippy resolves `clippy.toml` by walking up
+parent directories regardless of workspace membership, so the root
+`clippy.toml`'s `disallowed-methods` already reaches it -- this script's scan
+root matches that reach rather than being narrower than the compiled layer.
+
 clippy's `disallowed-methods` in clippy.toml is the first layer (compiled,
 `cargo clippy --all-targets -D warnings`); this script is the second, readable
-without compiling and run on `src/` only (clippy's `--all-targets` also covers
-tests/benches/examples, where a scoped `#[allow(clippy::disallowed_methods,
-reason = "...")]` carries the same per-call-site accounting this script does).
+without compiling (clippy's `--all-targets` also covers tests/benches/
+examples, where a scoped `#[allow(clippy::disallowed_methods, reason =
+"...")]` carries the same per-call-site accounting this script does).
 
 Deliberately not scanned: `HashMap` / `HashSet` (their default hasher also
 seeds from OS randomness, but that is tracked as its own gate, not here).
@@ -35,6 +42,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+SCAN_DIRS = ("src", "libalice/src")
 PATTERNS = {
     "getrandom": r"\bgetrandom\b",
     "OsRng": r"\bOsRng\b",
@@ -53,9 +61,12 @@ ALIASABLE = {
     "SystemTime": ("SystemTime::now", r"\b{}\s*::\s*now\b"),
 }
 ALIAS_RE = re.compile(r"\b(Instant|SystemTime)\s+as\s+(\w+)")
-# (file, pattern) -> (count, reason); empty -- no legitimate exception exists
-# in this crate today (re-verified by hand before this gate was added).
-ALLOWED: dict[tuple[str, str], tuple[int, str]] = {}
+# (file, pattern) -> (count, reason)
+ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
+    ("libalice/src/bin/alice.rs", "Instant::now"): (
+        4, "CLI timing diagnostics only, printed not stored, not part of library output",
+    ),
+}
 STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"')
 
 
@@ -116,7 +127,7 @@ def matches(lines: list[tuple[int, str]]) -> dict[str, list[int]]:
 def check(root: Path) -> tuple[list[str], int, int]:
     problems: list[str] = []
     counts: dict[tuple[str, str], list[int]] = {}
-    files = sorted((root / "src").rglob("*.rs"))
+    files = sorted({p for d in SCAN_DIRS for p in (root / d).rglob("*.rs")})
     for path in files:
         rel = path.relative_to(root).as_posix()
         for name, hits in matches(production_lines(path.read_text(encoding="utf-8"))).items():
