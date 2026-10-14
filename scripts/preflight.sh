@@ -260,6 +260,12 @@ step "security-audit.yml / stub-guard: Detect dbg!() residual"
   echo "✓ No dbg!()"
 )
 
+step "security-audit.yml / stub-guard: Entropy guard (test first)"
+( python3 scripts/test_entropy_guard.py )
+
+step "security-audit.yml / stub-guard: Entropy guard (no OS entropy or wall clock in production code)"
+( python3 scripts/entropy_guard.py )
+
 step "security-audit.yml / stub-guard: Detect TODO / FIXME / XXX / HACK (informational)"
 (
   export CARGO_TERM_COLOR="always" CARGO_NET_RETRY="5" CARGO_HTTP_MULTIPLEXING="false"
