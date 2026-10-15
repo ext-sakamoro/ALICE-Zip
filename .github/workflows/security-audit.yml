@@ -5,10 +5,11 @@ name: Security & Hygiene
 # - dep license 逸脱 (GPL 侵入等) の block
 # - 未使用依存の炙り出し
 # - 仮実装 (todo! / unimplemented! / panic!(STUB) / dbg!) の CI gate
-# - crates.io 公開版との API 互換 (semver) 検査
 #
 # main-CI (ci.yml) は build / test / clippy / doc に集中させ、本 workflow は
 # セキュリティと衛生に特化 push + PR + 週次 cron の 3 trigger
+#
+# crates.io の最新版に対する公開 API の検査は semver-checks.yml (失敗させる)
 
 on:
   push:
@@ -169,44 +170,6 @@ jobs:
           name: coverage-summary
           path: coverage-summary.txt
           retention-days: 30
-
-  semver-checks:
-    name: cargo-semver-checks (API compat vs crates.io)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Hard gate: a breaking change must come with the matching version bump
-    # (0.x: minor). The tool reads `version` in Cargo.toml and fails only when
-    # the bump is insufficient for the detected API change.
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      # version 明示 pin: `@latest` は rustc MSRV を追いかけるので toolchain と一緒に bump
-      - name: Install cargo-semver-checks
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-semver-checks@0.50.0
-      # API の変更そのものは列挙 (break は CHANGELOG で宣言する) が、
-      # **何も比較しなかった場合は落とす**
-      #
-      # cargo-semver-checks は lint を「その lint が要求する bump が既に満たされて
-      # いるか」で選別するので、Cargo.toml の版が crates.io より先行していると全 lint が
-      # 不要判定になり、`0 checks: 0 pass, 254 skip` / `no semver update required` /
-      # exit 0 を返す。文面は「問題なし」と読めるが 1 件も比較していない。
-      # 実測 (0.6.0 -> 0.7.0 の時点): 0 checks。`--release-type patch` を明示すると
-      # major / minor の lint 系統が両方走る (同条件で 196 checks)。
-      - name: Run cargo semver-checks (core, docs.rs feature set)
-        run: |
-          set -o pipefail
-          cargo semver-checks check-release --package alice-zip \
-            --only-explicit-features --features std,fft,parallel,lzma \
-            --release-type patch 2>&1 | tee semver.log || true
-          ran=$(grep -oE '[0-9]+ checks:' semver.log | grep -oE '[0-9]+' | tail -1)
-          echo "semver-checks ran ${ran:-0} checks"
-          if [ "${ran:-0}" -eq 0 ]; then
-            echo "::error::cargo-semver-checks compared nothing (see the comment above this step)"
-            exit 1
-          fi
 
   stub-guard:
     name: Stub / mock / dbg guard (grep)

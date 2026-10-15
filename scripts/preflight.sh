@@ -68,7 +68,7 @@ need cargo-audit "cargo install cargo-audit --locked"
 need cargo-deny "cargo install cargo-deny --locked"
 need cargo-hack "cargo install cargo-hack --locked"
 need cargo-machete "cargo install cargo-machete --locked"
-need cargo-semver-checks "cargo install cargo-semver-checks --locked"
+need cargo-semver-checks "cargo install cargo-semver-checks --version 0.50.0 --locked"
 has_toolchain 1.87 || { echo "missing toolchain 1.87 (rustup toolchain install 1.87)" >&2; exit 1; }
 
 step "ci.yml / clippy: clippy (default, all targets)"
@@ -228,20 +228,11 @@ step "security-audit.yml / package-integrity: 展開して隔離 build"
   cargo check --all-features
 )
 
-step "security-audit.yml / semver-checks: Run cargo semver-checks (core, docs.rs feature set)"
-(
-  export CARGO_TERM_COLOR="always" CARGO_NET_RETRY="5" CARGO_HTTP_MULTIPLEXING="false"
-  set -o pipefail
-  cargo semver-checks check-release --package alice-zip \
-    --only-explicit-features --features std,fft,parallel,lzma \
-    --release-type patch 2>&1 | tee semver.log || true
-  ran=$(grep -oE '[0-9]+ checks:' semver.log | grep -oE '[0-9]+' | tail -1)
-  echo "semver-checks ran ${ran:-0} checks"
-  if [ "${ran:-0}" -eq 0 ]; then
-    echo "::error::cargo-semver-checks compared nothing (see the comment above this step)"
-    exit 1
-  fi
-)
+step "semver-checks.yml / semver-checks: semver gate (tests)"
+python3 scripts/test_semver_gate.py
+
+step "semver-checks.yml / semver-checks: semver gate (latest crates.io release, every consumer feature set)"
+python3 scripts/semver_gate.py --config .github/semver-gate.toml --target-dir "${CARGO_TARGET_DIR:-target}/semver"
 
 step "security-audit.yml / stub-guard: Detect todo! / unimplemented! / panic!(STUB)"
 (
