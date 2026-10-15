@@ -292,6 +292,13 @@ jobs:
       # ⚠️ marker 0 件でも fail する (空振りを成功と読ませない)
       - name: claim-test marker が実在の試験を指しているか
         run: python3 scripts/claim_check.py
+      # README.md と README_ja.md の見出しの対応 (scripts/readme_headings.toml)・節ごとの段落 /
+      # 箇条書き / 表の行 / code block の数・code block の中身・数値・hash・crate 名・link を照合する
+      # 検査器自身の試験を先に走らせる ⚠️ 比較 0 件でも fail する
+      - name: README の英語版と日本語版の対応
+        run: |
+          python3 scripts/test_readme_parity_check.py
+          python3 scripts/readme_parity_check.py
       # 改名で古い名前の呼び出しが残ると、pytest が実行しない場所 (__main__
       # の block など) では誰も気付かない ⚠️ 検査した file が 0 件でも fail
       - name: Python の未定義の名前と上書き (ruff F821 / F811)

@@ -1,0 +1,119 @@
+# The headings of README.md and README_ja.md, in order, as pairs: scripts/readme_parity_check.py
+# requires each file's headings to be exactly this list (level, text and order), so a section
+# moved, dropped, added or renamed in one file only is a finding. Change both READMEs and this
+# list together.
+
+[[heading]]
+level = 2
+en = "Features"
+ja = "特徴"
+
+[[heading]]
+level = 2
+en = "Repository layout"
+ja = "リポジトリ構成"
+
+[[heading]]
+level = 2
+en = "Installation"
+ja = "インストール"
+
+[[heading]]
+level = 3
+en = "Rust crate"
+ja = "Rust crate"
+
+[[heading]]
+level = 2
+en = "Quick Start"
+ja = "クイックスタート"
+
+[[heading]]
+level = 3
+en = "Command Line"
+ja = "コマンドライン"
+
+[[heading]]
+level = 3
+en = "Python API"
+ja = "Python API"
+
+[[heading]]
+level = 3
+en = "Lossless mode (Python)"
+ja = "lossless モード (Python)"
+
+[[heading]]
+level = 2
+en = "How It Works"
+ja = "仕組み"
+
+[[heading]]
+level = 3
+en = "Example"
+ja = "例"
+
+[[heading]]
+level = 3
+en = "Laws with evidence (`law` module)"
+ja = "証拠つきの法則 (`law` module)"
+
+[[heading]]
+level = 4
+en = "Identifying a law by its content"
+ja = "法則を内容で識別する"
+
+[[heading]]
+level = 3
+en = "Container with content hashes (`container` module)"
+ja = "内容ハッシュつきコンテナ (`container` module)"
+
+[[heading]]
+level = 2
+en = "Benchmarks"
+ja = "ベンチマーク"
+
+[[heading]]
+level = 2
+en = "Ideal Use Cases"
+ja = "最適なユースケース"
+
+[[heading]]
+level = 2
+en = "When NOT to Use"
+ja = "使うべきでない場面"
+
+[[heading]]
+level = 2
+en = "Building from Source"
+ja = "ソースからビルド"
+
+[[heading]]
+level = 2
+en = "Related Projects"
+ja = "関連プロジェクト"
+
+[[heading]]
+level = 2
+en = "ALICE-Law integration"
+ja = "ALICE-Law との統合"
+
+[[heading]]
+level = 3
+en = "Conformance (G1-G14)"
+ja = "適合 (G1-G14)"
+
+[[heading]]
+level = 3
+en = "Features and the guarantee"
+ja = "feature と保証の範囲"
+
+[[heading]]
+level = 2
+en = "License"
+ja = "ライセンス"
+
+[[heading]]
+level = 2
+en = "Author"
+ja = "作者"

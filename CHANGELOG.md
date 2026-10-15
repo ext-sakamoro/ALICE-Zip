@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- CI (docs): `README.md` と `README_ja.md` の対応を照合する `scripts/readme_parity_check.py` (試験 `scripts/test_readme_parity_check.py`、見出しの対は `scripts/readme_headings.toml`) を追加 見出しの並び・節ごとの段落 / 箇条書き / 表の行 / code block の数・code block の中身・inline code・数値・hash・`alice-*` 名・link と URL を照合し、何も比較できなければ失敗する ALICE-Law の同名の検査器を元に、日本語版の file 名 (`README_JP.md` / `README_ja.md`) を自動で選び、表の行・節ごとの code block・裸の URL の照合を足した CI の claim-check job と preflight で走る
 - CI (決定論 G10): `clippy.toml` の `disallowed-methods` に `std::time::Instant::elapsed` / `std::time::SystemTime::elapsed` を追加 (`::now()` と同じく時計を読む、保持済みの 2 値の差を取る `duration_since` は対象外) `scripts/test_entropy_guard.py` に 2 entry の存在を確かめる試験、`scripts/clippy_canary_calls.tsv` に 2 行を追加 (ALICE-Analytics と byte 一致、canary は 7 行) `libalice/src/bin/alice.rs` の CLI の計時表示 4 箇所は理由付きの局所 allow G10 の記載を現状に合わせ、Python 側の白色雑音 (`alice_zip/media_generators.py` の seed 無しの `np.random.randn`) を未達の箇所として明記
 - CI (G11、検査器自身の試験): clippy の禁止一覧 (G1 の超越関数、G10 の wall clock / OS 乱数) に canary を追加 `scripts/clippy_canary.py` が repo の `clippy.toml` / `rust-toolchain.toml` / `[lints]` を写した使い捨て crate に、`scripts/clippy_canary_calls.tsv` の 1 行ごとに禁止呼び出しを 1 つ置き (`f64::sin` / `f64::sin_cos` / `Instant::now` / `SystemTime::now` / `RandomState`)、行ごとにその path を名指す `disallowed_*` 診断がちょうど 1 件出ること・対照の関数には 1 件も出ないこと・各行の path が `clippy.toml` にあることを確かめる data file が 0 行、または `clippy.toml` が 0 件の時は「比較 0 件」で失敗する 試験 `scripts/test_clippy_canary.py` (cargo 無し) と共に CI の clippy job と preflight で走る 3 file は ALICE-Analytics と byte 一致
 - CI (G11): `scripts/run_tests.sh` の試験 `scripts/test_run_tests.py` (ALICE-Analytics と byte 一致) を追加 test job (3 OS の bash) と preflight で走る
@@ -18,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `README_ja.md`: 英語版との差を直した 「仕組み」の式が減算 (`+`) とパラメータ「〜100バイト」のままだったのを英語版の xor と記述に合わせた code block は英語版と同じ内容にした `zlib alone` 列の名前・dtype の数・2 つの形のうちどちらが正確かの記述を英語版に揃え、冒頭の claim-test marker の段落の区切りを英語版と同じにした
 - 符号の異なるゼロが混ざる入力で、`SignalLaw::fit_polynomial` の定義域の端 (lo / hi) と `quantize_8bit` / `quantize_16bit` の `min` が arm64 と x86_64 で違っていた 等しいゼロ同士の `f64::min` / `f32::min` (と max) は結果が規定されておらず、arm64 は -0 < +0 として扱い x86_64 は第 2 引数を返す 4 箇所を alice-det-math 0.5.1 の符号を決めた `min` / `max` / `min64` / `max64` に替え、`tests/minmax_sign_golden.rs` で両方の並びを固定した 68 の法則と 21 の量子化の入力で測ると、修正後は arm64 と x86_64 (debug / release) の出力が一致し、変わるのは x86_64 の混在ゼロの入力 (法則 10 件の定義域の端と law_id、係数が 0 の時の evaluate(-0.0)、量子化 3 件の min) だけで、他の入力の bit は変わらない これらの law_id は元から arch ごとに違い 1 つの値として再現できなかったので、旧い識別子を受理する表は追加しない
 
 ### Changed

@@ -27,7 +27,6 @@ ALICE-Zip は、データそのものではなく**「データの生成方法�
 1e-12 の誤差を許すなら 160 倍〜1286 倍 法則が当たらないデータは byte 圧縮に落ち、
 素の zlib と同じサイズに着地します (悪化しません) 本ページの数値はすべて
 `cargo run --release --example compression_ratio --features lzma` の出力
-
 <!-- claim-test: the_lossless_container_is_not_worse_than_this_crates_own_zlib_wrapper -->
 
 ## 特徴
@@ -54,13 +53,13 @@ ALICE-Zip は、データそのものではなく**「データの生成方法�
 ## インストール
 
 ```bash
-# Python (PyPI) `libalice` は任意の native 高速化
+# Python (PyPI); `libalice` is the optional native accelerator
 pip install alice-zip libalice
 
 # Rust
-cargo add alice-zip                       # std (default): zlib wrapper 付き
-cargo add alice-zip --features fft,parallel,lzma   # rustfft 解析、rayon texture、LZMA residual container
-cargo add alice-zip --no-default-features     # no_std + alloc (sqrt / floor / round は libm)
+cargo add alice-zip                       # std (default): + zlib wrappers
+cargo add alice-zip --features fft,parallel,lzma   # rustfft analysis, rayon textures, LZMA residual containers
+cargo add alice-zip --no-default-features     # no_std + alloc (sqrt / floor / round via libm)
 ```
 
 ### Rust crate
@@ -68,12 +67,12 @@ cargo add alice-zip --no-default-features     # no_std + alloc (sqrt / floor / r
 ```rust
 use alice_zip::prelude::*;
 
-// 圧縮 primitive (no_std)
+// Compression primitives (no_std)
 let tokens = lz77_encode(b"abcabcabcabc", 256, 32);
 assert_eq!(lz77_decode(&tokens)?, b"abcabcabcabc");
 assert_eq!(shannon_entropy(&(0..=255u8).collect::<Vec<_>>()), 8.0);
 
-// generator 法則: 系列を fit → 係数だけ保持 → 再生成
+// Generator laws: fit a series, keep the coefficients, regenerate
 let series: Vec<f32> = (0..64).map(|i| 3.0 + 2.0 * i as f32).collect();
 let (coeffs, degree, err) = fit_polynomial(&series, 4, 1e-6).unwrap();
 assert_eq!((degree, generate_polynomial(64, &coeffs) == series), (1, true));
@@ -103,13 +102,13 @@ naive DFT ↔ FFT parity 含む) で検証 MSRV 1.87
 ### コマンドライン
 
 ```bash
-# 圧縮
+# Compress
 alice-zip compress data.bin -o data.alice
 
-# 解凍
+# Decompress
 alice-zip decompress data.alice -o restored.bin
 
-# ファイル情報を表示
+# Show file info
 alice-zip info data.alice
 ```
 
@@ -121,15 +120,15 @@ import numpy as np
 
 zipper = ALICEZip()
 
-# サイン波データを圧縮
+# Compress sine wave data
 data = np.sin(np.linspace(0, 100*np.pi, 100000)).astype(np.float32)
 compressed = zipper.compress(data)
 
-print(f"元サイズ: {data.nbytes:,} bytes")
-print(f"圧縮後: {len(compressed):,} bytes")
-print(f"圧縮率: {data.nbytes / len(compressed):.1f}x")
+print(f"Original: {data.nbytes:,} bytes")
+print(f"Compressed: {len(compressed):,} bytes")
+print(f"Ratio: {data.nbytes / len(compressed):.1f}x")
 
-# 解凍
+# Decompress
 restored = zipper.decompress(compressed)
 ```
 
@@ -140,10 +139,10 @@ from alice_zip import ProceduralCompressionDesigner
 
 designer = ProceduralCompressionDesigner()
 result = designer.compress(data, enable_lossless=True)
-restored = designer.decompress(result)   # data と同じ dtype、同じ byte
+restored = designer.decompress(result)   # same dtype, same bytes as data
 ```
 
-- `decompress` は実数の 11 種の dtype (`float16/32/64`、`int8`〜`int64`、`uint8`〜`uint64`) で、NaN の payload や無限大を含めて入力を dtype ごと bit 単位で返す <!-- claim-test: test_lossless_gives_back_the_input_bit_for_bit -->
+- `decompress` は実数の十一種の dtype (`float16/32/64`、`int8`〜`int64`、`uint8`〜`uint64`) で、NaN の payload や無限大を含めて入力を dtype ごと bit 単位で返す <!-- claim-test: test_lossless_gives_back_the_input_bit_for_bit -->
 - residual は元データから書き、元データの精度で持つ (float64 / int32 / uint32 / int64 / uint64 の元データは `float64`、それ以外は `float32`) 生成値と residual で正確に復元できない値 (NaN、無限大、差が正確でない値) はそのまま持つ residual は `ResidualData` の file で version 4 (residual が `float32` でそのまま持つ値が無ければ version 2)
 - parameter と residual の合計が入力の LZMA より小さくなければ LZMA の結果を返す residual が運べない dtype (complex など) も同じ <!-- claim-test: test_a_lossless_result_is_not_larger_than_lzma_of_the_input -->
 - `quantize_residual=8` / `16` は lossy (`is_lossless` は `False`) で、各値の誤差は量子化の半 step に、`float32` で持つ residual の丸めと出力 dtype への丸め (それぞれ最後の桁の半分) を足した範囲に収まる residual の幅が小さい `float32` のデータでは丸めの項が半 step よりずっと大きくなり、半 step は上界にほとんど効かない <!-- claim-test: test_a_quantized_residual_is_off_by_at_most_half_a_step -->
@@ -154,12 +153,13 @@ restored = designer.decompress(result)   # data と同じ dtype、同じ byte
 従来の圧縮は**バイト列**のパターンを探す ALICE は**数学的**パターンを探す
 
 ```
-元データ = 生成関数(パラメータ) + 残差
+Original Data = Generated(parameters) ^ Residual
 
-ここで:
-  - 生成関数() = 数学関数（多項式、サイン波など）
-  - パラメータ = 小さな記述（〜100バイト）
-  - 残差 = 圧縮された差分（多くの場合ほぼゼロ）
+Where:
+  - Generated()  = Mathematical function (polynomial, sine wave, etc.)
+  - parameters   = Tiny description (tens of bytes)
+  - Residual     = Compressed bit-pattern xor against Generated()
+                   (mostly zero bytes when the law is a good fit)
 ```
 
 xor であることが厳密な復元の根拠です 差 (`original - model`) を `f32` で計算すると、
@@ -169,14 +169,14 @@ xor であることが厳密な復元の根拠です 差 (`original - model`) �
 ### 例
 
 ```
-入力:  サイン波、100,000サンプル (f32 で 400,000 バイト)
+Input:  Sine wave, 100,000 samples (400,000 bytes of f32)
         ↓
-分析: Fourier 係数 1 個 — 「周波数 bin 50、振幅 1.0、位相 0」
+Analysis: one Fourier coefficient — "freq bin 50, amp 1.0, phase 0"
         ↓
-出力: パラメータ 20 バイト + 圧縮した xor 残差 5,306 バイト
+Output: 20 bytes of parameters + 5,306 bytes of compressed xor residual
         ↓
-結果: 400,000 → 5,326 バイト = 75 倍、サンプルはビット単位で一致
-        (同じ byte 列に素の zlib: 8,742 バイト = 45.8 倍)
+Result: 400,000 -> 5,326 bytes = 75x, and the samples come back bit for bit
+        (plain zlib on the same bytes: 8,742 -> 45.8x)
 ```
 
 パラメータ 20 バイトだけを残せば 20,000 倍ですが、それは最大絶対誤差 1.8e-7 の
@@ -220,8 +220,9 @@ use alice_zip::law::{Provenance, SignalLaw};
 let pts: Vec<(f64, f64)> = (0..5).map(|i| (i as f64, 1.0 + 2.0 * i as f64)).collect();
 let law = SignalLaw::fit_polynomial(&pts, 1, Provenance::new("bench run 1", "least squares"))?;
 
-// 法則の評価に使う算術を識別する 32 byte 本 crate で評価する法則なら
-// `law::SEMANTICS_ID` (`alice-det-math` からの再公開) 別の算術を使う場合だけ別の値を渡す
+// 32 bytes identifying the arithmetic used to evaluate the law. For a law
+// evaluated through this crate that is `law::SEMANTICS_ID`, re-exported from
+// `alice-det-math`; pass another value only if another arithmetic is used.
 let id = law.law_id(&alice_zip::law::SEMANTICS_ID);
 # Ok::<(), alice_zip::law::LawError>(())
 ```
@@ -234,7 +235,7 @@ digest に入るのは `evaluate` が読むもの (有効範囲と係数) と `s
 この保証があるため、float の超越関数は platform ではなく `alice-det-math` から取る IEEE 754 は `sin` / `cos` / `atan2` / `log2` に正確丸めを要求しないので、platform 版は OS / CPU / compiler で違いうる `std` feature だけを変えた同一機での実測では、0.5 系は `generate_multi_sine` が 64 sample のうち 1、`analyze_signal` が 9 field のうち 6 で別の bit を返した `tests/determinism_golden.rs` が bit 配列を記録し、CI が 3 OS と `no_std` build で走らせる `clippy.toml` が platform の method を拒否するので逆流しない `sqrt` / `floor` / `round` は IEEE 754 が結果を 1 通りに定めるので platform のままにしている
 <!-- claim-test: sinusoid_generators_are_the_recorded_bits -->
 
-**保証する**: 復元の法則は 1 つの実装しか持たない `sine_at` / `multi_sine_at` / `fourier_at` / `polynomial_at` が 1 点 (非整数でよい) での値を返し、配列生成器はその `map` なので、範囲読み出しと 1 sample の読み出しが食い違うことがない 単点問い合わせに答える側はこれを呼び、法則の写しを持たない 0.7.0 より前は crate の外に写しがあり、sine で 1024 sample のうち 788 が不一致だった 法則は `f64` で積んで 1 度だけ丸める形にした (`f64` の閉形式に対する最大誤差は 5.95e-8、`f32` で積む形は 9.16e-7)
+**保証する**: 復元の法則は 1 つの実装しか持たない `sine_at` / `multi_sine_at` / `fourier_at` / `polynomial_at` が 1 点 (非整数でよい) での値を返し、配列生成器はその `map` なので、範囲読み出しと 1 sample の読み出しが食い違うことがない 単点問い合わせに答える側はこれを呼び、法則の写しを持たない 0.7.0 より前は crate の外に写しがあり、sine で 1024 sample のうち 788 が不一致だった 法則は `f64` で積んで 1 度だけ丸める形にした 2 つの形のうちこちらが正確な方 (`f64` の閉形式に対する最大誤差は 5.95e-8、もう一方は 9.16e-7)
 <!-- claim-test: array_generators_are_a_map_over_the_point_law -->
 
 **保証しない**: その逆 評価が同じでも識別子は分かれうる 末尾に 0 の係数を足した場合が最も単純な例 法則を正規形に落とすのは別の問題なので、識別子は重複排除の鍵には使えない
@@ -301,12 +302,12 @@ assert_eq!(read_any(&bytes)?, c);
 
 100,000 個の `f32` サンプル (400,000 バイト)、deflate level 9
 再現は `cargo run --release --example compression_ratio --features lzma`
-`zlib 単体` 列は同じ byte 列を本 crate の zlib wrapper に同じ level で通したもので、
+`zlib alone` 列は同じ byte 列を本 crate の zlib wrapper に同じ level で通したもので、
 フォールバックが並ばなければならない床です
 
 **ビット一致** (法則のパラメータ + xor 残差、サンプルがそのまま戻る):
 
-| データタイプ | 圧縮後 | 圧縮率 | ビット一致 | zlib 単体 |
+| データタイプ | 圧縮後 | 圧縮率 | ビット一致 | zlib alone |
 |-------------|--------|-------|-----------|----------|
 | サイン波 | 5,326 B | **75倍** | はい | 8,742 B (45.8倍) |
 | 多項式 (3次) | 3,916 B | **102倍** | はい | 330,123 B (1.2倍) |
@@ -357,13 +358,13 @@ assert_eq!(read_any(&bytes)?, c);
 git clone https://github.com/ext-sakamoro/ALICE-Zip
 cd ALICE-Zip
 
-# Pythonパッケージをインストール
+# Install Python package
 pip install -e .
 
-# テスト実行
+# Run tests
 pytest tests/ -v
 
-# Rust core crate — CI の全 gate を local で再現 (scripts/preflight.sh --quick ≈ 3 分)
+# Rust core crate — every CI gate, locally (scripts/preflight.sh --quick ≈ 3 min)
 scripts/preflight.sh
 
 # CLI / FFI crate
