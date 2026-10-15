@@ -234,6 +234,9 @@ python3 scripts/test_semver_gate.py
 step "semver-checks.yml / semver-checks: semver gate (latest crates.io release, every consumer feature set)"
 python3 scripts/semver_gate.py --config .github/semver-gate.toml --target-dir "${CARGO_TARGET_DIR:-target}/semver"
 
+step "semver-checks.yml / semver-checks: semver gate (alice-zip-cli, latest crates.io release, every consumer feature set)"
+python3 scripts/semver_gate.py --manifest libalice/Cargo.toml --config .github/semver-gate-cli.toml --target-dir "${CARGO_TARGET_DIR:-target}/semver-cli"
+
 step "security-audit.yml / stub-guard: Detect todo! / unimplemented! / panic!(STUB)"
 (
   export CARGO_TERM_COLOR="always" CARGO_NET_RETRY="5" CARGO_HTTP_MULTIPLEXING="false"

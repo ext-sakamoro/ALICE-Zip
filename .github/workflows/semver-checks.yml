@@ -1,7 +1,8 @@
 name: Semver checks
 
 # The public API may change only as far as the version in Cargo.toml allows,
-# measured from the latest alice-zip release on crates.io (scripts/semver_gate.py):
+# measured from the latest alice-zip and alice-zip-cli (libalice/) releases on crates.io
+# (scripts/semver_gate.py):
 # cargo-semver-checks runs once per consumer feature set (.github/semver-gate.toml),
 # and the job fails when a change needs a larger step than the two versions make,
 # when the tool did not run or names another step, or when a run compared 0 checks.
@@ -27,6 +28,10 @@ on:
       - 'scripts/semver_gate.py'
       - 'scripts/test_semver_gate.py'
       - '.github/semver-gate.toml'
+      - '.github/semver-gate-cli.toml'
+      - 'libalice/src/**'
+      - 'libalice/Cargo.toml'
+      - 'libalice/Cargo.lock'
       - '.github/workflows/semver-checks.yml'
   pull_request:
     branches: [main]
@@ -38,6 +43,10 @@ on:
       - 'scripts/semver_gate.py'
       - 'scripts/test_semver_gate.py'
       - '.github/semver-gate.toml'
+      - '.github/semver-gate-cli.toml'
+      - 'libalice/src/**'
+      - 'libalice/Cargo.toml'
+      - 'libalice/Cargo.lock'
       - '.github/workflows/semver-checks.yml'
   schedule:
     # every Monday 11:00 UTC (two hours after security-audit.yml)
@@ -87,3 +96,8 @@ jobs:
       # another step; exit 2: crates.io or the configuration could not be read
       - name: semver gate (latest crates.io release, every consumer feature set)
         run: python3 scripts/semver_gate.py --config .github/semver-gate.toml --target-dir target/semver
+
+      # the second crate of this repository, libalice (alice-zip-cli), with its own roster
+      # sets in .github/semver-gate-cli.toml
+      - name: semver gate (alice-zip-cli, latest crates.io release, every consumer feature set)
+        run: python3 scripts/semver_gate.py --manifest libalice/Cargo.toml --config .github/semver-gate-cli.toml --target-dir target/semver-cli
