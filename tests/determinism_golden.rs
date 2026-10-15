@@ -304,3 +304,40 @@ fn polynomial_generation_is_the_recorded_bits() {
         "45d33355d39cf0632cf5a5faa5cc92dcbf8ff7d65b9192dbb5e0b7a4c8b60727",
     );
 }
+
+// ---------------------------------------------------------------------------
+// The checker's own canaries: `assert_golden` must reject a run that hashed
+// fewer bytes than its floor and a digest that differs from the recorded one.
+// The accepting case comes first, so the two rejections cannot pass by
+// panicking for another reason.
+// ---------------------------------------------------------------------------
+
+/// SHA-256 of eight zero bytes (`Bits::u64(0)` writes 0 as 8 big-endian
+/// bytes), computed outside this crate:
+/// `head -c 8 /dev/zero | shasum -a 256`
+const SHA256_OF_8_ZERO_BYTES: &str =
+    "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc";
+
+fn eight_zero_bytes() -> Bits {
+    let mut bits = Bits::default();
+    bits.u64(0);
+    bits
+}
+
+#[test]
+fn checker_accepts_the_reference_bits() {
+    assert_golden("canary", eight_zero_bytes(), 8, SHA256_OF_8_ZERO_BYTES);
+}
+
+#[test]
+#[should_panic(expected = "canary: hashed 8 bytes, expected at least 9")]
+fn checker_rejects_too_few_bytes() {
+    assert_golden("canary", eight_zero_bytes(), 9, SHA256_OF_8_ZERO_BYTES);
+}
+
+#[test]
+#[should_panic(expected = "canary: 8 bytes hashed to af5570f5a1810b7a")]
+fn checker_rejects_a_wrong_digest() {
+    let wrong = "0".repeat(64);
+    assert_golden("canary", eight_zero_bytes(), 8, &wrong);
+}

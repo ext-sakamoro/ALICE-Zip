@@ -83,6 +83,12 @@ step "ci.yml / clippy: clippy (no default features, all targets)"
 relint
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo clippy --all-targets --no-default-features -- -D warnings )
 
+step "ci.yml / clippy: Clippy canary (tests)"
+python3 scripts/test_clippy_canary.py
+
+step "ci.yml / clippy: libm ban list (tests)"
+python3 scripts/test_libm_ban_check.py
+
 step "ci.yml / no_std: Build rlib for a target without std"
 rustup target list --installed | grep -q '^thumbv7em-none-eabihf$' || rustup target add thumbv7em-none-eabihf
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo rustc --lib --no-default-features --crate-type rlib --target thumbv7em-none-eabihf )
@@ -139,6 +145,9 @@ step "ci.yml / claim-check: build した library を commit していないか"
 
 step "ci.yml / test: Versions agree"
 ( python3 scripts/test_version_check.py && python3 scripts/version_check.py && python3 scripts/test_pypi_tag_check.py )
+
+step "ci.yml / test: run_tests.sh (tests)"
+python3 scripts/test_run_tests.py
 
 step "ci.yml / test: Tracked lock files match their manifests"
 ( python3 scripts/test_lock_check.py && python3 scripts/lock_check.py )
@@ -503,6 +512,12 @@ if [[ $quick -eq 1 ]]; then
   echo; echo "preflight --quick OK (test / bench suites skipped)"; exit 0
 fi
 
+step "ci.yml / clippy: Clippy canary (every planted banned call is flagged)"
+python3 scripts/clippy_canary.py
+
+step "ci.yml / clippy: libm ban list (complete for the resolved libm, and enforced)"
+python3 scripts/libm_ban_check.py
+
 step "ci.yml / example: Run the example the README numbers come from"
 ( set -o pipefail; cargo run --release --example compression_ratio --features lzma | tee /tmp/alice-zip-example.txt && python3 scripts/example_check.py /tmp/alice-zip-example.txt )
 
@@ -510,19 +525,19 @@ step "release-profile.yml / release-goldens: Bit-exact goldens (cargo test --rel
 ( export CARGO_TERM_COLOR="always"; scripts/run_tests.sh analytic_law_id,float_edge_golden,determinism_golden -- cargo test --release --test analytic_law_id --test float_edge_golden --test determinism_golden )
 
 step "ci.yml / test: Test (default features)"
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo test )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden -- cargo test )
 
 step "ci.yml / test: Test (docs.rs feature set)"
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo test --features "$ALL_FEATURES" )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden -- cargo test --features "$ALL_FEATURES" )
 
 step "ci.yml / test: Test (no_std, lib unit tests)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo test --lib --no-default-features )
 
 step "ci.yml / test: Determinism golden (no_std build, same digests as the std build)"
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo test --test determinism_golden --no-default-features )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden -- cargo test --test determinism_golden --no-default-features )
 
 step "ci.yml / test: Container (no_std build, same bytes and identifiers)"
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo test --test container_oracle --no-default-features )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh container_oracle -- cargo test --test container_oracle --no-default-features )
 
 step "ci.yml / test: Container example (reads back, resolves references, refuses a changed byte)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo run --example container_roundtrip )

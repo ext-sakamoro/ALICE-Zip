@@ -39,10 +39,13 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # scripts/run_tests.sh fails the step when no test ran or when a named
+      # golden file ran none (a feature or target mismatch would otherwise pass
+      # as an empty run); the full suite still runs
       - name: Test (default features)
-        run: cargo test
+        run: scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden -- cargo test
       - name: Test (docs.rs feature set)
-        run: cargo test --features "$ALL_FEATURES"
+        run: scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden -- cargo test --features "$ALL_FEATURES"
       - name: Test (no_std, lib unit tests)
         run: cargo test --lib --no-default-features
       # The golden records bit patterns, so it is the one suite whose result
@@ -51,12 +54,12 @@ jobs:
       # build, where `sqrt` / `floor` / `round` come from `libm` instead of the
       # platform. Every one of these runs has to produce the same digests.
       - name: Determinism golden (no_std build, same digests as the std build)
-        run: cargo test --test determinism_golden --no-default-features
+        run: scripts/run_tests.sh determinism_golden -- cargo test --test determinism_golden --no-default-features
       # The container's bytes and identifiers are compared with fixtures
       # written by an independent reference (tests/data/container/), on each
       # OS and in the no_std build.
       - name: Container (no_std build, same bytes and identifiers)
-        run: cargo test --test container_oracle --no-default-features
+        run: scripts/run_tests.sh container_oracle -- cargo test --test container_oracle --no-default-features
       - name: Container example (reads back, resolves references, refuses a changed byte)
         run: cargo run --example container_roundtrip
       # each published version in one place (libalice from its Cargo.toml) or
@@ -93,6 +96,12 @@ jobs:
       # A suite gated on a feature compiles to an empty test binary when the
       # feature is missing, which passes with 0 tests. Each of these must
       # report at least one passed test on every OS.
+      # the zero-test guard shared with ALICE-DB / ALICE-Analytics, on each
+      # OS's own bash
+      - name: run_tests.sh (tests)
+        run: |
+          PY=$(command -v python3 || command -v python)
+          "$PY" scripts/test_run_tests.py
       - name: Feature-gated suites run on this OS
         run: |
           set -o pipefail
@@ -158,6 +167,21 @@ jobs:
       # used only under std) and targets that need std declare it
       - name: clippy (no default features, all targets)
         run: cargo clippy --all-targets --no-default-features -- -D warnings
+      # the lists in clippy.toml only gate anything if clippy flags a call to
+      # them: a throwaway crate with the same clippy.toml plants one banned call
+      # per row of scripts/clippy_canary_calls.tsv (0 rows fail)
+      - name: Clippy canary (tests)
+        run: python3 scripts/test_clippy_canary.py
+      - name: Clippy canary (every planted banned call is flagged)
+        run: python3 scripts/clippy_canary.py
+      # the direct libm dependency: its free functions are out of reach of the
+      # f32 / f64 method entries, so clippy.toml bans them by path; this fails
+      # when that list and the libm in Cargo.lock disagree, and plants banned
+      # libm calls in a throwaway crate to confirm clippy flags them
+      - name: libm ban list (tests)
+        run: python3 scripts/test_libm_ban_check.py
+      - name: libm ban list (complete for the resolved libm, and enforced)
+        run: python3 scripts/libm_ban_check.py
       # 決定論: production の code は OS の entropy も時計も使わない (clippy.toml
       # disallowed-methods が第一層、これは compile 不要の第二層) この job は
       # push: branches [main, "ci/**"] に paths filter 無しで乗るため、

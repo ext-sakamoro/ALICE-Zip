@@ -400,7 +400,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 
 | gate | 状態 | 注記 |
 |---|---|---|
-| G1 no-libm-direct | 未達 | clippy.toml bans 25 of the 26 f32/f64 methods the G1 list marks `banned` and bans `powi` (the pending default); the one missing is the combined `f32::sin_cos` … |
+| G1 no-libm-direct | 適合 | every method the G1 list marks banned is in clippy.toml, the pending powi is banned, every feature and the no_std target are linted with -D warnings, and the … |
 | G2 ieee-max-min | 未達 | the published crate computes f64 max/min on runtime values in Law-bearing paths with the std inherent `f64::max`/`f64::min`, not an IEEE … |
 | G3 no-outer-fneg-of-fma | 未達 | no library source calls `mul_add`/`fma` at all (src/generators/polynomial.rs:63 is a doc comment deliberately keeping Horner as separate multiply-and-add … |
 | G4 debug-release-arch-goldens | 未達 | the bit-pattern goldens exist — tests/determinism_golden.rs records fixed digests of generator/analysis output (with an emptiness gate: hashes >= min_bytes), … |
@@ -410,7 +410,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 | G8 persisted-semantics-id | 未達 | G8 asks for a persisted-meaning identifier distinct from G6's in-process arithmetic id. Here the 32-byte id written into the container header (to_bytes, … |
 | G9 persisted-meaning-change-is-major | 適合 | the one identifier move in this crate's history is recorded as a breaking release naming both ids: CHANGELOG.md [0.10.0] (a 0.x minor, the semver-major … |
 | G10 no-run-varying-artifacts | 未達 | the published crate's library src/ reads no wall clock, no unseeded RNG and no UUID: the only randomness is a seeded ChaCha8Rng (src/generators/perlin.rs:60, … |
-| G11 gate-self-tests | 未達 | the three self-test ideas exist, but ad hoc per-check rather than as a per-gate triad, and most gates have no machine checker here to self-test (C5). Present: … |
+| G11 gate-self-tests | 未達 | unmet: clause (c). scripts/clippy_canary.py, scripts/test_clippy_canary.py, scripts/clippy_canary_calls.tsv, scripts/run_tests.sh and scripts/test_run_tests.py … |
 | G12 public-repo-text-rules | 適合 | the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names … |
 | G13 no-unspecified-order | 未達 | the published crate's library src/ names HashMap / HashSet / BTreeMap nowhere (a full scan of src/*.rs returned zero), so no Law-bearing output iterates an … |
 | G14 float-environment-invariants | 未達 | no build configuration sets a fast-math-style flag or target-cpu=native: there is no .cargo/config* in the tree at all, and a scan of every workflow, … |
