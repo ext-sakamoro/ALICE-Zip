@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 符号付きゼロと桁落ちの bit 一致 golden `tests/float_edge_golden.rs` (20 件、`polynomial_at` / `fit_polynomial` / `multi_sine_at` / `fourier_at` / `quantize_8bit` / `quantize_16bit` / `SignalLaw::evaluate` / 残差 RMS) と、release profile で `analytic_law_id` / `float_edge_golden` / `determinism_golden` を走らせる workflow `release-profile.yml` (ubuntu / macos、`scripts/run_tests.sh` が各 suite の 1 件以上の通過を検査、preflight の full でも走る)
 
 ### Changed
+- CI: 公開する文面の検査の pin を ALICE-Law f9b9000 (checker sha256 84226ec7…) に進めた 新しい版で HEAD の全 file に指摘 0 件
 - `tests/float_edge_golden.rs`: QR の丸めを計算したまま記録していた 2 つの pin (1e8 + 8x の傾き 8 − 2 ulp、最小二乗の直線の定数 1 − 1 ulp) に、正確な解から決めた上限 (傾きは 8 から 4 ulp 以内、定数と傾きは 2 ulp 以内、残差は最大値 3 の 2 ulp 以内) を足した bit の pin は変えていない
 - CI: ci / fuzz / security-audit の concurrency を、main では commit ごとに group を分けて run を取り消さず、取り消すのは branch の古い run だけにした (以前は main への後の送信が main の run を取り消し、結果が cancelled のまま残りえた) `scripts/workflow_concurrency.py` (試験 `scripts/test_workflow_concurrency.py`、ALICE-LOL / ALICE-SDF / ALICE-DetMath と byte 一致) が branch への送信で走る全 workflow を検査し、workflow を 1 つも読めなければ失敗する CI (actionlint job) と preflight で走る
 - CI: clippy の禁止一覧に `f32::sin_cos` / `f64::sin_cos` を足した (ALICE-Law G1 の一覧と揃える)
