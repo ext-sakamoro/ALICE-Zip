@@ -213,6 +213,8 @@ disallowed-methods = [
     # thread_rng / Uuid::new_v4, which clippy has no lint for), with an
     # ALLOWED allowlist for any legitimate exception.
     { path = "std::time::Instant::now", reason = "the wall clock makes results depend on timing; pass time in or use a step count" },
+    { path = "std::time::Instant::elapsed", reason = "reads the wall clock the same as Instant::now; duration_since on an already-held value is fine, this reads the clock again" },
+    { path = "std::time::SystemTime::elapsed", reason = "reads the wall clock the same as SystemTime::now; duration_since on an already-held value is fine, this reads the clock again" },
     { path = "std::time::SystemTime::now", reason = "the wall clock makes results depend on timing; pass time in or use a step count" },
     { path = "std::collections::hash_map::RandomState::new", reason = "seeds from OS randomness; pass a seed in explicitly" },
 ]

@@ -291,6 +291,10 @@ fn cmd_compress(
         }
     };
 
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "CLI timing diagnostic only, printed not stored, not part of library output"
+    )]
     let elapsed = start.elapsed();
 
     // Build header
@@ -376,6 +380,10 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
         }
     };
 
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "CLI timing diagnostic only, printed not stored, not part of library output"
+    )]
     let elapsed = start.elapsed();
 
     // Write output
@@ -466,6 +474,10 @@ fn cmd_benchmark(
         )]
         let start = Instant::now();
         let compressed = zlib_compress(&data, level)?;
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "CLI timing diagnostic only, printed not stored, not part of library output"
+        )]
         zlib_times.push(start.elapsed());
         zlib_size = compressed.len();
     }
@@ -501,6 +513,10 @@ fn cmd_benchmark(
             let start = Instant::now();
             let (quantized, _, _) = quantize_8bit(&floats);
             let compressed = zlib_compress(&quantized, level)?;
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "CLI timing diagnostic only, printed not stored, not part of library output"
+            )]
             quant_times.push(start.elapsed());
             quant_size = 16 + compressed.len(); // header + compressed
         }
