@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - `README_ja.md`: 英語版との差を直した 「仕組み」の式が減算 (`+`) とパラメータ「〜100バイト」のままだったのを英語版の xor と記述に合わせた code block は英語版と同じ内容にした `zlib alone` 列の名前・dtype の数・2 つの形のうちどちらが正確かの記述を英語版に揃え、冒頭の claim-test marker の段落の区切りを英語版と同じにした
 - 符号の異なるゼロが混ざる入力で、`SignalLaw::fit_polynomial` の定義域の端 (lo / hi) と `quantize_8bit` / `quantize_16bit` の `min` が arm64 と x86_64 で違っていた 等しいゼロ同士の `f64::min` / `f32::min` (と max) は結果が規定されておらず、arm64 は -0 < +0 として扱い x86_64 は第 2 引数を返す 4 箇所を alice-det-math 0.5.1 の符号を決めた `min` / `max` / `min64` / `max64` に替え、`tests/minmax_sign_golden.rs` で両方の並びを固定した 68 の法則と 21 の量子化の入力で測ると、修正後は arm64 と x86_64 (debug / release) の出力が一致し、変わるのは x86_64 の混在ゼロの入力 (法則 10 件の定義域の端と law_id、係数が 0 の時の evaluate(-0.0)、量子化 3 件の min) だけで、他の入力の bit は変わらない これらの law_id は元から arch ごとに違い 1 つの値として再現できなかったので、旧い識別子を受理する表は追加しない
+- 試験 (`tests/minmax_sign_golden.rs`): 入力を `std::hint::black_box` に通すようにした 入力が literal なので release build で最小値・最大値の比較が定数畳み込みされると、x86_64 の `minsd`/`maxsd` (ゼロ同士では第 2 引数を返す) を実行しないまま試験が通りうる 定義域の lo / hi と量子化の min の 3 箇所は、変更の前後とも `f64::min`/`max`/`f32::min` に戻すと x86_64 の debug と release の両方で red (aarch64 は green) 量子化の max は `max - min` の scale にしか入らず、混在ゼロでは符号が出力に届かないので戻しても全構成で green 期待値は変えていない
 
 ### Changed
 - CI: `scripts/clippy_canary.py` の説明を直した canary は repository の clippy job の flag に依らず決まった flag (`-W clippy::pedantic -D warnings`) で試す (以前は「CI の clippy job と同じ flag」と書いていたが、job によって flag は違う) 動作は変わらない (ALICE-Analytics / ALICE-DB / ALICE-Zip / ALICE-Edge と byte 一致)
