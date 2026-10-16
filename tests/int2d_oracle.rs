@@ -7,8 +7,8 @@
 #![cfg(feature = "std")]
 
 use alice_zip::int2d::{
-    decode, encode, residuals, Domain, Int2dError, IntLaw2, Mode, PlanePerTile, Zero,
-    MAX_DENOMINATOR_BITS as MAX_K, MAX_TILE,
+    decode, encode, encode_with, residuals, Codec, Domain, Int2dError, IntLaw2, Mode, PlanePerTile,
+    Zero, MAX_DENOMINATOR_BITS as MAX_K,
 };
 
 /// A deterministic sequence (64-bit LCG, Knuth's constants) for the test inputs
@@ -150,7 +150,7 @@ fn a_plane_is_predicted_exactly() {
     for (domain, tile) in [
         (full_lattice(64, 48), 16),
         (masked_lattice(33, 65), 16),
-        (points(), MAX_TILE),
+        (points(), 1024),
     ] {
         let values = values_for(&domain, |_, i, j| 3 * i - 5 * j + 7);
         let law = PlanePerTile::fit(&domain, &values, tile, 0).expect("fit");
@@ -232,6 +232,10 @@ fn invalid_input_is_refused() {
         PlanePerTile::fit(&domain, &[0; 16], 0, 4),
         Err(Int2dError::InvalidParameter(_))
     ));
+    assert!(
+        PlanePerTile::fit(&domain, &[0; 16], u32::MAX, 4).is_ok(),
+        "a large tile is allowed"
+    );
     assert!(matches!(
         PlanePerTile::fit(&domain, &[0; 16], 8, 63),
         Err(Int2dError::InvalidParameter(_))
@@ -472,5 +476,318 @@ fn a_rewritten_payload_with_a_matching_trailer_is_refused() {
     assert!(matches!(
         decode(&forged, &domain, &Zero),
         Err(Int2dError::HashMismatch)
+    ));
+}
+
+/// The fields of an archive, split at the documented offsets, and an archive rebuilt from
+/// them with a recomputed trailing SHA-256 (so a forged archive is internally consistent and
+/// only the check under test can refuse it)
+struct Fields {
+    header: Vec<u8>,
+    payload: Vec<u8>,
+}
+
+const HEADER: usize = 4 + 2 + 32 + 32 + 1 + 8 + 8 + 8 + 32 + 32 + 1 + 8;
+const MODE_AT: usize = 70;
+const MAX_ERR_AT: usize = 87;
+const ORIGINAL_AT: usize = 95;
+const CODEC_AT: usize = 159;
+
+fn split(bytes: &[u8]) -> Fields {
+    let body = &bytes[..bytes.len() - 32];
+    Fields {
+        header: body[..HEADER].to_vec(),
+        payload: body[HEADER..].to_vec(),
+    }
+}
+
+fn rebuild(f: &Fields) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    let mut b = f.header.clone();
+    b[HEADER - 8..].copy_from_slice(&u64::try_from(f.payload.len()).unwrap().to_be_bytes());
+    b.extend_from_slice(&f.payload);
+    let t: [u8; 32] = Sha256::digest(&b).into();
+    b.extend_from_slice(&t);
+    b
+}
+
+#[test]
+fn the_forging_helper_reproduces_a_real_archive() {
+    let domain = full_lattice(5, 5);
+    let values = values_for(&domain, |k, _, _| i64::try_from(k).unwrap());
+    let enc = encode(&domain, &values, &Zero, Mode::Bounded { q: 4 }).unwrap();
+    assert_eq!(rebuild(&split(&enc.bytes)), enc.bytes);
+    assert_eq!(enc.bytes[MODE_AT], 1, "bounded mode byte");
+}
+
+/// A forged error bound above q / 2 (with a matching trailer), and a lossless archive that
+/// states a non-zero error, are refused by the header check
+#[test]
+fn a_forged_error_bound_is_refused() {
+    let domain = full_lattice(6, 6);
+    let values = values_for(&domain, |k, _, _| i64::try_from(k).unwrap() * 7);
+    let enc = encode(&domain, &values, &Zero, Mode::Bounded { q: 10 }).unwrap();
+    let mut f = split(&enc.bytes);
+    f.header[MAX_ERR_AT..MAX_ERR_AT + 8].copy_from_slice(&6_u64.to_be_bytes()); // q / 2 + 1
+    assert!(matches!(
+        decode(&rebuild(&f), &domain, &Zero),
+        Err(Int2dError::BadHeader("error bound"))
+    ));
+    f.header[MAX_ERR_AT..MAX_ERR_AT + 8].copy_from_slice(&5_u64.to_be_bytes()); // q / 2: allowed
+    assert!(decode(&rebuild(&f), &domain, &Zero).is_ok());
+    let enc = encode(&domain, &values, &Zero, Mode::Lossless).unwrap();
+    let mut f = split(&enc.bytes);
+    f.header[MAX_ERR_AT..MAX_ERR_AT + 8].copy_from_slice(&1_u64.to_be_bytes());
+    assert!(matches!(
+        decode(&rebuild(&f), &domain, &Zero),
+        Err(Int2dError::BadHeader("error bound"))
+    ));
+}
+
+/// A lossless archive whose two digests differ (with a matching trailer) is refused before
+/// anything is decoded
+#[test]
+fn a_lossless_archive_with_different_digests_is_refused() {
+    let domain = full_lattice(6, 6);
+    let values = values_for(&domain, |k, _, _| i64::try_from(k).unwrap());
+    let enc = encode(&domain, &values, &Zero, Mode::Lossless).unwrap();
+    let mut f = split(&enc.bytes);
+    f.header[ORIGINAL_AT] ^= 1;
+    assert!(matches!(
+        decode(&rebuild(&f), &domain, &Zero),
+        Err(Int2dError::BadHeader("lossless digests differ"))
+    ));
+}
+
+/// More varints than cells (with a matching trailer) are refused, in both codecs
+#[test]
+fn extra_residuals_are_refused() {
+    let domain = full_lattice(4, 4);
+    let values = vec![0_i64; 16];
+    for codec in [Codec::Raw, Codec::Deflate] {
+        let enc = encode_with(&domain, &values, &Zero, Mode::Lossless, codec).unwrap();
+        let mut f = split(&enc.bytes);
+        let mut raw = if codec == Codec::Raw {
+            f.payload.clone()
+        } else {
+            inflate(&f.payload)
+        };
+        assert_eq!(raw.len(), 16);
+        raw.push(0);
+        f.payload = if codec == Codec::Raw {
+            raw
+        } else {
+            deflate(&raw)
+        };
+        assert!(matches!(
+            decode(&rebuild(&f), &domain, &Zero),
+            Err(Int2dError::BadPayload("more residuals than cells"))
+        ));
+    }
+}
+
+/// A payload that expands past what the cell count allows (10 bytes per varint) is refused
+/// with its own error, for a 1-cell archive whose payload inflates to 1 MiB
+#[test]
+fn a_payload_expanding_past_the_count_is_refused() {
+    let domain = full_lattice(1, 1);
+    let enc = encode(&domain, &[0], &Zero, Mode::Lossless).unwrap();
+    let mut f = split(&enc.bytes);
+    f.payload = deflate(&vec![0_u8; 1 << 20]);
+    assert!(matches!(
+        decode(&rebuild(&f), &domain, &Zero),
+        Err(Int2dError::BadPayload("payload expands past the count"))
+    ));
+    // the same in the raw codec: 11 bytes for 1 cell
+    let enc = encode_with(&domain, &[0], &Zero, Mode::Lossless, Codec::Raw).unwrap();
+    let mut f = split(&enc.bytes);
+    f.payload = vec![0_u8; 11];
+    assert!(matches!(
+        decode(&rebuild(&f), &domain, &Zero),
+        Err(Int2dError::BadPayload("payload expands past the count"))
+    ));
+}
+
+fn inflate(b: &[u8]) -> Vec<u8> {
+    use std::io::Read;
+    let mut out = Vec::new();
+    flate2::read::ZlibDecoder::new(b)
+        .read_to_end(&mut out)
+        .unwrap();
+    out
+}
+
+fn deflate(b: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(6));
+    z.write_all(b).unwrap();
+    z.finish().unwrap()
+}
+
+/// zigzag + LEB128, written here from the definitions (independent of the module)
+fn varints(values: &[i64]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for &v in values {
+        let mut u = if v >= 0 {
+            (v as u64) << 1
+        } else {
+            ((!(v as u64)) << 1) | 1
+        };
+        loop {
+            let byte = (u & 0x7f) as u8;
+            u >>= 7;
+            if u == 0 {
+                out.push(byte);
+                break;
+            }
+            out.push(byte | 0x80);
+        }
+    }
+    out
+}
+
+/// `Codec::Raw` stores the zigzag + LEB128 residuals as they are; with the zero law the
+/// payload is the values' varints exactly, and the archive decodes like the deflated one
+#[test]
+fn the_raw_codec_stores_the_varints_as_they_are() {
+    let domain = masked_lattice(30, 20);
+    let mut rng = Lcg(77);
+    let values = values_for(&domain, |_, _, _| rng.signed(1 << 40));
+    let enc = encode_with(&domain, &values, &Zero, Mode::Lossless, Codec::Raw).unwrap();
+    assert_eq!(enc.bytes[CODEC_AT], 1, "raw codec byte");
+    let f = split(&enc.bytes);
+    assert_eq!(f.payload, varints(&values));
+    assert_eq!(decode(&enc.bytes, &domain, &Zero).unwrap(), values);
+    let deflated = encode(&domain, &values, &Zero, Mode::Lossless).unwrap();
+    assert_eq!(deflated.bytes[CODEC_AT], 0, "deflate is the default");
+    assert_eq!(inflate(&split(&deflated.bytes).payload), f.payload);
+    // bounded with the raw codec keeps its bound
+    let law = PlanePerTile::fit(&domain, &values, 16, 8).unwrap();
+    let enc = encode_with(&domain, &values, &law, Mode::Bounded { q: 9 }, Codec::Raw).unwrap();
+    let back = decode(&enc.bytes, &domain, &law).unwrap();
+    assert!(values.iter().zip(&back).all(|(v, b)| (v - b).abs() <= 4));
+    assert!(!back.is_empty());
+}
+
+/// A fitted law stored with `to_bytes` and read back with `from_bytes` (a fresh object, as a
+/// decoder in another process would build) has the same identifier and decodes the archive;
+/// `from_parts` gives the same law; every single bit flipped in the stored law is refused
+#[test]
+fn a_stored_law_decodes_the_archive() {
+    let domain = masked_lattice(40, 28);
+    let mut rng = Lcg(31);
+    let values = values_for(&domain, |_, i, j| 9 * i - 4 * j + rng.signed(50));
+    let law = PlanePerTile::fit(&domain, &values, 8, 6).unwrap();
+    let enc = encode(&domain, &values, &law, Mode::Lossless).unwrap();
+    let stored = law.to_bytes();
+    let back = PlanePerTile::from_bytes(&stored).unwrap();
+    assert_eq!(back, law);
+    assert_eq!(back.law_id(), law.law_id());
+    assert_eq!(decode(&enc.bytes, &domain, &back).unwrap(), values);
+    let parts = PlanePerTile::from_parts(
+        law.origin(),
+        law.tile(),
+        law.denominator_bits(),
+        law.coefficients().clone(),
+    )
+    .unwrap();
+    assert_eq!(parts.law_id(), law.law_id());
+    let mut flipped = 0;
+    for byte in 0..stored.len() {
+        for bit in 0..8 {
+            let mut b = stored.clone();
+            b[byte] ^= 1 << bit;
+            assert!(
+                PlanePerTile::from_bytes(&b).is_err(),
+                "flip at {byte}:{bit} was accepted"
+            );
+            flipped += 1;
+        }
+    }
+    assert!(flipped > 0);
+    assert!(PlanePerTile::from_bytes(&stored[..stored.len() - 1]).is_err());
+    assert!(matches!(
+        PlanePerTile::from_parts((0, 0), 0, 4, law.coefficients().clone()),
+        Err(Int2dError::InvalidParameter(_))
+    ));
+    assert!(matches!(
+        PlanePerTile::from_parts((0, 0), 8, 33, law.coefficients().clone()),
+        Err(Int2dError::InvalidParameter(_))
+    ));
+    assert!(matches!(
+        PlanePerTile::from_parts((0, 0), 8, 4, Default::default()),
+        Err(Int2dError::InvalidParameter(_))
+    ));
+}
+
+/// Tiles in the caller's units, far beyond the old 1024 limit: points at coordinates around
+/// 10^9 (a 1e-7 degree grid), tiles of 10^4 and 10^5 units, values around 10^9 that lie on
+/// a plane. The fit is exact, the archive round trips, and an input past the documented
+/// bound is an overflow error, not a wrong plane.
+#[test]
+fn large_tiles_and_large_coordinates() {
+    // a 41 x 41 grid of points 10^4 apart, at coordinates around 1.35e9 / 3.5e8: a tile of
+    // 10^5 holds 10 x 10 points, and the last tiles hold one row or one column (fitted by a
+    // line, which is exact for points on a plane)
+    let mut pts = Vec::new();
+    for a in 0..41_i64 {
+        for b in 0..41_i64 {
+            pts.push((1_349_800_000 + a * 10_000, 349_800_000 + b * 10_000));
+        }
+    }
+    let domain = Domain::points(pts).unwrap();
+    let values = values_for(&domain, |_, i, j| 3 * i - 5 * j + 7);
+    let mut compared = 0;
+    // 10^4: one point per tile (the mean, exact); 3 * 10^4: tiles of 3 x 3 points; 10^5:
+    // tiles of 10 x 10 points, within the documented bound (12 n^3 T^4 D 2^k with n = 100,
+    // T = 10^5, D < 10^6, k = 8: below 2^118)
+    for tile in [10_000_u32, 30_000, 100_000] {
+        let law = PlanePerTile::fit(&domain, &values, tile, 8).expect("fit");
+        let r = residuals(&domain, &values, &law).unwrap();
+        assert!(
+            r.iter().all(|&x| x == 0),
+            "tile {tile}: a plane left a residual"
+        );
+        let enc = encode(&domain, &values, &law, Mode::Lossless).unwrap();
+        assert_eq!(decode(&enc.bytes, &domain, &law).unwrap(), values);
+        compared += r.len();
+    }
+    assert!(compared > 0);
+    // far past the bound (12 n^3 T^4 D 2^k with T = 2^32 - 1, D about 2^62, k = 32)
+    let wild = values_for(&domain, |k, _, _| {
+        if k % 2 == 0 {
+            i64::MAX / 2
+        } else {
+            i64::MIN / 2
+        }
+    });
+    assert!(matches!(
+        PlanePerTile::fit(&domain, &wild, u32::MAX, 32),
+        Err(Int2dError::Overflow)
+    ));
+}
+
+/// A stored law with two tiles swapped (out of index order) and its SHA-256 recomputed is
+/// refused: the order is part of the format, so one law has one byte string
+#[test]
+fn a_stored_law_out_of_tile_order_is_refused() {
+    use sha2::{Digest, Sha256};
+    let domain = full_lattice(32, 8);
+    let values = values_for(&domain, |k, i, j| 2 * i + j + i64::try_from(k % 5).unwrap());
+    let law = PlanePerTile::fit(&domain, &values, 8, 4).unwrap();
+    assert!(law.coefficients().len() >= 2);
+    let stored = law.to_bytes();
+    const FIXED: usize = 4 + 2 + 8 + 8 + 4 + 1 + 8;
+    let mut body = stored[..stored.len() - 32].to_vec();
+    let (first, second) = (FIXED, FIXED + 40);
+    let tile0 = body[first..first + 40].to_vec();
+    let tile1 = body[second..second + 40].to_vec();
+    body[first..first + 40].copy_from_slice(&tile1);
+    body[second..second + 40].copy_from_slice(&tile0);
+    let check: [u8; 32] = Sha256::digest(&body).into();
+    body.extend_from_slice(&check);
+    assert!(matches!(
+        PlanePerTile::from_bytes(&body),
+        Err(Int2dError::BadHeader("law tiles out of order"))
     ));
 }

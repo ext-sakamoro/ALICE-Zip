@@ -306,12 +306,15 @@ assert_eq!(read_any(&bytes)?, c);
 
 - **法則**: `IntLaw2::predict(i, j)` は正確な `i64` を返す `Zero` は 0 を予測し、
   `PlanePerTile::fit` は tile ごとに最小二乗の平面を `i128` で解き、係数は `2^-k`
-  の倍数 呼び出し側は自分の曲面を実装できる
+  の倍数、tile の辺は座標の単位 呼び出し側は自分の曲面を実装できる fit した法則は
+  archive とは別に `PlanePerTile::to_bytes` / `from_bytes` で保存する (`from_parts`
+  でも組み直せる) archive は法則を識別子でしか名指さないため
 - **mode**: `Mode::Lossless` はすべての値を保ち、`Mode::Bounded { q }` は残差を
   `q` の倍数に丸め (半分は上へ)、最大の誤差 (高々 `q / 2`) を返す
 - **archive** (`std` feature): `encode` / `decode` は法則の識別子、domain の
   digest、mode、件数、元の値と復元した値の SHA-256、archive 全体の SHA-256 を
-  書いて確かめる
+  書いて確かめる 残差は既定で deflate し、`encode_with(.., Codec::Raw)` は別の
+  backend のために varint を圧縮せずに置く
 - **識別子**: `IntLaw2::law_id` は `law::SignalLaw::law_id` と同じ SHA-256 の
   符号化で、semantics id を含まない (浮動小数点を使わないため)
 

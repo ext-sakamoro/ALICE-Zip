@@ -17,6 +17,11 @@
 //! - [`encode`] / [`decode`] (`std` feature): the archive, with the law identifier, the
 //!   domain digest, the mode and the SHA-256 of the values in its header.
 //!
+//! A fitted [`PlanePerTile`] is stored apart from the archives it encodes
+//! ([`PlanePerTile::to_bytes`] / [`PlanePerTile::from_bytes`]): the archive names its law
+//! only by [`IntLaw2::law_id`], so the same law is not repeated in every archive, and a
+//! caller's own law (which this module cannot serialize) works the same way.
+//!
 //! The README's example (the same code, run as a doctest):
 //!
 //! ```
@@ -52,11 +57,6 @@ pub const ZERO_LAW_KIND: &[u8] = b"int-law-2d/zero/v1";
 pub const PLANE_PER_TILE_KIND: &[u8] = b"int-law-2d/plane-per-tile/v1";
 /// Domain separation of [`Domain::digest`]
 pub const DOMAIN_DIGEST_DOMAIN: &[u8] = b"alice-zip/int2d/domain/v1";
-/// Largest tile edge [`PlanePerTile::fit`] accepts. The normal equations of a tile are
-/// accumulated in `i128`; with values up to about 2^40 and tile-local coordinates below
-/// this limit the sums and the 3x3 determinants stay far from `i128::MAX` (the fit still
-/// checks every operation and returns [`Int2dError::Overflow`] instead of wrapping).
-pub const MAX_TILE: u32 = 1024;
 /// Largest denominator exponent of [`PlanePerTile`] (coefficients are multiples of 2^-k)
 pub const MAX_DENOMINATOR_BITS: u8 = 32;
 
@@ -378,20 +378,22 @@ impl PlanePerTile {
     /// tile whose points do not determine a plane (fewer than 3, or all on a line) gets the
     /// least-squares line in `y`, else in `x`, else the mean.
     ///
+    /// `tile` is in the units of the coordinates and has no fixed upper limit. Each tile is
+    /// fitted to its values minus the tile's first value `v0` (added back to `c`, which gives
+    /// the same coefficients), so the sizes involved are the number of cells `n` of a tile,
+    /// the tile edge `T` and the spread `D = max |v - v0|` within the tile. The fit succeeds
+    /// when `12 n^3 T^4 max(D, 1) 2^k < 2^127` (the largest term of the determinants and the
+    /// scaling); beyond that, or for coefficients that do not fit in `i64`, it returns
+    /// [`Int2dError::Overflow`] rather than a wrong plane. For example `n = 10^3` cells,
+    /// `T = 10^5` and `D = 10^4` with `k = 8` give about `2^121`, below the bound;
+    /// `n = 10^4` with the same `T`, `D` and `k` does not.
+    ///
     /// # Errors
     ///
-    /// [`Int2dError::InvalidParameter`] for `tile` outside `1..=MAX_TILE` or
-    /// `k > MAX_DENOMINATOR_BITS`, [`Int2dError::LengthMismatch`], [`Int2dError::Overflow`]
+    /// [`Int2dError::InvalidParameter`] for `tile = 0` or `k > MAX_DENOMINATOR_BITS`, [`Int2dError::LengthMismatch`], [`Int2dError::Overflow`]
     /// when a sum or determinant does not fit in `i128` or a coefficient in `i64`
     pub fn fit(domain: &Domain, values: &[i64], tile: u32, k: u8) -> Result<Self, Int2dError> {
-        if tile == 0 || tile > MAX_TILE {
-            return Err(Int2dError::InvalidParameter("tile must be in 1..=MAX_TILE"));
-        }
-        if k > MAX_DENOMINATOR_BITS {
-            return Err(Int2dError::InvalidParameter(
-                "k must be at most MAX_DENOMINATOR_BITS",
-            ));
-        }
+        check_tile_and_k(tile, k)?;
         let n = domain.len();
         if n != values.len() {
             return Err(Int2dError::LengthMismatch {
@@ -403,22 +405,35 @@ impl PlanePerTile {
             Domain::Lattice { i0, j0, .. } => (*i0, *j0),
             Domain::Points(p) => p[0],
         };
-        // per tile: n, Sx, Sy, Sxx, Sxy, Syy, Sv, Sxv, Syv
-        let mut sums: BTreeMap<(i64, i64), [i128; 9]> = BTreeMap::new();
+        // per tile: the tile's first value v0, and n, Sx, Sy, Sxx, Sxy, Syy, Sv, Sxv, Syv of
+        // the shifted values v - v0 (the fit of v - v0 plus v0 is the fit of v)
+        let mut sums: BTreeMap<(i64, i64), (i128, [i128; 9])> = BTreeMap::new();
         let t = i64::from(tile);
         for ((i, j), &v) in domain.cells().zip(values) {
             let (key, x, y) = tile_of(i0, j0, t, i, j)?;
-            let s = sums.entry(key).or_insert([0; 9]);
-            let (x, y, v) = (i128::from(x), i128::from(y), i128::from(v));
-            let terms = [1, x, y, x * x, x * y, y * y, v, x * v, y * v];
+            let (v0, s) = sums.entry(key).or_insert((i128::from(v), [0; 9]));
+            let (x, y, v) = (i128::from(x), i128::from(y), sub(i128::from(v), *v0)?);
+            let terms = [
+                1,
+                x,
+                y,
+                mul(x, x)?,
+                mul(x, y)?,
+                mul(y, y)?,
+                v,
+                mul(x, v)?,
+                mul(y, v)?,
+            ];
             for (acc, term) in s.iter_mut().zip(terms) {
                 *acc = acc.checked_add(term).ok_or(Int2dError::Overflow)?;
             }
         }
         let scale = 1_i128 << k;
         let mut coeffs = BTreeMap::new();
-        for (key, s) in sums {
-            coeffs.insert(key, solve_plane(&s, scale)?);
+        for (key, (v0, s)) in sums {
+            let (a, b, c) = solve_plane(&s, scale)?;
+            let c = to_i64(add(i128::from(c), mul(v0, scale)?)?)?;
+            coeffs.insert(key, (a, b, c));
         }
         Ok(Self {
             i0,
@@ -446,7 +461,130 @@ impl PlanePerTile {
     pub fn coefficients(&self) -> &BTreeMap<(i64, i64), (i64, i64, i64)> {
         &self.coeffs
     }
+
+    /// The tiles' origin `(i0, j0)` (the cell at tile-local `(0, 0)` of tile `(0, 0)`)
+    #[must_use]
+    pub fn origin(&self) -> (i64, i64) {
+        (self.i0, self.j0)
+    }
+
+    /// A law from stored parts (what [`Self::origin`], [`Self::tile`],
+    /// [`Self::denominator_bits`] and [`Self::coefficients`] return), with the same checks as
+    /// [`Self::fit`]; the result has the same [`IntLaw2::law_id`] as the law the parts came from
+    ///
+    /// # Errors
+    ///
+    /// [`Int2dError::InvalidParameter`] for `tile = 0`, `k > MAX_DENOMINATOR_BITS` or no tile
+    pub fn from_parts(
+        origin: (i64, i64),
+        tile: u32,
+        k: u8,
+        coeffs: BTreeMap<(i64, i64), (i64, i64, i64)>,
+    ) -> Result<Self, Int2dError> {
+        check_tile_and_k(tile, k)?;
+        if coeffs.is_empty() {
+            return Err(Int2dError::InvalidParameter("a law has at least one tile"));
+        }
+        Ok(Self {
+            i0: origin.0,
+            j0: origin.1,
+            tile,
+            k,
+            coeffs,
+        })
+    }
+
+    /// The law as bytes: magic `I2PT`, version, origin, tile, `k`, the number of tiles, each
+    /// tile's index and coefficients (big-endian, in index order), and the SHA-256 of all of it
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(4 + 2 + 8 + 8 + 4 + 1 + 8 + self.coeffs.len() * 40 + 32);
+        b.extend_from_slice(&PLANE_PER_TILE_MAGIC);
+        b.extend_from_slice(&PLANE_PER_TILE_VERSION.to_be_bytes());
+        b.extend_from_slice(&self.i0.to_be_bytes());
+        b.extend_from_slice(&self.j0.to_be_bytes());
+        b.extend_from_slice(&self.tile.to_be_bytes());
+        b.push(self.k);
+        b.extend_from_slice(&len_u64(self.coeffs.len()).to_be_bytes());
+        for (&(ti, tj), &(a, bb, c)) in &self.coeffs {
+            for x in [ti, tj, a, bb, c] {
+                b.extend_from_slice(&x.to_be_bytes());
+            }
+        }
+        let check: [u8; 32] = Sha256::digest(&b).into();
+        b.extend_from_slice(&check);
+        b
+    }
+
+    /// The law [`Self::to_bytes`] wrote
+    ///
+    /// # Errors
+    ///
+    /// [`Int2dError::BadHeader`] for another magic or version, a wrong length, tiles out of
+    /// index order or a SHA-256 that does not match, and the checks of [`Self::from_parts`]
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Int2dError> {
+        const FIXED: usize = 4 + 2 + 8 + 8 + 4 + 1 + 8;
+        let body_len = bytes
+            .len()
+            .checked_sub(32)
+            .filter(|&n| n >= FIXED)
+            .ok_or(Int2dError::BadHeader("truncated law"))?;
+        let (body, check) = bytes.split_at(body_len);
+        if body[..4] != PLANE_PER_TILE_MAGIC {
+            return Err(Int2dError::BadHeader("law magic"));
+        }
+        if u16::from_be_bytes([body[4], body[5]]) != PLANE_PER_TILE_VERSION {
+            return Err(Int2dError::BadHeader("law version"));
+        }
+        if Sha256::digest(body).as_slice() != check {
+            return Err(Int2dError::HashMismatch);
+        }
+        let i64_at = |at: usize| {
+            let mut a = [0_u8; 8];
+            a.copy_from_slice(&body[at..at + 8]);
+            i64::from_be_bytes(a)
+        };
+        let (i0, j0) = (i64_at(6), i64_at(14));
+        let tile = u32::from_be_bytes([body[22], body[23], body[24], body[25]]);
+        let k = body[26];
+        let mut nb = [0_u8; 8];
+        nb.copy_from_slice(&body[27..35]);
+        let n = usize::try_from(u64::from_be_bytes(nb))
+            .map_err(|_| Int2dError::BadHeader("law length"))?;
+        if n.checked_mul(40).and_then(|x| x.checked_add(FIXED)) != Some(body.len()) {
+            return Err(Int2dError::BadHeader("law length"));
+        }
+        let mut coeffs = BTreeMap::new();
+        let mut last: Option<(i64, i64)> = None;
+        for t in 0..n {
+            let at = FIXED + t * 40;
+            let key = (i64_at(at), i64_at(at + 8));
+            if last.is_some_and(|l| l >= key) {
+                return Err(Int2dError::BadHeader("law tiles out of order"));
+            }
+            last = Some(key);
+            coeffs.insert(key, (i64_at(at + 16), i64_at(at + 24), i64_at(at + 32)));
+        }
+        Self::from_parts((i0, j0), tile, k, coeffs)
+    }
 }
+
+fn check_tile_and_k(tile: u32, k: u8) -> Result<(), Int2dError> {
+    if tile == 0 {
+        return Err(Int2dError::InvalidParameter("tile must be at least 1"));
+    }
+    if k > MAX_DENOMINATOR_BITS {
+        return Err(Int2dError::InvalidParameter(
+            "k must be at most MAX_DENOMINATOR_BITS",
+        ));
+    }
+    Ok(())
+}
+
+/// Magic of a serialized [`PlanePerTile`] ([`PlanePerTile::to_bytes`])
+pub const PLANE_PER_TILE_MAGIC: [u8; 4] = *b"I2PT";
+/// Version of the [`PlanePerTile`] serialization
+pub const PLANE_PER_TILE_VERSION: u16 = 1;
 
 /// tile index and tile-local coordinates of cell `(i, j)`
 fn tile_of(i0: i64, j0: i64, t: i64, i: i64, j: i64) -> Result<((i64, i64), i64, i64), Int2dError> {
@@ -691,6 +829,20 @@ const MODE_BOUNDED: u8 = 1;
 #[cfg(feature = "std")]
 const CODEC_DEFLATE: u8 = 0;
 #[cfg(feature = "std")]
+const CODEC_RAW: u8 = 1;
+
+/// How the residual stream is stored in the archive
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Codec {
+    /// zlib, level 6 (the default)
+    #[default]
+    Deflate,
+    /// The zigzag + LEB128 varints as they are, for a caller that compresses the archive (or
+    /// compares backends) itself
+    Raw,
+}
+#[cfg(feature = "std")]
 /// magic, version, law_id, domain digest, mode, q, count, max error, 2 digests, codec, length
 const HEADER_LEN: usize = 4 + 2 + 32 + 32 + 1 + 8 + 8 + 8 + 32 + 32 + 1 + 8;
 #[cfg(feature = "std")]
@@ -728,6 +880,23 @@ pub fn encode(
     law: &dyn IntLaw2,
     mode: Mode,
 ) -> Result<Encoded, Int2dError> {
+    encode_with(domain, values, law, mode, Codec::Deflate)
+}
+
+/// [`encode`] with the residual stream stored as `codec` says ([`Codec::Raw`] leaves the
+/// varints uncompressed; the header, the digests and the trailer are the same)
+///
+/// # Errors
+///
+/// As [`encode`]
+#[cfg(feature = "std")]
+pub fn encode_with(
+    domain: &Domain,
+    values: &[i64],
+    law: &dyn IntLaw2,
+    mode: Mode,
+    codec: Codec,
+) -> Result<Encoded, Int2dError> {
     let r = residuals(domain, values, law)?;
     let (mode_byte, q) = match mode {
         // q = 1 keeps every value, so it is written as the lossless mode (one encoding each)
@@ -748,8 +917,14 @@ pub fn encode(
         max_err = max_err.max(u64::try_from(err).map_err(|_| Int2dError::Overflow)?);
         rebuilt.push(back);
     }
-    let payload = crate::compression::zlib_compress(&raw, 6)
-        .map_err(|e| Int2dError::Backend(e.to_string()))?;
+    let (codec_byte, payload) = match codec {
+        Codec::Deflate => (
+            CODEC_DEFLATE,
+            crate::compression::zlib_compress(&raw, 6)
+                .map_err(|e| Int2dError::Backend(e.to_string()))?,
+        ),
+        Codec::Raw => (CODEC_RAW, raw),
+    };
     let mut bytes = Vec::with_capacity(HEADER_LEN + payload.len());
     bytes.extend_from_slice(&MAGIC);
     bytes.extend_from_slice(&VERSION.to_be_bytes());
@@ -761,7 +936,7 @@ pub fn encode(
     bytes.extend_from_slice(&max_err.to_be_bytes());
     bytes.extend_from_slice(&values_digest(values));
     bytes.extend_from_slice(&values_digest(&rebuilt));
-    bytes.push(CODEC_DEFLATE);
+    bytes.push(codec_byte);
     bytes.extend_from_slice(&len_u64(payload.len()).to_be_bytes());
     bytes.extend_from_slice(&payload);
     let check: [u8; 32] = Sha256::digest(&bytes).into();
@@ -790,6 +965,19 @@ fn take_u64(b: &[u8], at: &mut usize) -> Result<u64, Int2dError> {
     Ok(u64::from_be_bytes(a))
 }
 
+/// zlib-inflate `payload`, stopping after `limit` bytes of output (so a small payload cannot
+/// expand without bound in memory)
+#[cfg(feature = "std")]
+fn inflate_bounded(payload: &[u8], limit: u64) -> Result<Vec<u8>, Int2dError> {
+    use std::io::Read;
+    let mut raw = Vec::new();
+    flate2::read::ZlibDecoder::new(payload)
+        .take(limit)
+        .read_to_end(&mut raw)
+        .map_err(|e| Int2dError::Backend(e.to_string()))?;
+    Ok(raw)
+}
+
 /// Decode an archive written by [`encode`] for `domain` with `law`
 ///
 /// Checks the magic and version, the SHA-256 at the end of the archive, that the law
@@ -805,7 +993,6 @@ fn take_u64(b: &[u8], at: &mut usize) -> Result<u64, Int2dError> {
 /// law's errors and [`Int2dError::Overflow`]
 #[cfg(feature = "std")]
 pub fn decode(bytes: &[u8], domain: &Domain, law: &dyn IntLaw2) -> Result<Vec<i64>, Int2dError> {
-    use std::io::Read;
     let mut at = 0;
     if take(bytes, &mut at, 4)? != MAGIC {
         return Err(Int2dError::BadHeader("magic"));
@@ -843,7 +1030,8 @@ pub fn decode(bytes: &[u8], domain: &Domain, law: &dyn IntLaw2) -> Result<Vec<i6
         return Err(Int2dError::BadHeader("count"));
     }
     let max_err = take_u64(bytes, &mut at)?;
-    if max_err > q / 2 || (mode == MODE_LOSSLESS && max_err != 0) {
+    // lossless is q = 1, so this also refuses a non-zero error in a lossless archive
+    if max_err > q / 2 {
         return Err(Int2dError::BadHeader("error bound"));
     }
     let original = take(bytes, &mut at, 32)?.to_vec();
@@ -851,7 +1039,8 @@ pub fn decode(bytes: &[u8], domain: &Domain, law: &dyn IntLaw2) -> Result<Vec<i6
     if mode == MODE_LOSSLESS && original != rebuilt_digest {
         return Err(Int2dError::BadHeader("lossless digests differ"));
     }
-    if take(bytes, &mut at, 1)?[0] != CODEC_DEFLATE {
+    let codec = take(bytes, &mut at, 1)?[0];
+    if codec != CODEC_DEFLATE && codec != CODEC_RAW {
         return Err(Int2dError::BadHeader("codec"));
     }
     let plen =
@@ -860,13 +1049,16 @@ pub fn decode(bytes: &[u8], domain: &Domain, law: &dyn IntLaw2) -> Result<Vec<i6
     if at != bytes.len() {
         return Err(Int2dError::BadHeader("trailing bytes"));
     }
-    // a varint is at most 10 bytes: read no more than that per value (+1 to see an excess)
+    // a varint is at most 10 bytes: inflate no more than that per value, +1 to see an excess
     let limit = len_u64(n).saturating_mul(10).saturating_add(1);
-    let mut raw = Vec::new();
-    flate2::read::ZlibDecoder::new(payload)
-        .take(limit)
-        .read_to_end(&mut raw)
-        .map_err(|e| Int2dError::Backend(e.to_string()))?;
+    let raw = if codec == CODEC_RAW {
+        payload.to_vec()
+    } else {
+        inflate_bounded(payload, limit)?
+    };
+    if len_u64(raw.len()) >= limit {
+        return Err(Int2dError::BadPayload("payload expands past the count"));
+    }
     let qi = i128::from(q);
     let mut out = Vec::with_capacity(n);
     let mut p = 0;
@@ -882,4 +1074,21 @@ pub fn decode(bytes: &[u8], domain: &Domain, law: &dyn IntLaw2) -> Result<Vec<i6
         return Err(Int2dError::HashMismatch);
     }
     Ok(out)
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::*;
+
+    /// the inflate step stops at the cap: 1 MiB of zeros deflates to about 1 KiB, and with a
+    /// cap of 11 bytes no more than 11 come out
+    #[test]
+    fn inflate_stops_at_the_limit() {
+        let big = alloc::vec![0_u8; 1 << 20];
+        let payload = crate::compression::zlib_compress(&big, 6).unwrap();
+        assert!(payload.len() < 4096);
+        let out = inflate_bounded(&payload, 11).unwrap();
+        assert_eq!(out.len(), 11);
+        assert_eq!(inflate_bounded(&payload, 1 << 21).unwrap().len(), 1 << 20);
+    }
 }

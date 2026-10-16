@@ -375,13 +375,18 @@ same bytes on every target, and overflow is an error rather than a wrap.
 
 - **Laws**: `IntLaw2::predict(i, j)` returns an exact `i64`. `Zero` predicts 0;
   `PlanePerTile::fit` solves one least-squares plane per tile in `i128` with
-  coefficients in multiples of `2^-k`; a caller can implement its own surface.
+  coefficients in multiples of `2^-k`, the tile edge in the units of the
+  coordinates; a caller can implement its own surface. A fitted law is stored
+  apart from the archives with `PlanePerTile::to_bytes` / `from_bytes` (or
+  rebuilt with `from_parts`), since an archive names its law only by identifier.
 - **Modes**: `Mode::Lossless` keeps every value; `Mode::Bounded { q }` rounds
   the residual to multiples of `q` (half up) and returns the largest error,
   at most `q / 2`.
 - **Archive** (`std` feature): `encode` / `decode` write and check the law
   identifier, the domain digest, the mode, the count, the SHA-256 of the
   original and of the reconstructed values, and a SHA-256 of the whole archive.
+  The residuals are deflated by default; `encode_with(.., Codec::Raw)` keeps the
+  varints uncompressed for another backend.
 - **Identifiers**: `IntLaw2::law_id` uses the same SHA-256 encoding as
   `law::SignalLaw::law_id`, without a semantics id (no floating point is involved).
 
