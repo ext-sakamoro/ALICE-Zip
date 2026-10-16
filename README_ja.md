@@ -411,7 +411,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 | G8 persisted-semantics-id | 未達 | G8 asks for a persisted-meaning identifier distinct from G6's in-process arithmetic id. Here the 32-byte id written into the container header (to_bytes, … |
 | G9 persisted-meaning-change-is-major | 適合 | the one identifier move in this crate's history is recorded as a breaking release naming both ids: CHANGELOG.md [0.10.0] (a 0.x minor, the semver-major … |
 | G10 no-run-varying-artifacts | 未達 | unmet in the Python package: alice_zip/media_generators.py:492 fills AudioPattern.NOISE_WHITE with np.random.randn from NumPy's global, unseeded generator, and … |
-| G11 gate-self-tests | 未達 | unmet: clause (c). scripts/clippy_canary.py, scripts/test_clippy_canary.py, scripts/clippy_canary_calls.tsv, scripts/run_tests.sh and scripts/test_run_tests.py … |
+| G11 gate-self-tests | 未達 | unmet: clause (c). scripts/clippy_canary.py, scripts/test_clippy_canary.py, scripts/gen_clippy_canary_calls.py, scripts/test_gen_clippy_canary_calls.py, … |
 | G12 public-repo-text-rules | 適合 | the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names … |
 | G13 no-unspecified-order | 未達 | the published crate's library src/ names HashMap / HashSet / BTreeMap nowhere (a full scan of src/*.rs returned zero), so no Law-bearing output iterates an … |
 | G14 float-environment-invariants | 未達 | no build configuration sets a fast-math-style flag or target-cpu=native: there is no .cargo/config* in the tree at all, and a scan of every workflow, … |
