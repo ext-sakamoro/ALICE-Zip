@@ -530,7 +530,7 @@ step "ci.yml / example: Run the example the README numbers come from"
 ( set -o pipefail; cargo run --release --example compression_ratio --features lzma | tee /tmp/alice-zip-example.txt && python3 scripts/example_check.py /tmp/alice-zip-example.txt )
 
 step "release-profile.yml / release-goldens: Bit-exact goldens (cargo test --release)"
-( export CARGO_TERM_COLOR="always"; scripts/run_tests.sh analytic_law_id,float_edge_golden,determinism_golden,float_environment -- cargo test --release --test analytic_law_id --test float_edge_golden --test determinism_golden --test float_environment )
+( export CARGO_TERM_COLOR="always"; scripts/run_tests.sh analytic_law_id,float_edge_golden,determinism_golden,float_environment=2 -- cargo test --release --test analytic_law_id --test float_edge_golden --test determinism_golden --test float_environment )
 
 step "release-profile.yml / release-goldens: Effective rustc flags (G14)"
 python3 scripts/build_flags_check.py -- cargo check --release --lib
@@ -538,10 +538,10 @@ python3 scripts/build_flags_check.py -- cargo check --release --lib --all-featur
 python3 scripts/build_flags_check.py -- cargo check --release --lib --no-default-features
 
 step "ci.yml / test: Test (default features)"
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment -- cargo test )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment=2 -- cargo test )
 
 step "ci.yml / test: Test (docs.rs feature set)"
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment -- cargo test --features "$ALL_FEATURES" )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment=2 -- cargo test --features "$ALL_FEATURES" )
 
 step "ci.yml / test: Test (no_std, lib unit tests)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo test --lib --no-default-features )

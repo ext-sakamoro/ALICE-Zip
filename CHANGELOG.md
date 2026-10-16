@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - CI: `semver-checks.yml` に 2 つ目の crate `alice-zip-cli` (`libalice/`) の step を足した crates.io の最新の alice-zip-cli を baseline にし、組は ALICE-Law release-train.toml の [crate.alice-zip-cli] を `.github/semver-gate-cli.toml` にそのまま写した (`cli` + `codec`、`python` は cargo check) ほかに既定・既定なしの 2 組 どの組にも入らない feature があれば失敗する 版が公開済みの 3.1.0 と同じ間は次の最小の版 3.1.1 として検査する
 - CI: `scripts/semver_gate.py` が cargo-semver-checks の出力を読む parser であることを `CARGO_OUTPUT_PARSER = True` で宣言し、`scripts/test_semver_gate.py` は module を `import semver_gate` で読むようにした (色の付いた出力を試験する検査器が parser とその試験を見つけられる形 実行時は従来どおり `CARGO_TERM_COLOR=never` と escape の除去) 共有 file の中身を揃える変更で、検査の挙動は変わらない
 - CI: clippy の禁止一覧の canary (`scripts/clippy_canary.py`) が `clippy.toml` の全 entry を植えて確かめるようにした 植える呼び出しの表 `scripts/clippy_canary_calls.tsv` は `scripts/gen_clippy_canary_calls.py` が `clippy.toml` から 1 entry 1 行で生成し (この repo は 171 件、以前は手書きの 7 件)、CI が再生成して byte で比べる canary は全 entry に行があること (植えるか、理由付きで飛ばすか) を確かめ、外部 crate の path は `Cargo.lock` の版を固定して依存に足す この repo の `libm::` の path は `Cargo.lock` が固定する libm (0.2.16) を依存に足して植える 型も禁止された inherent method (`RandomState::new`) は、その型の診断を 1 件だけ許す
+- CI: `scripts/run_tests.sh` が名前ごとの最低の件数 (`float_environment=2`) を受け付けるようにし (ALICE-DB と同じ中身)、G14 の `tests/float_environment.rs` を名指す全 step を `float_environment=2` にした 2 つの試験の片方を `#[ignore]` にする・cfg で外す・名前を変えると、その step が失敗する
 
 ## [0.10.0] - 2026-10-12
 

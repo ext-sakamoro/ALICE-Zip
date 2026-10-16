@@ -128,7 +128,7 @@ evidence = [
     "scripts/build_flags_check.py, dynamic half (byte-identical to ALICE-DB's: runs cargo check -v in a fresh target directory and reads every rustc command line; fails when no command line, or none for alice_zip, was seen)",
     "scripts/build_config_allowlist.toml (five excludes with reasons: the two G14 scripts, their tests, this manifest; no allow entry)",
     "scripts/test_build_config_guard.py and scripts/test_build_flags_check.py",
-    ".github/workflows/ci.yml test job (ubuntu, macOS, Windows): the static guard and both test files, and tests/float_environment.rs named in the default and docs.rs feature set run_tests.sh steps",
+    ".github/workflows/ci.yml test job (ubuntu, macOS, Windows): the static guard and both test files, and tests/float_environment.rs named in the default and docs.rs feature set run_tests.sh steps as `float_environment=2`, so the step fails unless both tests pass: an #[ignore], a #[cfg] that drops one, or a rename is red",
     ".github/workflows/release-profile.yml (ubuntu, macOS): tests/float_environment.rs in the release profile, and the dynamic check for the default, all-features and no-default feature sets",
     "tests/float_environment.rs round_to_nearest_even and subnormals_are_not_flushed (byte-identical to ALICE-DB's)",
 ]
