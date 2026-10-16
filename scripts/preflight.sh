@@ -158,6 +158,11 @@ step "ci.yml / test: Versions agree"
 step "ci.yml / test: run_tests.sh (tests)"
 python3 scripts/test_run_tests.py
 
+step "ci.yml / test: Build configuration guard (test, then check)"
+python3 scripts/test_build_config_guard.py
+python3 scripts/build_config_guard.py
+python3 scripts/test_build_flags_check.py
+
 step "ci.yml / test: Tracked lock files match their manifests"
 ( python3 scripts/test_lock_check.py && python3 scripts/lock_check.py )
 
@@ -525,13 +530,18 @@ step "ci.yml / example: Run the example the README numbers come from"
 ( set -o pipefail; cargo run --release --example compression_ratio --features lzma | tee /tmp/alice-zip-example.txt && python3 scripts/example_check.py /tmp/alice-zip-example.txt )
 
 step "release-profile.yml / release-goldens: Bit-exact goldens (cargo test --release)"
-( export CARGO_TERM_COLOR="always"; scripts/run_tests.sh analytic_law_id,float_edge_golden,determinism_golden -- cargo test --release --test analytic_law_id --test float_edge_golden --test determinism_golden )
+( export CARGO_TERM_COLOR="always"; scripts/run_tests.sh analytic_law_id,float_edge_golden,determinism_golden,float_environment -- cargo test --release --test analytic_law_id --test float_edge_golden --test determinism_golden --test float_environment )
+
+step "release-profile.yml / release-goldens: Effective rustc flags (G14)"
+python3 scripts/build_flags_check.py -- cargo check --release --lib
+python3 scripts/build_flags_check.py -- cargo check --release --lib --all-features
+python3 scripts/build_flags_check.py -- cargo check --release --lib --no-default-features
 
 step "ci.yml / test: Test (default features)"
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden -- cargo test )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment -- cargo test )
 
 step "ci.yml / test: Test (docs.rs feature set)"
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden -- cargo test --features "$ALL_FEATURES" )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment -- cargo test --features "$ALL_FEATURES" )
 
 step "ci.yml / test: Test (no_std, lib unit tests)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo test --lib --no-default-features )

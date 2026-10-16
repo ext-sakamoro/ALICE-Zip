@@ -122,19 +122,20 @@ note = "the published crate's library src/ names HashMap / HashSet / BTreeMap no
 reference_repo = ""
 
 [G14]
-status = "fail-known"
-evidence = ["Cargo.toml", ".github/workflows/ci.yml", "tests/analytic_law_id.rs:208"]
+status = "pass"
+evidence = [
+    "scripts/build_config_guard.py, static half (byte-identical to ALICE-DB's: every .cargo/config*, *.toml, build.rs, *.rs, *.yml / *.yaml, *.json and script kind outside target/, plus any rustc wrapper named in them, comments and YAML name values blanked, TOML / JSON decoded values too: target-cpu=native, a target-cpu / target-feature / llvm-args value that is not a plain literal, a RUSTFLAGS value from a command or a file, LLVM and C fast-math-style flags, a target-feature list disabling sse / sse2, and in src/ the fast and algebraic float intrinsics; an exclude of a file a build reads is refused; nothing read or no root Cargo.toml is exit 2)",
+    "scripts/build_flags_check.py, dynamic half (byte-identical to ALICE-DB's: runs cargo check -v in a fresh target directory and reads every rustc command line; fails when no command line, or none for alice_zip, was seen)",
+    "scripts/build_config_allowlist.toml (five excludes with reasons: the two G14 scripts, their tests, this manifest; no allow entry)",
+    "scripts/test_build_config_guard.py and scripts/test_build_flags_check.py",
+    ".github/workflows/ci.yml test job (ubuntu, macOS, Windows): the static guard and both test files, and tests/float_environment.rs named in the default and docs.rs feature set run_tests.sh steps",
+    ".github/workflows/release-profile.yml (ubuntu, macOS): tests/float_environment.rs in the release profile, and the dynamic check for the default, all-features and no-default feature sets",
+    "tests/float_environment.rs round_to_nearest_even and subnormals_are_not_flushed (byte-identical to ALICE-DB's)",
+]
+mutant = "measured 2026-10-16, each reverted: `RUSTFLAGS: \"-C target-cpu=native\"` added to release-profile.yml's env makes scripts/build_config_guard.py exit 1 with `.github/workflows/release-profile.yml:25: target-cpu-native: target-cpu=native`; RUSTFLAGS=$'-C target-cpu=nat\\x69ve' makes scripts/build_flags_check.py exit 1 with `alice_zip: target-cpu-native: target-cpu=native`; setting FPCR.RMode to round-toward-plus-infinity fails round_to_nearest_even and setting FPCR.FZ (flush-to-zero) fails subnormals_are_not_flushed (aarch64, macOS)"
 since = ""
-note = "no build configuration sets a fast-math-style flag or target-cpu=native: there is no .cargo/config* in the tree at all, and a scan of every workflow, Cargo.toml profile and build.rs found only RUSTFLAGS=\"-D warnings\" (ci.yml no_std job) and no reassociation / flush-to-zero / native-cpu flag. But the gate requires both (a) a CI scan step over those files and (b) two tests asserting round-to-nearest-even and that subnormals are not flushed to zero — neither exists here (C5). Subnormals are used as inputs in determinism tests (tests/analytic_law_id.rs:208 feeds the smallest subnormal above 0; tests/residual_container_oracle.rs exercises denormals) but none asserts the floating-point environment itself. Classified fail-known C5: the good state (no bad flags) is relied upon, not asserted, and there is no scan to keep it."
-reference_repo = ""
-
-# Per-feature classification: whether each Cargo feature of alice-zip is inside
-# or outside the Law guarantee, per docs/CONFORMANCE.md "Features and the
-# guarantee". `inside` requires all three: same arithmetic generation (same
-# SEMANTICS_ID, no float path the gates do not cover), same values (same bits,
-# or a golden for a feature-added computation), and coverage (an e2e check or a
-# named external-reference oracle). Anything else is `outside`, with the note
-# saying which condition fails.
+note = "the static scan covers the files of this repository (libalice/ included) and the dynamic check covers the alice-zip builds CI runs on ubuntu and macOS; a flag passed by a build outside this repository (a consumer's own RUSTFLAGS) is outside both, and libalice's own builds are not in the dynamic check. YAML is not parsed by the static guard (the actionlint job parses the workflows). A Rust target-feature that only adds or removes instructions other than sse / sse2 is allowed: Rust does not contract a * b + c into an fma, and mul_add is correctly rounded either way"
+reference_repo = "ALICE-DB"
 
 [features.std]
 guarantee = "inside"

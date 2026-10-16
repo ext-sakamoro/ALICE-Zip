@@ -414,7 +414,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 | G11 gate-self-tests | 未達 | unmet: clause (c). scripts/clippy_canary.py, scripts/test_clippy_canary.py, scripts/gen_clippy_canary_calls.py, scripts/test_gen_clippy_canary_calls.py, … |
 | G12 public-repo-text-rules | 適合 | the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names … |
 | G13 no-unspecified-order | 未達 | the published crate's library src/ names HashMap / HashSet / BTreeMap nowhere (a full scan of src/*.rs returned zero), so no Law-bearing output iterates an … |
-| G14 float-environment-invariants | 未達 | no build configuration sets a fast-math-style flag or target-cpu=native: there is no .cargo/config* in the tree at all, and a scan of every workflow, … |
+| G14 float-environment-invariants | 適合 | the static scan covers the files of this repository (libalice/ included) and the dynamic check covers the alice-zip builds CI runs on ubuntu and macOS; a flag … |
 
 ### feature と保証の範囲
 

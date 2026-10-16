@@ -43,9 +43,9 @@ jobs:
       # golden file ran none (a feature or target mismatch would otherwise pass
       # as an empty run); the full suite still runs
       - name: Test (default features)
-        run: scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden -- cargo test
+        run: scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment -- cargo test
       - name: Test (docs.rs feature set)
-        run: scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden -- cargo test --features "$ALL_FEATURES"
+        run: scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment -- cargo test --features "$ALL_FEATURES"
       - name: Test (no_std, lib unit tests)
         run: cargo test --lib --no-default-features
       # The golden records bit patterns, so it is the one suite whose result
@@ -102,6 +102,17 @@ jobs:
         run: |
           PY=$(command -v python3 || command -v python)
           "$PY" scripts/test_run_tests.py
+      # G14, static half: no fast-math-style flag, target-cpu=native or flag value
+      # the guard cannot resolve in any file a flag can come from (deliberate
+      # occurrences in scripts/build_config_allowlist.toml); nothing read fails.
+      # The dynamic half's parser is tested here too (the check itself runs in
+      # release-profile.yml)
+      - name: Build configuration guard (test, then check)
+        run: |
+          PY=$(command -v python3 || command -v python)
+          "$PY" scripts/test_build_config_guard.py
+          "$PY" scripts/build_config_guard.py
+          "$PY" scripts/test_build_flags_check.py
       - name: Feature-gated suites run on this OS
         run: |
           set -o pipefail
