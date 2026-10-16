@@ -111,7 +111,7 @@ status = "pass"
 evidence = [".github/workflows/public-text.yml", "scripts/public_text.sh", ".github/public-text-pin", "scripts/test_public_text.py", "scripts/preflight.sh"]
 mutant = "add one of the refused internal words to a tracked document -> the public-text step fails"
 since = ""
-note = "the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names (rev f9b90004865f6deb4b82ebcdfcf96623d27945ec) and refuses it unless its SHA-256 matches the pin (84226ec7a693c8dfdfeee619c1240a25745804728ca71cfc4543781dab54b298) — so a crate's own checker does not count, it is ALICE-Law's byte-identical file. It checks the tree at HEAD and the pushed commit range, and exits 2 (fails) when it compared nothing or cannot know what to compare; scripts/test_public_text.py runs first as the checker's own test, and the whole thing is mirrored in scripts/preflight.sh."
+note = "the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names (rev 779fa443f95bc0caca5ca2d5bdb9156051fd6143) and refuses it unless its SHA-256 matches the pin (e439fdd7495e45486b67d57d227f828426b703c0224b8a00d2e8a1c2f1e66594) — so a crate's own checker does not count, it is ALICE-Law's byte-identical file. It checks the tree at HEAD and the pushed commit range, and exits 2 (fails) when it compared nothing or cannot know what to compare; scripts/test_public_text.py runs first as the checker's own test, and the whole thing is mirrored in scripts/preflight.sh."
 reference_repo = "ALICE-Law"
 
 [G13]
