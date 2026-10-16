@@ -366,6 +366,40 @@ assert_eq!(read_any(&bytes)?, c);
 # Ok::<(), alice_zip::container::ContainerError>(())
 ```
 
+### Integer 2-D residuals (`int2d` module)
+
+`int2d` stores `i64` values on an integer lattice (with a presence mask) or on
+a set of integer points as the residual against an integer law. Prediction,
+residual and coding are integer arithmetic only, so the same input gives the
+same bytes on every target, and overflow is an error rather than a wrap.
+
+- **Laws**: `IntLaw2::predict(i, j)` returns an exact `i64`. `Zero` predicts 0;
+  `PlanePerTile::fit` solves one least-squares plane per tile in `i128` with
+  coefficients in multiples of `2^-k`; a caller can implement its own surface.
+- **Modes**: `Mode::Lossless` keeps every value; `Mode::Bounded { q }` rounds
+  the residual to multiples of `q` (half up) and returns the largest error,
+  at most `q / 2`.
+- **Archive** (`std` feature): `encode` / `decode` write and check the law
+  identifier, the domain digest, the mode, the count, the SHA-256 of the
+  original and of the reconstructed values, and a SHA-256 of the whole archive.
+- **Identifiers**: `IntLaw2::law_id` uses the same SHA-256 encoding as
+  `law::SignalLaw::law_id`, without a semantics id (no floating point is involved).
+
+<!-- claim-test: archive_bytes_are_the_recorded_ones -->
+The archive bytes for fixed inputs are recorded and checked on Linux, macOS
+and Windows (`tests/int2d_oracle.rs`).
+
+```rust
+use alice_zip::int2d::{decode, encode, Domain, Mode, PlanePerTile};
+
+let domain = Domain::lattice(0, 0, 4, 4, None)?;
+let values: Vec<i64> = (0..16).map(|k| 3 * k - 5).collect();
+let law = PlanePerTile::fit(&domain, &values, 4, 8)?;
+let enc = encode(&domain, &values, &law, Mode::Lossless)?;
+assert_eq!(decode(&enc.bytes, &domain, &law)?, values);
+# Ok::<(), alice_zip::int2d::Int2dError>(())
+```
+
 ## Benchmarks
 
 100,000 `f32` samples (400,000 bytes), deflate level 9, reproduced by

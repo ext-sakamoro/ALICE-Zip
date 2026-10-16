@@ -68,6 +68,7 @@ pub mod dictionary;
 pub mod entropy;
 pub mod error;
 pub mod generators;
+pub mod int2d;
 pub mod law;
 pub mod lz77;
 pub(crate) mod math;

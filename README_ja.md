@@ -298,6 +298,38 @@ assert_eq!(read_any(&bytes)?, c);
 # Ok::<(), alice_zip::container::ContainerError>(())
 ```
 
+### 整数 2 次元の残差 (`int2d` module)
+
+`int2d` は整数の格子 (存在の mask つき) か整数の点の集合の上の `i64` の値を、
+整数の法則に対する残差として保存する 予測・残差・符号化はすべて整数演算で、
+同じ入力はどの target でも同じ bytes になり、overflow は wrap せず error になる
+
+- **法則**: `IntLaw2::predict(i, j)` は正確な `i64` を返す `Zero` は 0 を予測し、
+  `PlanePerTile::fit` は tile ごとに最小二乗の平面を `i128` で解き、係数は `2^-k`
+  の倍数 呼び出し側は自分の曲面を実装できる
+- **mode**: `Mode::Lossless` はすべての値を保ち、`Mode::Bounded { q }` は残差を
+  `q` の倍数に丸め (半分は上へ)、最大の誤差 (高々 `q / 2`) を返す
+- **archive** (`std` feature): `encode` / `decode` は法則の識別子、domain の
+  digest、mode、件数、元の値と復元した値の SHA-256、archive 全体の SHA-256 を
+  書いて確かめる
+- **識別子**: `IntLaw2::law_id` は `law::SignalLaw::law_id` と同じ SHA-256 の
+  符号化で、semantics id を含まない (浮動小数点を使わないため)
+
+<!-- claim-test: archive_bytes_are_the_recorded_ones -->
+固定の入力に対する archive の bytes を記録し、Linux、macOS、Windows で確かめる
+(`tests/int2d_oracle.rs`)
+
+```rust
+use alice_zip::int2d::{decode, encode, Domain, Mode, PlanePerTile};
+
+let domain = Domain::lattice(0, 0, 4, 4, None)?;
+let values: Vec<i64> = (0..16).map(|k| 3 * k - 5).collect();
+let law = PlanePerTile::fit(&domain, &values, 4, 8)?;
+let enc = encode(&domain, &values, &law, Mode::Lossless)?;
+assert_eq!(decode(&enc.bytes, &domain, &law)?, values);
+# Ok::<(), alice_zip::int2d::Int2dError>(())
+```
+
 ## ベンチマーク
 
 100,000 個の `f32` サンプル (400,000 バイト)、deflate level 9

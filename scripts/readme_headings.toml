@@ -69,6 +69,11 @@ en = "Container with content hashes (`container` module)"
 ja = "内容ハッシュつきコンテナ (`container` module)"
 
 [[heading]]
+level = 3
+en = "Integer 2-D residuals (`int2d` module)"
+ja = "整数 2 次元の残差 (`int2d` module)"
+
+[[heading]]
 level = 2
 en = "Benchmarks"
 ja = "ベンチマーク"
