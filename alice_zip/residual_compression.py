@@ -25,6 +25,8 @@ from enum import Enum
 from typing import Optional, Tuple, Dict, Any
 import numpy as np
 
+from . import semantics as _semantics
+
 logger = logging.getLogger(__name__)
 
 
@@ -75,6 +77,11 @@ class ResidualData:
     # method's compression, without the exceptions (version 4, as read)
     residual_dtype: str = "float32"
     residual_stream: Optional[bytes] = None
+    # the arithmetic that generated the values the residual is taken against
+    # (32 bytes, see alice_zip.semantics): written as "semantics" with versions
+    # 5 to 7 (layouts 2 to 4); None for a file written before it existed, which
+    # is written back as it was
+    semantics: Optional[bytes] = None
 
     # Maximum header size - prevents DoS via malformed header_len
     # 10MB is generous for JSON metadata; larger payloads should use binary format
@@ -117,6 +124,13 @@ class ResidualData:
             header['exceptions'] = k
             block = np.asarray(self.exception_positions, dtype='<u8').tobytes() + \
                 self.exception_bytes
+        if self.semantics is not None:
+            if len(self.semantics) != 32:
+                raise ValueError(f"semantics must be 32 bytes, got {len(self.semantics)}")
+            # versions 5 to 7 are layouts 2 to 4 with the identifier, so a
+            # reader before 3.0.0 refuses the file (it reads versions 1 to 4)
+            header['version'] = header['version'] + 3
+            header['semantics'] = self.semantics.hex()
         header_json = json.dumps(header, separators=(',', ':')).encode('utf-8')
 
         # Use 4-byte integer for header length (supports up to 4GB headers)
@@ -125,11 +139,18 @@ class ResidualData:
         return header_len + header_json + self.compressed_data + block
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> 'ResidualData':
+    def from_bytes(cls, data: bytes, strict: bool = False) -> 'ResidualData':
         """
         Deserialize from bytes.
 
         Supports both v1 (2-byte header length) and v2 (4-byte header length) formats.
+
+        Versions 5 to 7 record the arithmetic the residual's generated values
+        came from (``"semantics"``); it is compared with the arithmetic the
+        procedural generators of this process use
+        (``semantics.procedural_semantics_id()``) and another one is refused
+        naming both. Versions 1 to 4 have none: read with a
+        ``LegacySemanticsWarning``, or refused when ``strict``.
 
         Args:
             data: Serialized bytes
@@ -181,13 +202,29 @@ class ResidualData:
                         raise ValueError(
                             f"Residual header version must be a JSON integer, got {version!r}"
                         )
-                    if version > 4 or version < 1:
+                    if version > 7 or version < 1:
                         raise ValueError(
-                            f"Unsupported residual header version {version} (1 to 4 exist)"
+                            f"Unsupported residual header version {version} (1 to 7 exist)"
                         )
+                    stored = None
+                    if version >= 5:
+                        if 'semantics' not in header:
+                            raise ValueError(f"version {version} needs 'semantics'")
+                        stored = header['semantics']
+                        _semantics.check(stored, _semantics.procedural_semantics_id(),
+                                         "residual", strict)
+                        version -= 3
+                    elif 'semantics' in header:
+                        raise ValueError("'semantics' is only read with versions 5 to 7")
+                    else:
+                        _semantics.check(None, _semantics.procedural_semantics_id(),
+                                         "residual", strict)
                     if version in (2, 3, 4):
                         compressed_data = data[4+header_len_v2:]
-                        return cls._create_from_header(header, compressed_data, version)
+                        rd = cls._create_from_header(header, compressed_data, version)
+                        if stored is not None:
+                            rd.semantics = bytes.fromhex(stored)
+                        return rd
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     pass  # Fall through to v1 format
         else:
@@ -224,6 +261,9 @@ class ResidualData:
             raise ValueError(f"Invalid header JSON: {e}")
 
         compressed_data = data[2+header_len_v1:]
+        if 'semantics' in header:
+            raise ValueError("'semantics' is only read with versions 5 to 7")
+        _semantics.check(None, _semantics.procedural_semantics_id(), "residual", strict)
 
         return cls._create_from_header(header, compressed_data)
 
@@ -443,7 +483,8 @@ class ResidualCompressor:
     def compress_residual(
         self,
         residual: np.ndarray,
-        original_dtype: str = 'float32'
+        original_dtype: str = 'float32',
+        semantics: Optional[bytes] = None
     ) -> ResidualData:
         """
         Compress residual data.
@@ -502,7 +543,8 @@ class ResidualCompressor:
             original_shape=residual.shape,
             original_dtype=original_dtype,
             compression_ratio=compression_ratio,
-            quantization_bits=quant_bits
+            quantization_bits=quant_bits,
+            semantics=semantics if semantics is not None else _semantics.procedural_semantics_id(),
         )
 
     def decompress_residual(self, residual_data: ResidualData) -> np.ndarray:
@@ -611,7 +653,8 @@ class ResidualCompressor:
             raise ValueError("NaN where the original is an integer")
         return out.reshape(residual.shape)
 
-    def compress_original(self, original: np.ndarray, generated: np.ndarray) -> ResidualData:
+    def compress_original(self, original: np.ndarray, generated: np.ndarray,
+                          semantics: Optional[bytes] = None) -> ResidualData:
         """
         Residual of `original` against `generated` that rebuilds the original
         bit for bit with `reconstruct`.
@@ -682,6 +725,7 @@ class ResidualCompressor:
             layout=layout,
             residual_dtype=rdt.name,
             residual_stream=stream,
+            semantics=semantics if semantics is not None else _semantics.procedural_semantics_id(),
         )
 
     def _quantize_residual(self, residual: np.ndarray, bits: int) -> bytes:

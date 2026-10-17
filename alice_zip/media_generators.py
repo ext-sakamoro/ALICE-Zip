@@ -38,6 +38,8 @@ from typing import Optional, List, Dict, Any, Tuple, Union
 from enum import Enum
 import numpy as np
 
+from . import semantics as _semantics
+
 # Optional imports with graceful fallback
 try:
     from PIL import Image
@@ -411,12 +413,17 @@ class ImageGenerator:
         else:
             return np.stack([gray] * params.channels, axis=-1)
 
-    def decompress(self, data: bytes) -> np.ndarray:
-        """Decompress ALICE format to image"""
+    def decompress(self, data: bytes, strict: bool = False) -> np.ndarray:
+        """Decompress ALICE format to image
+
+        The stored ``"semantics"`` is compared with the numpy arithmetic
+        (``semantics.PYTHON_SEMANTICS_ID``); ``strict`` refuses a file without one.
+        """
         parsed = json.loads(data.decode('utf-8'))
 
         if parsed.get('magic') != ALICE_IMAGE_MAGIC.decode():
             raise ValueError("Invalid ALICE_IMG file")
+        _semantics.check(parsed.get('semantics'), _semantics.PYTHON_SEMANTICS_ID, "ALICE_IMG", strict)
 
         p = parsed['params']
         params = ImageParams(
@@ -620,12 +627,17 @@ class AudioGenerator:
 
         return chunk * envelope
 
-    def decompress(self, data: bytes) -> Tuple[np.ndarray, int]:
-        """Decompress ALICE format to audio"""
+    def decompress(self, data: bytes, strict: bool = False) -> Tuple[np.ndarray, int]:
+        """Decompress ALICE format to audio
+
+        The stored ``"semantics"`` is compared with the numpy arithmetic
+        (``semantics.PYTHON_SEMANTICS_ID``); ``strict`` refuses a file without one.
+        """
         parsed = json.loads(data.decode('utf-8'))
 
         if parsed.get('magic') != ALICE_AUDIO_MAGIC.decode():
             raise ValueError("Invalid ALICE_AUD file")
+        _semantics.check(parsed.get('semantics'), _semantics.PYTHON_SEMANTICS_ID, "ALICE_AUD", strict)
 
         p = parsed['params']
         pattern = AudioPattern(p['pattern'])
@@ -761,12 +773,17 @@ class VideoGenerator:
         # Clear cache after video generation
         self._frame_cache.clear()
 
-    def decompress(self, data: bytes, output_path: Union[str, Path]):
-        """Decompress ALICE format to video"""
+    def decompress(self, data: bytes, output_path: Union[str, Path], strict: bool = False):
+        """Decompress ALICE format to video
+
+        The stored ``"semantics"`` is compared with the numpy arithmetic
+        (``semantics.PYTHON_SEMANTICS_ID``); ``strict`` refuses a file without one.
+        """
         parsed = json.loads(data.decode('utf-8'))
 
         if parsed.get('magic') != ALICE_VIDEO_MAGIC.decode():
             raise ValueError("Invalid ALICE_VID file")
+        _semantics.check(parsed.get('semantics'), _semantics.PYTHON_SEMANTICS_ID, "ALICE_VID", strict)
 
         keyframes = []
         for t, kf_dict in parsed.get('keyframes', []):
@@ -824,15 +841,16 @@ class MediaDecompressor:
             self._video_generator = VideoGenerator()
         return self._video_generator
 
-    def decompress(self, data: bytes, output_path: Optional[Path] = None):
-        """Decompress media from ALICE format"""
+    def decompress(self, data: bytes, output_path: Optional[Path] = None, strict: bool = False):
+        """Decompress media from ALICE format (``strict``: refuse a file without
+        its arithmetic identifier)"""
         if data.startswith(b'{"magic": "ALICE_IMG"') or b'"magic": "ALICE_IMG"' in data[:50]:
-            return self.image.decompress(data)
+            return self.image.decompress(data, strict)
         elif data.startswith(b'{"magic": "ALICE_AUD"') or b'"magic": "ALICE_AUD"' in data[:50]:
-            return self.audio.decompress(data)
+            return self.audio.decompress(data, strict)
         elif data.startswith(b'{"magic": "ALICE_VID"') or b'"magic": "ALICE_VID"' in data[:50]:
             if output_path is None:
                 raise ValueError("output_path required for video decompression")
-            return self.video.decompress(data, output_path)
+            return self.video.decompress(data, output_path, strict)
         else:
             raise ValueError("Unknown ALICE media format")

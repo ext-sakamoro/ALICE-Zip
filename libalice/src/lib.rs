@@ -73,7 +73,19 @@ mod python {
         m.add_function(wrap_pyfunction!(lzma_decompress, m)?)?;
         m.add_function(wrap_pyfunction!(zlib_compress, m)?)?;
         m.add_function(wrap_pyfunction!(zlib_decompress, m)?)?;
+
+        // Identifier of the arithmetic the generators above use
+        m.add_function(wrap_pyfunction!(semantics_id, m)?)?;
         Ok(())
+    }
+
+    /// `alice_zip::law::SEMANTICS_ID` of the crate this extension was built
+    /// from: the arithmetic `sine_wave`, `fourier_generate`,
+    /// `polynomial_generate` and `perlin_advanced` regenerate with. The Python
+    /// package records it in the files whose values these regenerate.
+    #[pyfunction]
+    fn semantics_id() -> Vec<u8> {
+        alice_zip::law::SEMANTICS_ID.to_vec()
     }
 
     // ============================================================================

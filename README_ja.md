@@ -381,7 +381,10 @@ assert_eq!(decode(&enc.bytes, &domain, &law)?, values);
   法則で評価した model なら `law::SEMANTICS_ID`) 復元側は記録された識別子を
   `law::check_semantics` で照合し、それ以外は復元の前に両方の識別子を示す
   `compression::ResidualIdError::Mismatch` で拒否する 0.10 以前が書いた容器も復元でき
-  (`residual_container_status` は `Legacy` を返し、`*_strict` の復元は拒否する) <!-- claim-test: another_identifier_is_refused_naming_both_before_decoding -->
+  (`residual_container_status` は `Legacy` を返し、`*_strict` の復元は拒否する)
+  CLI crate と Python package が値を再生成する独自の file (残差 file、procedural の
+  `ALICE_ZIP` payload、`ALICE_IMG` / `ALICE_AUD` / `ALICE_VID` の parameter) も同じく算術を
+  `"semantics"` に記録する <!-- claim-test: another_identifier_is_refused_naming_both_before_decoding -->
 
 ## 最適なユースケース
 
@@ -454,7 +457,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 | G5 release-profile-test-leg | 未達 | no job anywhere runs the Law-bearing test suite under `--release`, on aarch64 or any arch: the ci.yml test matrix runs `cargo test` in debug only (macos-latest … |
 | G6 semantics-id | 適合 | the identifier moves when a pinned output, a tag or the det-math generation moves, not with the crate version. The law identifier goldens are not entries: they … |
 | G7 handshake-carries-id | 適合 | the published crate's only type-erasing boundaries that receive a Law-bearing identifier are the container decode paths (serialized bytes / file; the crate has … |
-| G8 persisted-semantics-id | 適合 | int2d needs no float semantics identifier: it is integer arithmetic only (tests/durable_writers.rs checks its source), and its archive names its law by … |
+| G8 persisted-semantics-id | 適合 | The writers of the whole repository are covered, by the test whether decoding regenerates values from a law or parameters. Crate alice-zip: … |
 | G9 persisted-meaning-change-is-major | 適合 | the identifier moves in this crate's history are recorded as breaking releases naming both ids. 0.11.0 (CHANGELOG.md [Unreleased], Breaking, ALICE-Law G6): … |
 | G10 no-run-varying-artifacts | 適合 | the Python package has no other unseeded randomness, clock or UUID (a scan of alice_zip/ finds only RandomState(seed) at media_generators.py and … |
 | G11 gate-self-tests | 未達 | unmet: clause (c). scripts/clippy_canary.py, scripts/test_clippy_canary.py, scripts/gen_clippy_canary_calls.py, scripts/test_gen_clippy_canary_calls.py, … |

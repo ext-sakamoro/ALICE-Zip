@@ -22,7 +22,11 @@ logger = logging.getLogger(__name__)
 # Python happily imports as an empty namespace package, and until 2.3.0 a
 # second fallback imported the pure-Python `alice_zip` package itself as
 # "native". Require the extension's entry points to exist.
-_NATIVE_REQUIRED = ("sine_wave", "fourier_generate", "polynomial_generate", "perlin_2d")
+# `semantics_id` names the arithmetic of the generators: an extension without it
+# (built before 3.0.0) is not used, since the files written with it could not
+# record which arithmetic regenerated their values
+_NATIVE_REQUIRED = ("sine_wave", "fourier_generate", "polynomial_generate", "perlin_2d",
+                    "perlin_advanced", "semantics_id")
 _HAS_LIBALICE = False
 _native = None
 try:
@@ -44,6 +48,16 @@ except ImportError:
 def is_available() -> bool:
     """Check if native acceleration is available"""
     return _HAS_LIBALICE
+
+
+def native_semantics_id() -> Optional[bytes]:
+    """`alice_zip::law::SEMANTICS_ID` of the native extension, or None without it"""
+    if not _HAS_LIBALICE:
+        return None
+    sid = bytes(_native.semantics_id())
+    if len(sid) != 32:
+        raise RuntimeError(f"libalice.semantics_id() returned {len(sid)} bytes, not 32")
+    return sid
 
 
 # Track which fallback warnings have been shown (to avoid log flooding)

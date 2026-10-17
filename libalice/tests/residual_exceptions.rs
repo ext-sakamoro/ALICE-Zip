@@ -80,7 +80,7 @@ fn both_writers_files_rebuild_the_original() {
 }
 
 #[test]
-fn finite_data_the_rule_rebuilds_keeps_version_2() {
+fn finite_data_the_rule_rebuilds_keeps_layout_2() {
     let original: Vec<u8> = [5.0f32, 5.5, 6.0, 4.0]
         .iter()
         .flat_map(|v| v.to_le_bytes())
@@ -90,7 +90,7 @@ fn finite_data_the_rule_rebuilds_keeps_version_2() {
     let n = u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize;
     let h = String::from_utf8(b[4..4 + n].to_vec()).unwrap();
     assert!(
-        h.contains("\"version\":2") && !h.contains("exceptions"),
+        h.contains("\"version\":5") && h.contains("\"semantics\":") && !h.contains("exceptions"),
         "{h}"
     );
 }

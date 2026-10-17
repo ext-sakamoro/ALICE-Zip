@@ -22,7 +22,13 @@ def test_version_2_is_read():
 
 
 def test_a_later_version_is_refused_instead_of_being_read_as_version_2():
-    with pytest.raises(ValueError, match="version 5"):
+    with pytest.raises(ValueError, match="version 8"):
+        ResidualData.from_bytes((DATA / "residual_v8.bin").read_bytes())
+
+
+def test_version_5_without_the_semantics_identifier_is_refused():
+    # versions 5 to 7 are layouts 2 to 4 with "semantics"
+    with pytest.raises(ValueError, match="version 5 needs 'semantics'"):
         ResidualData.from_bytes((DATA / "residual_v5.bin").read_bytes())
 
 

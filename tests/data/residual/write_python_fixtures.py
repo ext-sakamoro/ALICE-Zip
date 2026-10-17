@@ -35,6 +35,10 @@ FILES = {}
 def write(name, method, data, dtype="float32", bits=None):
     r = ResidualCompressor(method=method, quantization_bits=bits).compress_residual(
         data, original_dtype=dtype)
+    # the layouts both readers share, without the arithmetic identifier (which
+    # names the process that generated the values): versions 1 to 4, read by
+    # both as written before the identifier; the identifier has its own files
+    r.semantics = None
     FILES[f"python_{name}.bin"] = r.to_bytes()
 
 
@@ -98,6 +102,7 @@ def exception_inputs(dtype):
 def write_original(name, method, dtype):
     original, generated = exception_inputs(dtype)
     r = ResidualCompressor(method=method).compress_original(original, generated)
+    r.semantics = None  # as in write()
     FILES[f"python_{name}.bin"] = r.to_bytes()
 
 

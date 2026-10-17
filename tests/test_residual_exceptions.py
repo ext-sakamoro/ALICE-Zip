@@ -70,7 +70,8 @@ def test_exceptions_are_exactly_the_positions_the_rule_cannot_rebuild(dtype):
     h = header(rd.to_bytes())
     positions = rd.exception_positions.tolist()
     rdt = "float64" if dtype in FLOAT64_RESIDUAL else "float32"
-    assert h["version"] == 4 and h["residual_dtype"] == rdt
+    assert h["version"] == 7 and h["residual_dtype"] == rdt
+    assert len(h["semantics"]) == 64
     assert h["exceptions"] == len(positions) > 0
     assert positions == sorted(set(positions))
     residual = c.decompress_residual(rd)
@@ -93,11 +94,11 @@ def test_exceptions_are_exactly_the_positions_the_rule_cannot_rebuild(dtype):
     assert positions == expected
 
 
-def test_finite_data_the_rule_rebuilds_keeps_version_2():
+def test_finite_data_the_rule_rebuilds_keeps_layout_2():
     original = np.array([5.0, 5.5, 6.0, 4.0], dtype=np.float32)
     generated = np.array([4.0, 5.0, 6.5, 4.25])
     rd = ResidualCompressor(method=M.LZMA).compress_original(original, generated)
-    assert header(rd.to_bytes())["version"] == 2
+    assert header(rd.to_bytes())["version"] == 5
     assert "exceptions" not in header(rd.to_bytes())
 
 
@@ -177,7 +178,7 @@ def test_values_close_to_generated_need_no_exceptions(dtype):
     generated = original.astype(np.float64) + rng.normal(0, 0.2, 2000)
     rd = ResidualCompressor(method=M.LZMA).compress_original(original, generated)
     h = header(rd.to_bytes())
-    assert (h["version"], h["residual_dtype"], h["exceptions"]) == (4, "float64", 0)
+    assert (h["version"], h["residual_dtype"], h["exceptions"]) == (7, "float64", 0)
     out = ResidualCompressor().reconstruct(generated, ResidualData.from_bytes(rd.to_bytes()))
     assert le_bytes(out) == le_bytes(original)
 

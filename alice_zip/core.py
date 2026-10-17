@@ -42,6 +42,7 @@ from .generators import (
 
 # Analyzers (Apache-2.0 - Free for basic compression)
 from .analyzers import analyze_data, compress_with_lzma
+from . import semantics as _semantics
 
 # Media Decompressor (Apache-2.0 - Free for decompression)
 from .media_generators import (
@@ -465,6 +466,8 @@ class ALICEZip:
         """Serialize procedural generator parameters to JSON bytes."""
         payload = {
             'type': 'generator',
+            # the arithmetic the generators of this process regenerate with
+            'semantics': _semantics.procedural_semantics_id().hex(),
             'params': {
                 'generator_type': params.generator_type.value,
                 'seed': params.seed,
@@ -492,6 +495,12 @@ class ALICEZip:
     # gigabytes, so the reader decodes at most this much; lower it on an
     # instance (`zipper.MAX_OUTPUT_SIZE = n`) to bound memory further.
     MAX_OUTPUT_SIZE = 4 * 1024 * 1024 * 1024
+    # Files whose values are regenerated (procedural payloads, ALICE_IMG / AUD /
+    # VID) record the arithmetic that regenerates them as "semantics"; a file
+    # with another identifier is always refused, and one written before 3.0.0
+    # (no identifier) is decoded with a warning, or refused when this is True
+    # (`zipper.STRICT_SEMANTICS = True`)
+    STRICT_SEMANTICS = False
     # Decoder memory the LZMA fallback reader allows liblzma (the stream's
     # dictionary plus a little): dictionaries of up to 64 MiB, as the Rust
     # reader accepts; the writer uses 8 MiB.
@@ -678,15 +687,15 @@ class ALICEZip:
 
         # Dispatch based on magic string
         if magic == ALICE_IMAGE_MAGIC.decode():
-            return self.media.image.decompress(data)
+            return self.media.image.decompress(data, self.STRICT_SEMANTICS)
 
         elif magic == ALICE_AUDIO_MAGIC.decode():
-            return self.media.audio.decompress(data)
+            return self.media.audio.decompress(data, self.STRICT_SEMANTICS)
 
         elif magic == ALICE_VIDEO_MAGIC.decode():
             if output_path is None:
                 raise ValueError("output_path required for video decompression")
-            return self.media.video.decompress(data, output_path)
+            return self.media.video.decompress(data, output_path, self.STRICT_SEMANTICS)
 
         elif magic == 'ALICE_TEX':
             return self._decompress_texture(parsed)
@@ -793,15 +802,15 @@ class ALICEZip:
         """
         # Dispatch based on payload_type (v2) or content detection (v1)
         if header.payload_type == AlicePayloadType.MEDIA_IMAGE:
-            return self.media.image.decompress(payload_data)
+            return self.media.image.decompress(payload_data, self.STRICT_SEMANTICS)
 
         elif header.payload_type == AlicePayloadType.MEDIA_AUDIO:
-            return self.media.audio.decompress(payload_data)
+            return self.media.audio.decompress(payload_data, self.STRICT_SEMANTICS)
 
         elif header.payload_type == AlicePayloadType.MEDIA_VIDEO:
             if output_path is None:
                 raise ValueError("output_path required for video decompression")
-            return self.media.video.decompress(payload_data, output_path)
+            return self.media.video.decompress(payload_data, output_path, self.STRICT_SEMANTICS)
 
         elif header.payload_type == AlicePayloadType.TEXTURE:
             try:
@@ -854,9 +863,12 @@ class ALICEZip:
             return self._decompress_lzma(payload)
 
     def _decompress_generator(self, payload: Dict[str, Any]) -> np.ndarray:
-        """Decompress generator-based payload."""
+        """Decompress generator-based payload (its "semantics" is compared with
+        the arithmetic the generators of this process use)."""
         if 'params' not in payload:
             raise ValueError("Generator payload missing 'params' field")
+        _semantics.check(payload.get('semantics'), _semantics.procedural_semantics_id(),
+                         "ALICE_ZIP procedural payload", self.STRICT_SEMANTICS)
 
         params_dict = payload['params']
 

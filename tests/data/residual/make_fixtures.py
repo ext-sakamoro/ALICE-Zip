@@ -17,7 +17,8 @@ PAYLOAD = zlib.compress(struct.pack("<2f", 0.5, -1.25))
 
 # version as the writers emit it (an integer) and in two spellings no writer
 # emits: a float and a string; both readers must refuse the latter two
-for version, name in ((0, "v0"), (2, "v2"), (3, "v3"), (5, "v5"), (2.0, "v2_float"), ("2", "v2_string")):
+# (5 without "semantics" is refused for the missing identifier, 8 was never written)
+for version, name in ((0, "v0"), (2, "v2"), (3, "v3"), (5, "v5"), (8, "v8"), (2.0, "v2_float"), ("2", "v2_string")):
     header = json.dumps(
         {"method": "zlib", "original_len": 2, "shape": [2], "dtype": "float32",
          "quant_bits": None, "version": version},

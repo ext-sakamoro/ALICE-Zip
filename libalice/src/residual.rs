@@ -64,16 +64,40 @@ pub enum ResidualError {
     /// first value, so the data cannot be reconstructed; recompress from the
     /// original.
     DeltaWithoutBase,
-    /// A header `"version"` other than 1 to 4, which no writer produced.
+    /// A header `"version"` other than 1 to 7, which no writer produced.
     UnsupportedVersion(u32),
+    /// The stored `"semantics"` is neither this build's arithmetic nor a
+    /// verified earlier one (`alice_zip::law::check_semantics`).
+    SemanticsMismatch {
+        /// The identifier in the file.
+        stored: [u8; 32],
+        /// This build's identifier (`alice_zip::law::SEMANTICS_ID`).
+        running: [u8; 32],
+    },
+    /// A strict read ([`ResidualData::from_bytes_strict`]) of a file written
+    /// before the identifier (versions 1 to 4).
+    LegacySemantics,
 }
 
 impl std::fmt::Display for ResidualError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnsupportedVersion(v) => {
-                write!(f, "unsupported residual header version {v} (1 to 4 exist)")
+                write!(f, "unsupported residual header version {v} (1 to 7 exist)")
             }
+            Self::SemanticsMismatch { stored, running } => {
+                let hex = |b: &[u8; 32]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+                write!(
+                    f,
+                    "residual generated under semantics {}, this build reproduces {} and its verified predecessors only",
+                    hex(stored),
+                    hex(running)
+                )
+            }
+            Self::LegacySemantics => write!(
+                f,
+                "residual written before the semantics identifier, refused by a strict read"
+            ),
             Self::DataTooShort { got, expected } => {
                 write!(
                     f,
@@ -228,6 +252,12 @@ pub struct ResidualMetadata {
     /// (version 4) The residual stream before the method's compression,
     /// without the exceptions (`f32` / `f64` little endian, or their bitdelta).
     pub residual_stream: Vec<u8>,
+    /// The arithmetic that generated the values the residual is taken
+    /// against (`alice_zip::law::SEMANTICS_ID` for this crate's generators).
+    /// `Some` is written as `"semantics"` with versions 5 to 7 (layouts 2 to
+    /// 4); `None` writes the layout's version 2 to 4, as a file from before
+    /// the identifier (what [`ResidualData::from_bytes`] returns for one).
+    pub semantics: Option<[u8; 32]>,
 }
 
 impl Default for ResidualMetadata {
@@ -244,6 +274,7 @@ impl Default for ResidualMetadata {
             layout: 2,
             residual_f64: false,
             residual_stream: Vec::new(),
+            semantics: None,
         }
     }
 }
@@ -459,6 +490,23 @@ impl ResidualData {
             _ => {}
         }
 
+        if let Some(id) = self.metadata.semantics {
+            // versions 5 to 7 are layouts 2 to 4 with the identifier, so a
+            // reader before 4.0.0 refuses the file (it reads versions 1 to 4)
+            for f in &mut fields {
+                for (from, to) in [
+                    (r#""version":2"#, r#""version":5"#),
+                    (r#""version":3"#, r#""version":6"#),
+                    (r#""version":4"#, r#""version":7"#),
+                ] {
+                    if f == from {
+                        *f = to.to_owned();
+                    }
+                }
+            }
+            let hex: String = id.iter().map(|b| format!("{b:02x}")).collect();
+            fields.push(format!(r#""semantics":"{hex}""#));
+        }
         let header_json = format!("{{{}}}", fields.join(","));
         let header_bytes = header_json.as_bytes();
 
@@ -476,7 +524,86 @@ impl ResidualData {
         out
     }
 
+    /// The identifier of a version 5 to 7 header after comparing it with
+    /// `alice_zip::law::check_semantics`; `None` for versions 1 to 4, which
+    /// must not carry one.
+    fn header_semantics(
+        map: &HashMap<String, Json>,
+        version: u32,
+    ) -> Result<Option<[u8; 32]>, ResidualError> {
+        match (version >= 5, map.get("semantics")) {
+            (false, None) => Ok(None),
+            (false, Some(_)) => Err(ResidualError::InvalidHeader(
+                "semantics is only read with versions 5 to 7".to_owned(),
+            )),
+            (true, None) => Err(ResidualError::MissingField("semantics".to_owned())),
+            (true, Some(Json::Str(hex))) => {
+                let bytes = hex.as_bytes();
+                let digit = |c: u8| match c {
+                    b'0'..=b'9' => Some(c - b'0'),
+                    b'a'..=b'f' => Some(c - b'a' + 10),
+                    _ => None,
+                };
+                if bytes.len() != 64 {
+                    return Err(ResidualError::InvalidHeader(format!(
+                        "semantics must be 64 lower-case hex digits, got {hex}"
+                    )));
+                }
+                let mut id = [0u8; 32];
+                for (i, pair) in bytes.chunks_exact(2).enumerate() {
+                    id[i] = match (digit(pair[0]), digit(pair[1])) {
+                        (Some(h), Some(l)) => (h << 4) | l,
+                        _ => {
+                            return Err(ResidualError::InvalidHeader(format!(
+                                "semantics must be 64 lower-case hex digits, got {hex}"
+                            )))
+                        }
+                    };
+                }
+                if !alice_zip::law::check_semantics(&id).is_reproducible() {
+                    return Err(ResidualError::SemanticsMismatch {
+                        stored: id,
+                        running: alice_zip::law::SEMANTICS_ID,
+                    });
+                }
+                Ok(Some(id))
+            }
+            (true, Some(other)) => Err(ResidualError::InvalidHeader(format!(
+                "semantics must be a string, got {other:?}"
+            ))),
+        }
+    }
+
+    /// `self` without the semantics identifier: written as the layout's
+    /// version 2 to 4 (the files shared with the Python reader)
+    #[cfg(test)]
+    fn without_semantics(&self) -> Self {
+        let mut rd = self.clone();
+        rd.metadata.semantics = None;
+        rd
+    }
+
+    /// [`Self::from_bytes`], refusing a file written before the semantics
+    /// identifier (versions 1 to 4) with [`ResidualError::LegacySemantics`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::from_bytes`], and [`ResidualError::LegacySemantics`].
+    pub fn from_bytes_strict(data: &[u8]) -> Result<Self, ResidualError> {
+        let rd = Self::from_bytes(data)?;
+        if rd.metadata.semantics.is_none() {
+            return Err(ResidualError::LegacySemantics);
+        }
+        Ok(rd)
+    }
+
     /// Deserialise from bytes.
+    ///
+    /// Versions 5 to 7 carry `"semantics"`, the arithmetic the residual's
+    /// generated values came from; it is compared with
+    /// `alice_zip::law::check_semantics` first and another one is refused with
+    /// [`ResidualError::SemanticsMismatch`]. Versions 1 to 4 have none and
+    /// read with `metadata.semantics == None`.
     ///
     /// Supports both:
     /// - **v2**: 4-byte `header_len` (LE u32) + JSON + payload
@@ -522,15 +649,23 @@ impl ResidualData {
                                 )))
                             }
                         };
-                        // versions 1 to 4 were written; any other is refused
+                        // versions 1 to 7 were written; any other is refused
                         // rather than read as another version (0 would fall
                         // through to the version 1 layout)
-                        if version == 0 || version > 4 {
+                        if version == 0 || version > 7 {
                             return Err(ResidualError::UnsupportedVersion(version));
                         }
-                        if version >= 2 {
+                        // 5 to 7: layouts 2 to 4 with the arithmetic identifier,
+                        // compared before anything is decoded
+                        let semantics = Self::header_semantics(&parsed, version)?;
+                        let layout = if version >= 5 { version - 3 } else { version };
+                        if layout >= 2 {
+                            let mut base = parsed.clone();
+                            base.remove("semantics");
                             let compressed = data[v2_end..].to_vec();
-                            return Self::from_header_map(&parsed, compressed, version);
+                            let mut rd = Self::from_header_map(&base, compressed, layout)?;
+                            rd.metadata.semantics = semantics;
+                            return Ok(rd);
                         }
                         // version 1 — fall through to the 2-byte length layout
                     } else {
@@ -571,6 +706,7 @@ impl ResidualData {
             .map_err(|e| ResidualError::InvalidHeader(format!("UTF-8 decode failed: {e}")))?;
 
         let parsed = Self::parse_json_header(json_str).map_err(ResidualError::InvalidHeader)?;
+        Self::header_semantics(&parsed, 1)?;
 
         let compressed = data[v1_payload_start..].to_vec();
         Self::from_header_map(&parsed, compressed, 1)
@@ -1087,14 +1223,14 @@ pub fn compress_residual_delta(data: &[f32]) -> ResidualData {
         )],
         raw,
     );
-    ResidualData {
+    stamped(ResidualData {
         method,
         compressed,
         original_len: data.len(),
         shape: vec![data.len()],
         dtype: "float32".to_owned(),
         metadata: ResidualMetadata::default(),
-    }
+    })
 }
 
 /// Decompress a delta-encoded `ResidualData` back to `Vec<f32>`:
@@ -1262,14 +1398,14 @@ pub fn analyze_residual(data: &[f32]) -> ResidualCompressionMethod {
 #[must_use]
 pub fn choose_compression(data: &[f32], allow_lossy: bool) -> ResidualData {
     if data.is_empty() {
-        return ResidualData {
+        return stamped(ResidualData {
             method: ResidualCompressionMethod::None,
             compressed: Vec::new(),
             original_len: 0,
             shape: vec![0],
             dtype: "float32".to_owned(),
             metadata: ResidualMetadata::default(),
-        };
+        });
     }
 
     let mut best = analyze_residual(data);
@@ -1279,7 +1415,15 @@ pub fn choose_compression(data: &[f32], allow_lossy: bool) -> ResidualData {
         best = ResidualCompressionMethod::Lzma;
     }
 
-    compress_with_method(data, best)
+    stamped(compress_with_method(data, best))
+}
+
+/// `rd` with the identifier of this crate's generators
+/// (`alice_zip::law::SEMANTICS_ID`): the residuals this module writes are
+/// taken against values those generators produce.
+fn stamped(mut rd: ResidualData) -> ResidualData {
+    rd.metadata.semantics = Some(alice_zip::law::SEMANTICS_ID);
+    rd
 }
 
 /// Compress `data` using the specified `method`.
@@ -1610,7 +1754,7 @@ pub fn compress_original(
     } else {
         2
     };
-    Ok(ResidualData {
+    Ok(stamped(ResidualData {
         method,
         compressed,
         original_len: generated.len(),
@@ -1624,7 +1768,7 @@ pub fn compress_original(
             residual_stream: stream,
             ..ResidualMetadata::default()
         },
-    })
+    }))
 }
 
 /// One element of `dtype` (little-endian bytes) as `f64`: exact for the
@@ -1888,19 +2032,25 @@ mod tests {
         ] {
             files.push((
                 name.to_owned(),
-                compress_with_method(&values, method).to_bytes(),
+                compress_with_method(&values, method)
+                    .without_semantics()
+                    .to_bytes(),
             ));
         }
         // codes on .5 with an even integer below (round half to even)
         let ties = [0.0f32, 2.5, 4.5, 255.0];
         files.push((
             "quantized_ties".to_owned(),
-            compress_with_method(&ties, M::Quantized).to_bytes(),
+            compress_with_method(&ties, M::Quantized)
+                .without_semantics()
+                .to_bytes(),
         ));
         for (name, method) in [("none", M::None), ("lzma", M::Lzma), ("delta", M::Delta)] {
             files.push((
                 format!("{name}_special"),
-                compress_with_method(&special, method).to_bytes(),
+                compress_with_method(&special, method)
+                    .without_semantics()
+                    .to_bytes(),
             ));
         }
         // the residual of an original of each dtype: stored as float32 as it is
@@ -1908,7 +2058,7 @@ mod tests {
         for dt in DTYPES {
             let mut rd = compress_with_method(&wide, M::Lzma);
             rd.dtype = dt.to_owned();
-            files.push((format!("dtype_{dt}"), rd.to_bytes()));
+            files.push((format!("dtype_{dt}"), rd.without_semantics().to_bytes()));
         }
         // 32-bit codes; 1.0 lands on 4294967295, which float32 cannot hold
         let q32 = [0.0f32, 1.0, 0.5, 0.25];
@@ -1923,12 +2073,14 @@ mod tests {
                 ..ResidualMetadata::default()
             },
         };
-        files.push(("quantized32".to_owned(), rd.to_bytes()));
+        files.push(("quantized32".to_owned(), rd.without_semantics().to_bytes()));
         // random values (tests/data/residual/residual_values.py)
         let random = random_values();
         files.push((
             "quantized_rand8".to_owned(),
-            compress_with_method(&random, M::Quantized).to_bytes(),
+            compress_with_method(&random, M::Quantized)
+                .without_semantics()
+                .to_bytes(),
         ));
         for bits in [16u8, 32] {
             let rd = ResidualData {
@@ -1942,7 +2094,10 @@ mod tests {
                     ..ResidualMetadata::default()
                 },
             };
-            files.push((format!("quantized_rand{bits}"), rd.to_bytes()));
+            files.push((
+                format!("quantized_rand{bits}"),
+                rd.without_semantics().to_bytes(),
+            ));
         }
         // lossless writing from the original: tests/data/residual/exception_cases.txt
         let cases = std::fs::read_to_string(fixture_dir().join("exception_cases.txt")).unwrap();
@@ -1967,11 +2122,14 @@ mod tests {
         }
         for (dtype, original, generated) in &by_dtype {
             let rd = compress_original(original, dtype, generated, M::Lzma).unwrap();
-            files.push((format!("exc_{dtype}"), rd.to_bytes()));
+            files.push((format!("exc_{dtype}"), rd.without_semantics().to_bytes()));
         }
         let (_, original, generated) = by_dtype.iter().find(|(d, _, _)| d == "float32").unwrap();
         let rd = compress_original(original, "float32", generated, M::None).unwrap();
-        files.push(("exc_none_float32".to_owned(), rd.to_bytes()));
+        files.push((
+            "exc_none_float32".to_owned(),
+            rd.without_semantics().to_bytes(),
+        ));
         files
     }
 

@@ -9,6 +9,7 @@ use alice_core::residual::{ResidualCompressionMethod, ResidualData, ResidualErro
 const V2: &[u8] = include_bytes!("../../tests/data/residual/residual_v2.bin");
 const V3: &[u8] = include_bytes!("../../tests/data/residual/residual_v3.bin");
 const V5: &[u8] = include_bytes!("../../tests/data/residual/residual_v5.bin");
+const V8: &[u8] = include_bytes!("../../tests/data/residual/residual_v8.bin");
 const V0: &[u8] = include_bytes!("../../tests/data/residual/residual_v0.bin");
 
 #[test]
@@ -21,8 +22,17 @@ fn version_2_is_read() {
 #[test]
 fn a_later_version_is_refused_instead_of_being_read_as_version_2() {
     assert!(matches!(
+        ResidualData::from_bytes(V8),
+        Err(ResidualError::UnsupportedVersion(8))
+    ));
+}
+
+#[test]
+fn version_5_without_the_semantics_identifier_is_refused() {
+    // versions 5 to 7 are layouts 2 to 4 with "semantics"
+    assert!(matches!(
         ResidualData::from_bytes(V5),
-        Err(ResidualError::UnsupportedVersion(5))
+        Err(ResidualError::MissingField(f)) if f == "semantics"
     ));
 }
 
