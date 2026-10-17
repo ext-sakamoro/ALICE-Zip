@@ -309,12 +309,12 @@ fn law_evaluation_is_horner_with_separate_rounding_not_fma() {
 
     // ⚠️ 歯の確認を test 自身に埋める: FMA 評価は別の bit になる (= 上の assert は
     //    「どちらでも通る空振り」ではない)
-    let fma: f64 = [0.1_f64, 0.2, 0.3]
+    let fused: f64 = [0.1_f64, 0.2, 0.3]
         .iter()
         .rev()
         .fold(0.0_f64, |acc, &c| acc.mul_add(1.0 / 3.0, c));
     assert_ne!(
-        fma.to_bits(),
+        fused.to_bits(),
         0.2_f64.to_bits(),
         "FMA 評価も 0.2 になるなら、この fixture では 2 つの算術を区別できない"
     );
