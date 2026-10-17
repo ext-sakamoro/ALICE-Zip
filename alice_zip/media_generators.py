@@ -224,6 +224,10 @@ class AudioParams:
 
     noise_type: str = "white"
     noise_amplitude: float = 0.0
+    # Seed of the noise generator: required for AudioPattern.NOISE_WHITE, so the same
+    # parameters give the same samples on every run (numpy's RandomState, whose stream
+    # numpy keeps fixed across versions)
+    seed: Optional[int] = None
 
     # Global max amplitude from compression analysis (for normalization)
     # If set, used directly instead of per-chunk normalization
@@ -471,6 +475,17 @@ class AudioGenerator:
         # For envelope calculation, we need to track global position
         total_samples = n_samples
 
+        # One generator for the whole signal, so the chunks continue one stream and the
+        # samples do not depend on the chunk size
+        noise_rng = None
+        if params.pattern == AudioPattern.NOISE_WHITE:
+            if params.seed is None:
+                raise ValueError(
+                    "AudioPattern.NOISE_WHITE needs AudioParams.seed: without it the "
+                    "samples would differ on every run"
+                )
+            noise_rng = np.random.RandomState(params.seed)
+
         # Process in chunks
         for chunk_start in range(0, n_samples, chunk_samples):
             chunk_end = min(chunk_start + chunk_samples, n_samples)
@@ -489,7 +504,7 @@ class AudioGenerator:
                     chunk += amp * np.sin(2 * np.pi * freq * t + phase)
 
             elif params.pattern == AudioPattern.NOISE_WHITE:
-                chunk = np.random.randn(chunk_len) * params.noise_amplitude
+                chunk = noise_rng.standard_normal(chunk_len) * params.noise_amplitude
 
             else:
                 chunk = np.zeros(chunk_len, dtype=np.float64)
@@ -613,12 +628,20 @@ class AudioGenerator:
             raise ValueError("Invalid ALICE_AUD file")
 
         p = parsed['params']
+        pattern = AudioPattern(p['pattern'])
+        if pattern == AudioPattern.NOISE_WHITE and 'seed' not in p:
+            raise ValueError(
+                "ALICE_AUD white noise parameters without a seed: written before the seed "
+                "was part of the format, so the samples cannot be reproduced"
+            )
         params = AudioParams(
-            pattern=AudioPattern(p['pattern']),
+            pattern=pattern,
             sample_rate=p['sample_rate'],
             duration=p['duration'],
             channels=p['channels'],
-            frequencies=[(f, a, ph) for f, a, ph in p.get('frequencies', [])]
+            frequencies=[(f, a, ph) for f, a, ph in p.get('frequencies', [])],
+            noise_amplitude=p.get('noise_amplitude', 0.0),
+            seed=p.get('seed'),
         )
 
         return self.generate(params), params.sample_rate

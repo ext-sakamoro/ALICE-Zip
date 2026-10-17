@@ -393,7 +393,8 @@ jobs:
       - name: Build + install libalice (maturin)
         run: |
           python -m pip install --upgrade pip
-          pip install maturin numpy pytest
+          # scipy: the audio generator writes wav through scipy.io (its tests skip without it)
+          pip install maturin numpy pytest scipy
           (cd libalice && maturin build --release --out ../target/wheels)
           pip install target/wheels/libalice-*.whl
       # LICENSE-APACHE and NOTICE inside every built archive, and the

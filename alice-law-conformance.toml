@@ -98,11 +98,18 @@ note = "the one identifier move in this crate's history is recorded as a breakin
 reference_repo = ""
 
 [G10]
-status = "fail-known"
-evidence = ["alice_zip/media_generators.py:492", "clippy.toml:215-219", "clippy.toml:228", "scripts/entropy_guard.py", "scripts/test_entropy_guard.py", "scripts/clippy_canary.py", "src/generators/perlin.rs:60"]
+status = "pass"
+evidence = [
+    "alice_zip/media_generators.py: AudioParams.seed, required for AudioPattern.NOISE_WHITE (ValueError without it); generate_chunks draws the noise from one np.random.RandomState(seed) for the whole signal (numpy keeps the RandomState stream fixed across versions); MediaDecompressor reads noise_amplitude and seed from ALICE_AUD and refuses white-noise parameters without a seed",
+    "tests/test_media_generators.py: test_white_noise_needs_a_seed, test_white_noise_is_the_same_for_the_same_seed (same seed same samples, another seed other samples, chunk size irrelevant), test_white_noise_samples_are_the_recorded_ones (SHA-256 of the int16 samples for seed 2024), test_decompress_reads_the_seed_and_refuses_noise_without_one",
+    ".github/workflows/ci.yml libalice-python job: pip installs scipy, so the audio tests run (they skip without it) under both the native accelerator and the pure Python fallback, on Python 3.9 and 3.12",
+    "clippy.toml (Instant::now, Instant::elapsed, SystemTime::now, SystemTime::elapsed, RandomState::new and the RandomState type), scripts/entropy_guard.py with scripts/test_entropy_guard.py, scripts/clippy_canary.py for the Rust side",
+    "src/generators/perlin.rs:60 (the only Rust randomness: ChaCha8Rng::seed_from_u64(seed), an explicit input); alice_zip/native_accelerator.py:335 (RandomState(seed))",
+]
+mutant = "measured 2026-10-17, each reverted: the noise drawn with np.random.randn again -> test_white_noise_is_the_same_for_the_same_seed, test_white_noise_samples_are_the_recorded_ones and test_decompress_reads_the_seed_and_refuses_noise_without_one fail; a new RandomState(seed) per chunk -> the chunk-size check fails; the missing-seed check in generate removed -> test_white_noise_needs_a_seed fails; the reader's seedless-noise refusal removed -> test_decompress_reads_the_seed_and_refuses_noise_without_one fails"
 since = ""
-note = "unmet in the Python package: alice_zip/media_generators.py:492 fills AudioPattern.NOISE_WHITE with np.random.randn from NumPy's global, unseeded generator, and AudioParams carries no seed, so decompressing the same white-noise parameters gives different samples on each run; the fix is a seed in AudioParams drawn through a local generator (as alice_zip/native_accelerator.py:335 already does with np.random.RandomState(seed)), which changes the parameter format. The Rust side is met: the library src/ reads no wall clock, no unseeded RNG and no UUID (the only randomness is ChaCha8Rng::seed_from_u64(seed) at src/generators/perlin.rs:60, an explicit input); clippy.toml bans Instant::now, Instant::elapsed, SystemTime::elapsed, SystemTime::now, RandomState::new and the RandomState type; scripts/entropy_guard.py scans src/ and libalice/src/ for getrandom, OsRng, thread_rng, rand::random, from_entropy, the clock reads, UNIX_EPOCH, RandomState and Uuid::new_v4 (aliases included) with its canary in scripts/test_entropy_guard.py; scripts/clippy_canary.py plants one call per clippy.toml entry (the table is generated from clippy.toml) and needs one diagnostic each. The clock and RNG uses that remain are outside the Law path: libalice/src/bin/alice.rs (Instant::now and .elapsed() for CLI timing that is printed only, each with a scoped allow and its reason), and in libalice-enterprise, which neither clippy job nor entropy_guard.py covers, src/license/key.rs:161/250/257 (Utc::now for licence expiry dates) and src/security/crypto.rs:60/141/161 (OsRng for AEAD nonces)."
-reference_repo = ""
+note = "the Python package has no other unseeded randomness, clock or UUID (a scan of alice_zip/ finds only RandomState(seed) at media_generators.py and native_accelerator.py:335). Outside the Law path and outside this cell as before: libalice/src/bin/alice.rs CLI timing (printed only, scoped allows with reasons) and libalice-enterprise (licence dates, AEAD nonces), which no Law output reads."
+reference_repo = "ALICE-DB"
 
 [G11]
 status = "fail-known"

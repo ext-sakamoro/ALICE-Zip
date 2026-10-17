@@ -55,6 +55,9 @@ class TestImagePattern:
         assert ImagePattern.UNKNOWN.value == "unknown"
 
 
+WHITE_NOISE_GOLDEN = "7f968530a1d13f5724f8ec95625caba4501c5be28d07179d71a788f2641bc6e6"
+
+
 @pytest.mark.skipif(not HAS_MEDIA, reason="Media generators not available")
 class TestAudioPattern:
     """Test AudioPattern enum"""
@@ -322,7 +325,8 @@ class TestAudioGenerator:
             sample_rate=44100,
             duration=0.1,
             channels=1,
-            noise_amplitude=0.5
+            noise_amplitude=0.5,
+            seed=7,
         )
 
         result = self.generator.generate(params)
@@ -330,6 +334,63 @@ class TestAudioGenerator:
         assert result.dtype == np.int16
         # White noise should have variation
         assert np.std(result) > 100
+
+    def _noise(self, seed, chunk_samples=None):
+        params = AudioParams(
+            pattern=AudioPattern.NOISE_WHITE,
+            sample_rate=8000,
+            duration=0.5,
+            channels=1,
+            noise_amplitude=0.5,
+            seed=seed,
+        )
+        if chunk_samples is None:
+            return self.generator.generate(params)
+        return np.concatenate(list(self.generator.generate_chunks(params, chunk_samples)))
+
+    def test_white_noise_needs_a_seed(self):
+        """Without a seed the samples would differ on every run, so it is refused"""
+        params = AudioParams(
+            pattern=AudioPattern.NOISE_WHITE,
+            sample_rate=8000,
+            duration=0.1,
+            noise_amplitude=0.5,
+        )
+        with pytest.raises(ValueError, match="seed"):
+            self.generator.generate(params)
+
+    def test_white_noise_is_the_same_for_the_same_seed(self):
+        """The same seed gives the same samples, another seed other samples, and the chunk
+        size does not change them (one stream for the whole signal)"""
+        a = self._noise(11)
+        assert a.size == 4000
+        assert np.array_equal(a, self._noise(11))
+        assert not np.array_equal(a, self._noise(12))
+        assert np.array_equal(a, self._noise(11, chunk_samples=333))
+
+    def test_white_noise_samples_are_the_recorded_ones(self):
+        """The samples for a fixed seed, recorded once: numpy's RandomState keeps its stream
+        fixed across versions, so this holds wherever the tests run"""
+        import hashlib
+        got = hashlib.sha256(self._noise(2024).astype("<i2").tobytes()).hexdigest()
+        assert got == WHITE_NOISE_GOLDEN, got
+
+    def test_decompress_reads_the_seed_and_refuses_noise_without_one(self):
+        """ALICE_AUD parameters carry the seed and the amplitude; white-noise parameters
+        written without a seed are refused instead of decoding to different samples"""
+        p = {
+            "pattern": "noise_white", "sample_rate": 8000, "duration": 0.5, "channels": 1,
+            "noise_amplitude": 0.5, "seed": 2024,
+        }
+        blob = json.dumps({"magic": "ALICE_AUD", "params": p}).encode()
+        samples, sr = self.generator.decompress(blob)
+        assert sr == 8000
+        assert np.array_equal(samples, self._noise(2024))
+        del p["seed"]
+        blob = json.dumps({"magic": "ALICE_AUD", "params": p}).encode()
+        # refused by the reader itself (not later by the generator)
+        with pytest.raises(ValueError, match="written before the seed"):
+            self.generator.decompress(blob)
 
     def test_generate_stereo(self):
         """Test stereo audio generation"""
