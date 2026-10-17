@@ -585,6 +585,10 @@ class PreviousVerifier:
                 if ok:
                     problems.append(f"{spec.path}: previous-tests {ref} still passes with {old[:8]} taken out of "
                                     f"{list_name}: it does not depend on the old value")
+                elif ran < 1:
+                    # a build that breaks is not a test that tells the old value apart
+                    problems.append(f"{spec.path}: previous-tests {ref} did not run with {old[:8]} taken out of "
+                                    f"{list_name} (the copy does not build): {out}")
                 else:
                     passed_refs.append(ref)
         finally:
