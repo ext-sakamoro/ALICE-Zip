@@ -80,14 +80,7 @@ class Rules(unittest.TestCase):
         stale = imc.Config("p", "Cargo.toml", (), True, ("v{version}",), cfg.ids,
                            (("FORMAT_ID", "a key, not a stamp of what was computed"), ("GONE", "removed long ago, stale")))
         self.assertTrue(any("GONE" in p and "stale" in p for p in imc.completeness(stale, found)))
-        self.assertEqual(imc.completeness(cfg, {}), ["no `pub const NAME: [u8; 32]` found under src/ (compared nothing)"])
-
-    def test_the_scan_finds_const_and_static_identifiers(self):
-        d = Path(tempfile.mkdtemp())
-        (d / "src").mkdir()
-        (d / "src" / "lib.rs").write_text("pub const A_ID: [u8; 32] = [0; 32];\npub static B: [ u8 ; 32 ] = [1; 32];\n"
-                                          "const PRIVATE: [u8; 32] = [2; 32];\npub const SHORT: [u8; 16] = [3; 16];\n")
-        self.assertEqual(sorted(imc.id_constants(d)), ["A_ID", "B"])
+        self.assertEqual(imc.completeness(cfg, {}), ["no const / static item of type [u8; 32] found in the crate (compared nothing)"])
 
     def test_breaking_steps(self):
         self.assertTrue(imc.is_breaking("0.10.0", "0.11.0"))
@@ -142,6 +135,29 @@ class EndToEnd(unittest.TestCase):
     def write(self, d: Path, version: str, byte: str, prev: str):
         (d / "Cargo.toml").write_text(f'[package]\nname = "probe-crate"\nversion = "{version}"\nedition = "2021"\n\n[workspace]\n')
         (d / "src" / "lib.rs").write_text(LIB.format(b=byte, prev=prev))
+
+    def test_rustdoc_finds_every_form_of_a_32_byte_item(self):
+        d = Path(tempfile.mkdtemp(prefix="id-move-forms-"))
+        (d / "src").mkdir()
+        (d / "Cargo.toml").write_text('[package]\nname = "forms"\nversion = "0.1.0"\nedition = "2021"\n\n[workspace]\n')
+        (d / "src" / "lib.rs").write_text(
+            "pub const ZZ_A: [ u8 ; 32 ] = [0; 32];\n"
+            "pub const ZZ_B:\n    [u8; 32] = [0; 32];\n"
+            "pub(crate) const ZZ_C: [u8; 32] = [0; 32];\n"
+            "pub const ZZ_D: &[u8; 32] = &[0; 32];\n"
+            "pub static ZZ_E: [u8; 0x20] = [0; 32];\n"
+            "pub const ZZ_F: [u8; 32usize] = [0; 32];\n"
+            "const N: usize = 32;\npub const ZZ_G: [u8; N] = [0; 32];\n"
+            "pub type Digest = [u8; 32];\npub const ZZ_H: Digest = [0; 32];\n"
+            "mod inner { #[allow(dead_code)] pub const ZZ_I: [u8; 32] = [0; 32]; }\n"
+            "const ZZ_J: [u8; 32] = [0; 32];\n"
+            "pub const NOT_16: [u8; 16] = [0; 16];\npub const NOT_I8: [i8; 32] = [0; 32];\n")
+        cfg = imc.Config("forms", "Cargo.toml", (), True, ("v{version}",), (imc.IdSpec("forms::ZZ_A", None),))
+        found = imc.id_constants(d, cfg)
+        self.assertEqual(sorted(found), [f"ZZ_{c}" for c in "ABCDEFGHIJ"])
+        self.assertEqual(found["ZZ_B"], ["src/lib.rs:2"])
+        problems = imc.completeness(cfg, found)
+        self.assertEqual(len(problems), 9, problems)
 
     def test_unmoved_passes(self):
         d = self.repo()

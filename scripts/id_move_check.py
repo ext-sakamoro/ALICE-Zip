@@ -23,11 +23,15 @@ For each identifier that exists at the base and has another value now:
 An identifier missing at the base is new and passes. Comparing no identifier fails, and
 so does a config naming a constant the working tree does not have.
 
-Completeness: every `pub const` / `pub static` of type `[u8; 32]` in the crate's src/ (the
-form every identifier of these crates takes) must be an [[id]] of the config or be listed
-under [exempt] with a reason, so a second identifier (a format id next to SEMANTICS_ID)
-cannot be left out; an [exempt] entry that names no such constant fails, and finding none
-fails as having compared nothing. A constant behind a type alias is not seen.
+Completeness: every `const` / `static` item of the crate whose type resolves to `[u8; 32]`
+(the form every identifier of these crates takes; any visibility, through `&`, a type alias,
+a length written as `0x20`, `32usize` or a constant) must be an [[id]] of the config or be
+listed under [exempt] with a reason, so a second identifier (a format id next to
+SEMANTICS_ID) cannot be left out. The items come from rustdoc's JSON output (RUSTC_BOOTSTRAP=1,
+--document-private-items, format_version 60, as scripts/api_boundary.py reads it), where the
+compiler has resolved the types: a text scan misses a type on the next line or behind an
+alias. An [exempt] entry that names no such item fails, and finding none fails as having
+compared nothing. A `const` inside a function body is not an item rustdoc lists.
 
 The base's identifiers are read from the version as published (crates.io, `={version}`),
 which is what a stored value was stamped by; a version never published is read from the tag's
@@ -91,34 +95,101 @@ class Config:
 
 
 MIN_REASON = 12
-ID_CONST_RE = re.compile(r"^\s*pub\s+(?:const|static)\s+([A-Za-z_]\w*)\s*:\s*\[\s*u8\s*;\s*32\s*\]")
+SUPPORTED_FORMATS = {60}
 
 
-def id_constants(crate_dir: Path) -> dict[str, list[str]]:
-    """{name: [file:line, ...]} of every `pub const|static NAME: [u8; 32]` under src/"""
+def rustdoc_json(crate_dir: Path, cfg: Config) -> dict:
+    env = dict(os.environ, RUSTC_BOOTSTRAP="1", RUSTDOCFLAGS="")
+    target = Path(os.environ.get("ID_MOVE_TARGET_DIR") or tempfile.mkdtemp(prefix="id-move-doc-")) / "rustdoc"
+    try:
+        cmd = ["cargo", "rustdoc", "-q", "--lib", "--manifest-path", str(crate_dir / "Cargo.toml"),
+               "--target-dir", str(target)]
+        if not cfg.default_features:
+            cmd.append("--no-default-features")
+        if cfg.features:
+            cmd += ["--features", ",".join(cfg.features)]
+        cmd += ["--", "-Z", "unstable-options", "--output-format", "json",
+                "--document-private-items", "--document-hidden-items"]
+        r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        if r.returncode != 0:
+            raise CheckError(f"rustdoc failed in {crate_dir}: {r.stderr.strip()[-800:]}")
+        lib = cfg.package.replace("-", "_")
+        doc = target / "doc" / f"{lib}.json"
+        if not doc.exists():
+            docs = list((target / "doc").glob("*.json"))
+            if len(docs) != 1:
+                raise CheckError(f"rustdoc wrote no JSON for {cfg.package} ({[d.name for d in docs]})")
+            doc = docs[0]
+        data = json.loads(doc.read_text(encoding="utf-8"))
+        doc.unlink()
+    finally:
+        if not os.environ.get("ID_MOVE_TARGET_DIR"):
+            shutil.rmtree(target.parent, ignore_errors=True)
+    if data.get("format_version") not in SUPPORTED_FORMATS:
+        raise CheckError(f"rustdoc JSON format_version {data.get('format_version')} is not one of {sorted(SUPPORTED_FORMATS)}")
+    return data
+
+
+def is_id_type(ty, index: dict, depth: int = 0) -> bool:
+    """the type resolves to [u8; 32] (through &, type aliases); a length that is not a number
+    counts as a hit, so an identifier written with a computed length is not skipped"""
+    if not isinstance(ty, dict) or depth > 16:
+        return False
+    if "borrowed_ref" in ty:
+        return is_id_type(ty["borrowed_ref"].get("type"), index, depth + 1)
+    if "array" in ty:
+        arr = ty["array"]
+        if arr.get("type") != {"primitive": "u8"}:
+            return False
+        length = str(arr.get("len", "")).strip()
+        try:
+            return int(re.sub(r"(?:usize|u\d+)$", "", length).replace("_", ""), 0) == 32
+        except ValueError:
+            return True
+    if "resolved_path" in ty:
+        target = index.get(str(ty["resolved_path"].get("id")))
+        inner = (target or {}).get("inner", {})
+        if "type_alias" in inner:
+            return is_id_type(inner["type_alias"].get("type"), index, depth + 1)
+    return False
+
+
+def id_constants_from_doc(doc: dict) -> dict[str, list[str]]:
+    """{name: [file:line, ...]} of every const / static item of the documented crate whose type
+    resolves to [u8; 32]"""
+    index = doc.get("index", {})
+    root_crate = index.get(str(doc.get("root")), {}).get("crate_id", 0)
     out: dict[str, list[str]] = {}
-    src = crate_dir / "src"
-    for f in sorted(src.rglob("*.rs")) if src.exists() else []:
-        for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
-            m = ID_CONST_RE.match(line)
-            if m:
-                out.setdefault(m[1], []).append(f"{f.relative_to(crate_dir).as_posix()}:{n}")
-    return out
+    for item in index.values():
+        if item.get("crate_id") != root_crate or not item.get("name"):
+            continue
+        inner = item.get("inner", {})
+        kind = "constant" if "constant" in inner else "static" if "static" in inner else None
+        if kind is None or not is_id_type(inner[kind].get("type"), index):
+            continue
+        span = item.get("span") or {}
+        where = f"{span.get('filename', '?')}:{(span.get('begin') or ['?'])[0]}"
+        out.setdefault(item["name"], []).append(where)
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def id_constants(crate_dir: Path, cfg: Config) -> dict[str, list[str]]:
+    return id_constants_from_doc(rustdoc_json(crate_dir, cfg))
 
 
 def completeness(cfg: Config, found: dict[str, list[str]]) -> list[str]:
     problems = []
     if not found:
-        return ["no `pub const NAME: [u8; 32]` found under src/ (compared nothing)"]
+        return ["no const / static item of type [u8; 32] found in the crate (compared nothing)"]
     listed = {spec.path.rsplit("::", 1)[1] for spec in cfg.ids}
     exempt = dict(cfg.exempt)
     for name, where in sorted(found.items()):
         if name not in listed and name not in exempt:
-            problems.append(f"{name} ({', '.join(where)}): a [u8; 32] constant that is neither an [[id]] of "
+            problems.append(f"{name} ({', '.join(where)}): a [u8; 32] item that is neither an [[id]] of "
                             f"{CONFIG} nor under [exempt] with a reason")
     for name, reason in sorted(exempt.items()):
         if name not in found:
-            problems.append(f"[exempt] {name}: names no `pub const {name}: [u8; 32]` under src/ (stale)")
+            problems.append(f"[exempt] {name}: names no const / static item of type [u8; 32] (stale)")
         if len(reason.strip()) < MIN_REASON:
             problems.append(f"[exempt] {name}: reason shorter than {MIN_REASON} characters")
         if name in listed:
@@ -350,7 +421,7 @@ def judge(base_version: str, head_version: str, base: dict[str, dict | None],
 
 def check(root: Path, base_ref: str | None, base_from: str = "auto") -> tuple[list[str], list[str]]:
     cfg = load_config(root)
-    missing = completeness(cfg, id_constants((root / cfg.manifest).resolve().parent))
+    missing = completeness(cfg, id_constants((root / cfg.manifest).resolve().parent, cfg))
     problems, report = check_values(root, base_ref, base_from)
     return missing + problems, report
 
