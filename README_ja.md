@@ -469,7 +469,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 
 | feature | 保証 | 注記 |
 |---|---|---|
-| `fft` | 範囲外 | fft enables rustfft-backed generators::analyze_signal_fft, a DIFFERENT algorithm (O(n log n)) from the naive DFT analyze_signal, and rustfft computes its own … |
+| `fft` | 範囲内 | fft adds generators::analyze_signal_fft, its own computation (O(n log n)) of analyze_signal's bins. Condition 1: the transform runs in f64 with every product … |
 | `lzma` | 範囲内 | lzma enables LZMA + the `.alice` residual containers (compression::{lzma_*, *_residual_*}); it is lossless byte compression with no Law float arithmetic of its … |
 | `parallel` | 範囲外 | parallel swaps the 2D Perlin row loop (generate_perlin_2d / generate_perlin_advanced, src/generators/perlin.rs:204-207) from a serial flat_map to rayon … |
 | `std` | 範囲内 | std enables the `compression` module (zlib via flate2) and `std::error::Error` for ZipError; it is lossless byte coding with no Law float arithmetic of its … |
