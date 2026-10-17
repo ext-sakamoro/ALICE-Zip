@@ -38,7 +38,7 @@ numpy = { version = "0.29", optional = true }
 # platform libm is not required to be correctly rounded, so a signal fitted
 # here and regenerated elsewhere would not agree bit for bit
 alice-det-math = "0.5"
-alice_zip = { package = "alice-zip", path = "..", version = "0.10", features = ["std", "fft", "parallel", "lzma"] }
+alice_zip = { package = "alice-zip", path = "..", version = "0.11", features = ["std", "fft", "parallel", "lzma"] }
 # xz streams for residuals (the format the Python writer emits); same version as the core crate
 lzma-rs = "0.3"
 

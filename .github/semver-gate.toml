@@ -6,6 +6,6 @@
 #
 # Cargo.toml keeps the released version while changes accumulate under [Unreleased]; the
 # version is raised when the release is cut. An equal version is checked as the smallest
-# next release (0.10.0 -> 0.10.1, a minor step under Cargo's 0.x rules), so a change that
+# next release (0.11.0 -> 0.11.1, a minor step under Cargo's 0.x rules), so a change that
 # needs a larger step fails on every push until Cargo.toml carries that bump
 equal-version = "next-smallest-step"
