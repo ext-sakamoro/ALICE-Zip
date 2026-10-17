@@ -24,41 +24,99 @@ def ids(value, previous=()):
 
 
 class Rules(unittest.TestCase):
+    """one test per branch of the rule"""
+    LOG = f"SEMANTICS_ID moves from {A[:8]}… to {B[:8]}…"
+
+    @staticmethod
+    def tested(*values):
+        return lambda h: ["tests/golden.rs"] if h in values else []
+
     def test_unmoved_passes(self):
         self.assertEqual(imc.judge("0.3.0", "0.3.1", ids(A), ids(A), "", CFG)[0], [])
 
-    def test_moved_without_a_breaking_version_fails(self):
-        problems = imc.judge("0.3.0", "0.3.1", ids(A), ids(B, [A]), f"{A[:8]} -> {B[:8]}", CFG)[0]
+    def test_a_breaking_version_with_the_old_value_kept_and_tested_passes(self):
+        self.assertEqual(imc.judge("0.3.0", "0.4.0", ids(A), ids(B, [A]), self.LOG, CFG, self.tested(A))[0], [])
+
+    def test_no_bump_with_the_old_value_kept_and_tested_passes(self):
+        # the old bits are reproduced: not a change of meaning, no bump needed
+        problems, report = imc.judge("0.5.0", "0.5.1", ids(A), ids(B, [A]), self.LOG, CFG, self.tested(A))
+        self.assertEqual(problems, [])
+        self.assertIn("exercised by tests/golden.rs", report[0])
+
+    def test_the_old_value_kept_but_not_tested_fails(self):
+        problems = imc.judge("0.5.0", "0.5.1", ids(A), ids(B, [A]), self.LOG, CFG)[0]
+        self.assertTrue(any("no test under tests/ or src/ holds its full value" in p for p in problems), problems)
+        # with a bump too: the claim in the list is still checked
+        problems = imc.judge("0.5.0", "0.6.0", ids(A), ids(B, [A]), self.LOG, CFG)[0]
+        self.assertTrue(any("no test under tests/ or src/ holds its full value" in p for p in problems), problems)
+
+    def test_named_previous_tests_stand_for_the_written_out_value(self):
+        d = Path(tempfile.mkdtemp())
+        (d / "tests").mkdir()
+        (d / "tests" / "golden.rs").write_text(
+            "use probe_crate::PREVIOUS_SEMANTICS_IDS;\n#[test]\nfn previous_reproduce() { for _ in PREVIOUS_SEMANTICS_IDS {} }\n"
+            "#[test]\n#[ignore]\nfn skipped() {}\nfn helper() {}\n")
+        def cfg(*tests):
+            return imc.Config("probe-crate", "Cargo.toml", (), True, ("v{version}",),
+                              (imc.IdSpec("probe_crate::SEMANTICS_ID", "probe_crate::PREVIOUS_SEMANTICS_IDS", tests),))
+        ok = imc.judge("0.5.0", "0.5.1", ids(A), ids(B, [A]), self.LOG, cfg("tests/golden.rs::previous_reproduce"), crate_dir=d)
+        self.assertEqual(ok[0], [])
+        self.assertIn("exercised by tests/golden.rs::previous_reproduce", ok[1][0])
+        for ref, why in (("tests/golden.rs::skipped", "is #[ignore]d"), ("tests/golden.rs::helper", "has no #[test]"),
+                         ("tests/golden.rs::absent", "no fn absent"), ("tests/nope.rs::x", "does not exist")):
+            problems = imc.judge("0.5.0", "0.5.1", ids(A), ids(B, [A]), self.LOG, cfg(ref), crate_dir=d)[0]
+            self.assertTrue(any(why in p for p in problems), (ref, problems))
+            self.assertTrue(any("no previous-tests entry names one" in p for p in problems), (ref, problems))
+        (d / "tests" / "other.rs").write_text("#[test]\nfn unrelated() {}\n")
+        problems = imc.judge("0.5.0", "0.5.1", ids(A), ids(B, [A]), self.LOG, cfg("tests/other.rs::unrelated"), crate_dir=d)[0]
+        self.assertTrue(any("does not name PREVIOUS_SEMANTICS_IDS" in p for p in problems), problems)
+
+    def test_no_bump_and_the_old_value_not_kept_fails(self):
+        problems = imc.judge("0.3.0", "0.3.1", ids(A), ids(B, [C]), self.LOG, CFG, self.tested(A))[0]
         self.assertTrue(any("not a breaking step" in p for p in problems), problems)
-        problems = imc.judge("1.2.0", "1.3.0", ids(A), ids(B, [A]), f"{A[:8]} -> {B[:8]}", CFG)[0]
+        problems = imc.judge("1.2.0", "1.3.0", ids(A), ids(B, []), self.LOG, CFG)[0]
         self.assertTrue(any("not a breaking step" in p for p in problems), problems)
 
-    def test_moved_with_a_breaking_version_previous_and_changelog_passes(self):
-        log = f"SEMANTICS_ID moves from {A[:8]}… to {B[:8]}…"
-        self.assertEqual(imc.judge("0.3.0", "0.4.0", ids(A), ids(B, [A]), log, CFG)[0], [])
-        self.assertEqual(imc.judge("1.9.0", "2.0.0", ids(A), ids(B, [A]), log, CFG)[0], [])
+    def test_no_previous_list_and_no_bump_fails(self):
+        no_list = imc.Config("probe-crate", "Cargo.toml", (), True, ("v{version}",),
+                             (imc.IdSpec("probe_crate::SEMANTICS_ID", None),))
+        problems = imc.judge("0.3.0", "0.3.1", ids(A), ids(B, [A]), self.LOG, no_list, self.tested(A))[0]
+        self.assertTrue(any("not a breaking step" in p for p in problems), problems)
+        self.assertEqual(imc.judge("0.3.0", "0.4.0", ids(A), ids(B), self.LOG, no_list)[0], [])
 
-    def test_moved_without_the_base_value_in_previous_fails(self):
-        problems = imc.judge("0.3.0", "0.4.0", ids(A), ids(B, [C]), f"{A[:8]} {B[:8]}", CFG)[0]
-        self.assertTrue(any("does not hold the base value" in p for p in problems), problems)
+    def test_a_breaking_version_without_the_old_value_kept_passes(self):
+        # a change of meaning: the old data is refused, so the list need not hold it
+        self.assertEqual(imc.judge("0.3.0", "0.4.0", ids(A), ids(B, []), self.LOG, CFG)[0], [])
 
-    def test_moved_without_the_changelog_naming_both_fails(self):
-        problems = imc.judge("0.3.0", "0.4.0", ids(A), ids(B, [A]), f"new id {B[:8]}", CFG)[0]
-        self.assertTrue(any("does not name " + A[:8] in p for p in problems), problems)
+    def test_a_changelog_missing_one_value_fails(self):
+        for log in (f"new id {B[:8]}", f"old id {A[:8]}"):
+            problems = imc.judge("0.3.0", "0.4.0", ids(A), ids(B, [A]), log, CFG, self.tested(A))[0]
+            self.assertTrue(any("CHANGELOG.md does not name" in p for p in problems), (log, problems))
+
+    def test_the_bump_first_message_names_the_fix(self):
+        problems = imc.judge("0.6.0", "0.6.0", ids(A), ids(B), self.LOG, CFG)[0]
+        self.assertTrue(any('bump the version first (set version = "0.7.0"' in p for p in problems), problems)
+        problems = imc.judge("3.1.0", "3.1.2", ids(A), ids(B), self.LOG, CFG)[0]
+        self.assertTrue(any('set version = "4.0.0"' in p for p in problems), problems)
+
+    def test_a_version_bump_without_a_move_passes(self):
+        self.assertEqual(imc.judge("0.6.0", "0.7.0", ids(A), ids(A), "", CFG)[0], [])
+
+    def test_the_scan_finds_a_full_value_in_a_test_file(self):
+        d = Path(tempfile.mkdtemp())
+        (d / "tests").mkdir()
+        (d / "src").mkdir()
+        (d / "tests" / "golden.rs").write_text(f'#[test]\nfn old() {{ assert_eq!(hex(&P), "{A.upper()}"); }}\n')
+        (d / "src" / "lib.rs").write_text(f'// {B} named only in a comment of a file without tests\n')
+        find = imc.tests_naming(d)
+        self.assertEqual(find(A), ["tests/golden.rs"])
+        self.assertEqual(find(B), [])
+        self.assertEqual(find(A[:8]), ["tests/golden.rs"])  # a prefix is a substring; the tool passes the full value
 
     def test_new_identifier_passes_and_a_vanished_one_fails(self):
         self.assertEqual(imc.judge("0.3.0", "0.3.1", ids(None), ids(A), "", CFG)[0], [])
         problems = imc.judge("0.3.0", "0.3.1", ids(A), ids(None), "", CFG)[0]
         self.assertTrue(any("not found in the working tree" in p for p in problems), problems)
-
-    def test_a_move_at_the_released_version_says_to_bump_it_first(self):
-        problems = imc.judge("0.6.0", "0.6.0", ids(A), ids(B, [A]), f"{A[:8]} {B[:8]}", CFG)[0]
-        self.assertTrue(any('bump the version first (set version = "0.7.0"' in p for p in problems), problems)
-        problems = imc.judge("3.1.0", "3.1.2", ids(A), ids(B, [A]), f"{A[:8]} {B[:8]}", CFG)[0]
-        self.assertTrue(any('set version = "4.0.0"' in p for p in problems), problems)
-
-    def test_a_version_bump_without_a_move_passes(self):
-        self.assertEqual(imc.judge("0.6.0", "0.7.0", ids(A), ids(A), "", CFG)[0], [])
 
     def test_an_unreadable_registry_fails_on_main_and_tags_and_warns_on_ci_branches(self):
         p = imc.unreadable_base_policy
@@ -184,27 +242,41 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertIn("unchanged (11111111)", report[1])
 
-    def test_moved_without_a_bump_fails(self):
+    def golden(self, d: Path, value_byte: str):
+        """a test of the crate that still exercises the old value (its full hex)"""
+        (d / "tests").mkdir(exist_ok=True)
+        (d / "tests" / "previous.rs").write_text(f'#[test]\nfn old() {{ let _ = "{value_byte * 32}"; }}\n')
+
+    def test_moved_without_a_bump_and_not_kept_fails(self):
         d = self.repo()
-        self.write(d, "0.3.1", "0x22", "[0x11; 32]")
+        self.write(d, "0.3.1", "0x22", "")
         (d / "CHANGELOG.md").write_text("11111111 -> 22222222\n")
         problems = imc.check(d, None, "tag")[0]
         self.assertTrue(any("not a breaking step" in p for p in problems), problems)
 
-    def test_moved_with_a_bump_previous_and_changelog_passes(self):
+    def test_moved_without_a_bump_kept_and_tested_passes(self):
         d = self.repo()
-        self.write(d, "0.4.0", "0x22", "[0x11; 32]")
+        self.write(d, "0.3.1", "0x22", "[0x11; 32]")
+        self.golden(d, "11")
+        (d / "CHANGELOG.md").write_text("11111111 -> 22222222\n")
+        problems, report = imc.check(d, None, "tag")
+        self.assertEqual(problems, [])
+        self.assertIn("exercised by tests/previous.rs", report[1])
+
+    def test_moved_kept_but_not_tested_fails(self):
+        d = self.repo()
+        self.write(d, "0.3.1", "0x22", "[0x11; 32]")
+        (d / "CHANGELOG.md").write_text("11111111 -> 22222222\n")
+        problems = imc.check(d, None, "tag")[0]
+        self.assertTrue(any("no test under tests/ or src/ holds its full value" in p for p in problems), problems)
+
+    def test_moved_with_a_bump_and_not_kept_passes(self):
+        d = self.repo()
+        self.write(d, "0.4.0", "0x22", "")
         (d / "CHANGELOG.md").write_text("SEMANTICS_ID 11111111… -> 22222222…\n")
         problems, report = imc.check(d, None, "tag")
         self.assertEqual(problems, [])
         self.assertIn("moved 11111111 -> 22222222", report[1])
-
-    def test_moved_with_a_bump_but_no_previous_fails(self):
-        d = self.repo()
-        self.write(d, "0.4.0", "0x22", "")
-        (d / "CHANGELOG.md").write_text("11111111 -> 22222222\n")
-        problems = imc.check(d, None, "tag")[0]
-        self.assertTrue(any("does not hold the base value" in p for p in problems), problems)
 
     def test_an_identifier_the_release_did_not_have_is_new(self):
         d = self.repo()
