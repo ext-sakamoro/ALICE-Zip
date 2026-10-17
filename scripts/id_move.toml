@@ -10,6 +10,12 @@ DET_MATH_SEMANTICS_ID = "alice-det-math's own identifier, re-exported for refere
 [[id]]
 path = "alice_zip::law::SEMANTICS_ID"
 previous = "alice_zip::semantics::PREVIOUS_SEMANTICS_IDS"
+# the tests that reproduce a previous identifier's bits: each must pass, and fail once the old
+# value is taken out of the list (scripts/id_move_check.py runs both)
+previous-tests = [
+    "tests/determinism_golden.rs::law_id_digest_under_the_previous_zip_identifier_is_unchanged",
+    "tests/zip_semantics_id.rs::check_semantics_reads_this_and_previous_identifiers",
+]
 
 [[id]]
 # the payload of the FMID section of a container (no previous list: another value is refused)

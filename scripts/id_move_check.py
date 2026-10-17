@@ -15,12 +15,13 @@ releases counts once, against what was published. `--base <ref>` overrides it.
 For each identifier that exists at the base and has another value now:
 
 - when the base's value is in the identifier's previous list, the move claims the old bits
-  are reproduced (not a change of meaning) and needs no version bump, but a test of the crate
-  must still exercise the old value: some `.rs` file under tests/ or src/ with a `#[test]`
-  holds its full 64 hex digits, or the [[id]] names `previous-tests` (`<path>.rs::<fn>`), each
-  a `#[test]` fn, not `#[ignore]`d, in a file that names the previous list (a crate whose
-  tests derive the old values from pin tables instead of writing them out); none fails, so
-  the list cannot be filled to dodge a bump;
+  are reproduced (not a change of meaning) and needs no version bump, but the claim is tested
+  by behaviour: the [[id]] names `previous-tests` (`<path>.rs::<fn>`, each a `#[test]` fn, not
+  `#[ignore]`d), and the tool runs each of them twice in a copy of the working tree next to it:
+  as it is (it must pass, one test run) and with the old value taken out of the previous list's
+  definition (located by its rustdoc span; the value written as `hex32("…")` / a hex string, as
+  32 byte literals, or as `[0xNN; 32]`) (it must fail). A test that passes without the old value
+  does not depend on it, and naming none fails, so the list cannot be filled to dodge a bump;
 - otherwise (not in the list, or no list) the move is a change of meaning and the version must
   be a breaking step from the base's (a major for 1.x and later, a minor or a major for 0.x);
 - in both cases CHANGELOG.md must name both values (their first 8 hex digits).
@@ -227,8 +228,14 @@ def id_constants_from_doc(doc: dict) -> dict[str, list[str]]:
     return {k: sorted(v) for k, v in out.items()}
 
 
-def id_constants(crate_dir: Path, cfg: Config) -> dict[str, list[str]]:
-    return id_constants_from_doc(rustdoc_json(crate_dir, cfg))
+_DOC: dict[str, dict] = {}
+
+
+def id_constants(crate_dir: Path, cfg: Config, root: Path | None = None) -> dict[str, list[str]]:
+    doc = rustdoc_json(crate_dir, cfg)
+    if root is not None:
+        _DOC[str(root)] = doc
+    return id_constants_from_doc(doc)
 
 
 def completeness(cfg: Config, found: dict[str, list[str]]) -> list[str]:
@@ -453,57 +460,139 @@ def read_ids(source: Path | str, cfg: Config, target_dir: Path, with_previous: b
     return out
 
 
-def tests_naming(crate_dir: Path):
-    """a function hex -> [files]: the .rs files under tests/ and src/ that hold the full value and
-    a `#[test]` (the old generation is still exercised)"""
-    files = []
-    for top in ("tests", "src"):
-        d = crate_dir / top
-        if d.exists():
-            files += sorted(d.rglob("*.rs"))
-    texts = []
-    for f in files:
+def _test_fn_problem(crate_dir: Path, ref: str, list_name: str) -> str | None:
+    rel, fn = ref.split("::")
+    f = crate_dir / rel
+    if not f.exists():
+        return f"{rel} does not exist"
+    text = f.read_text(encoding="utf-8")
+    m = re.search(r"((?:[ \t]*#\[[^\n]*\]\s*\n)*)[ \t]*(?:pub\s+)?fn\s+" + re.escape(fn) + r"\s*\(", text)
+    if not m:
+        return f"no fn {fn} in {rel}"
+    if "#[test]" not in m.group(1):
+        return f"fn {fn} has no #[test]"
+    if re.search(r"#\[\s*ignore", m.group(1)):
+        return f"fn {fn} is #[ignore]d"
+    return None
+
+
+def remove_value(source: str, old_hex: str) -> str | None:
+    """`source` (a previous list's definition) with the value `old_hex` changed so it no longer
+    matches, or None when the value is not written there in a form this tool reads"""
+    if old_hex in source.lower():
+        i = source.lower().index(old_hex)
+        last = source[i + 63]
+        flipped = "0" if last.lower() != "0" else "1"
+        return source[:i + 63] + flipped + source[i + 64:]
+    byte_list = [old_hex[k:k + 2] for k in range(0, 64, 2)]
+    rx = r"\s*,\s*".join(rf"0[xX]{b}(?:_?u8)?" for b in byte_list)
+    m = re.search(rx, source, re.I)
+    if m:
+        tail = re.search(r"0[xX][0-9a-fA-F]{2}(?:_?u8)?$", m.group(0))
+        flipped = "0x00" if byte_list[-1] != "00" else "0x01"
+        return source[:m.start() + tail.start()] + flipped + source[m.end():]
+    if len(set(byte_list)) == 1:
+        m = re.search(rf"\[\s*0[xX]{byte_list[0]}(?:_?u8)?\s*;\s*32\s*\]", source, re.I)
+        if m:
+            flipped = "0x00" if byte_list[0] != "00" else "0x01"
+            return source[:m.start()] + f"[{flipped}; 32]" + source[m.end():]
+    return None
+
+
+def run_named_test(crate_dir: Path, ref: str, target_dir: Path) -> tuple[bool, int, str]:
+    """(passed, tests run, output tail) of one named test in the crate at `crate_dir`"""
+    rel, fn = ref.split("::")
+    sel = ["--test", Path(rel).stem] if rel.startswith("tests/") else ["--lib"]
+    env = dict(os.environ, CARGO_TARGET_DIR=str(target_dir))
+    r = subprocess.run(["cargo", "test", "--quiet", "--manifest-path", str(crate_dir / "Cargo.toml"), "--all-features",
+                        *sel, fn, "--", "--exact"], capture_output=True, text=True, env=env)
+    ran = sum(int(x) for x in re.findall(r"test result: \w+\. (\d+) passed", r.stdout)) + \
+        sum(int(x) for x in re.findall(r"(\d+) failed", r.stdout))
+    return r.returncode == 0, ran, (r.stdout + r.stderr).strip()[-400:]
+
+
+class PreviousVerifier:
+    """runs each [[id]]'s previous-tests against a copy of the working tree with the old value
+    taken out of the previous list"""
+
+    def __init__(self, root: Path, cfg: Config, doc: dict | None, target_dir: Path):
+        self.root, self.cfg, self.doc, self.target = root, cfg, doc, target_dir
+
+    def _list_span(self, spec: IdSpec) -> tuple[str, int, int] | None:
+        name = (spec.previous or "").rsplit("::", 1)[-1]
+        for item in (self.doc or {}).get("index", {}).values():
+            if item.get("name") == name and "constant" in item.get("inner", {}) and item.get("span"):
+                sp = item["span"]
+                return sp["filename"], sp["begin"][0], sp["end"][0]
+        return None
+
+    def __call__(self, spec: IdSpec, old: str) -> tuple[list[str], list[str]]:
+        problems, passed_refs = [], []
+        if not spec.previous_tests:
+            return [], [f"{spec.path}: the move keeps {old[:8]} in {spec.previous} but the [[id]] names no "
+                        f"previous-tests: name the tests that reproduce the old generation, or treat the move as a "
+                        f"change of meaning (breaking version, value out of the list)"]
+        crate_dir = (self.root / self.cfg.manifest).resolve().parent
+        list_name = spec.previous.rsplit("::", 1)[-1]
+        for ref in spec.previous_tests:
+            why = _test_fn_problem(crate_dir, ref, list_name)
+            if why:
+                problems.append(f"{spec.path}: previous-tests {ref}: {why}")
+        if problems:
+            return [], problems
+        span = self._list_span(spec)
+        if span is None:
+            return [], [f"{spec.path}: {spec.previous} has no source span in the rustdoc JSON, so the old value cannot be taken out of it"]
+        rel, begin, end = span
+        # the copy sits next to the repository root so sibling path dependencies resolve
+        top = self.root.resolve()
+        copy = top.parent / f".{top.name}.id-move-previous-{os.getpid()}"
         try:
-            texts.append((f.relative_to(crate_dir).as_posix(), f.read_text(encoding="utf-8")))
-        except (OSError, UnicodeDecodeError):
-            continue
-
-    def find(hex_value: str) -> list[str]:
-        return [name for name, text in texts if hex_value in text.lower() and "#[test]" in text]
-    return find
-
-
-def named_previous_tests(crate_dir: Path, spec: IdSpec) -> tuple[list[str], list[str]]:
-    """(tests found, problems) for the [[id]]'s previous-tests: each a `#[test]` fn, not ignored,
-    in a file that names the previous list"""
-    found, problems = [], []
-    list_name = (spec.previous or "").rsplit("::", 1)[-1]
-    for ref in spec.previous_tests:
-        rel, fn = ref.split("::")
-        f = crate_dir / rel
-        if not f.exists():
-            problems.append(f"{spec.path}: previous-tests {ref}: {rel} does not exist")
-            continue
-        text = f.read_text(encoding="utf-8")
-        m = re.search(r"((?:[ \t]*#\[[^\n]*\]\s*\n)*)[ \t]*(?:pub\s+)?fn\s+" + re.escape(fn) + r"\s*\(", text)
-        if not m:
-            problems.append(f"{spec.path}: previous-tests {ref}: no fn {fn} in {rel}")
-        elif "#[test]" not in m.group(1):
-            problems.append(f"{spec.path}: previous-tests {ref}: fn {fn} has no #[test]")
-        elif re.search(r"#\[\s*ignore", m.group(1)):
-            problems.append(f"{spec.path}: previous-tests {ref}: fn {fn} is #[ignore]d")
-        elif list_name not in text:
-            problems.append(f"{spec.path}: previous-tests {ref}: {rel} does not name {list_name}")
-        else:
-            found.append(ref)
-    return found, problems
+            files = subprocess.run(["git", "-C", str(top), "ls-files", "-co", "--exclude-standard"],
+                                   capture_output=True, text=True, check=True).stdout.split("\n")
+            for f in files:
+                if not f or f.startswith("target/"):
+                    continue
+                src = top / f
+                if src.is_file():
+                    dst = copy / f
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    # new mtimes: a build left in the target dir from an earlier (changed) copy
+                    # must not look newer than these sources
+                    shutil.copy(src, dst)
+            copy_crate = copy / crate_dir.relative_to(top)
+            for ref in spec.previous_tests:
+                ok, ran, out = run_named_test(copy_crate, ref, self.target)
+                if not ok or ran < 1:
+                    problems.append(f"{spec.path}: previous-tests {ref} does not pass as it is ({ran} run): {out}")
+            if problems:
+                return [], problems
+            path = copy_crate / rel
+            lines = path.read_text(encoding="utf-8").split("\n")
+            block = "\n".join(lines[begin - 1:end])
+            changed = remove_value(block, old)
+            if changed is None:
+                return [], [f"{spec.path}: {old[:8]} is not written in {rel}:{begin}-{end} ({list_name}) as a hex string, "
+                            f"32 byte literals or [0xNN; 32], so the tool cannot take it out to test the claim"]
+            lines[begin - 1:end] = changed.split("\n")
+            path.write_text("\n".join(lines), encoding="utf-8")
+            for ref in spec.previous_tests:
+                ok, ran, out = run_named_test(copy_crate, ref, self.target)
+                if ok:
+                    problems.append(f"{spec.path}: previous-tests {ref} still passes with {old[:8]} taken out of "
+                                    f"{list_name}: it does not depend on the old value")
+                else:
+                    passed_refs.append(ref)
+        finally:
+            shutil.rmtree(copy, ignore_errors=True)
+        return passed_refs, problems
 
 
 def judge(base_version: str, head_version: str, base: dict[str, dict | None],
           head: dict[str, dict | None], changelog: str, cfg: Config,
-          reproduced=lambda _hex: [], crate_dir: Path | None = None) -> tuple[list[str], list[str]]:
-    """(problems, lines of what was compared); `reproduced(hex)` lists the test files that still
-    exercise a value"""
+          verify_previous=None) -> tuple[list[str], list[str]]:
+    """(problems, lines of what was compared); `verify_previous(spec, old)` returns (tests that
+    passed with the old value and failed without it, problems)"""
     problems, report = [], []
     for spec in cfg.ids:
         now, then = head.get(spec.path), base.get(spec.path)
@@ -520,19 +609,16 @@ def judge(base_version: str, head_version: str, base: dict[str, dict | None],
         in_previous = bool(spec.previous) and old in (now.get("previous") or [])
         if in_previous:
             # same bits claimed: no bump, but the old generation must still be tested
-            refs = reproduced(old)
-            if spec.previous_tests and crate_dir is not None:
-                named, why = named_previous_tests(crate_dir, spec)
-                refs = refs + named
-                problems.extend(why)
+            if verify_previous is None:
+                refs, why = [], [f"{spec.path}: the move keeps {old[:8]} in {spec.previous}, and nothing tested the claim"]
+            else:
+                refs, why = verify_previous(spec, old)
+            problems.extend(why)
             report.append(f"{spec.path}: moved {old[:8]} -> {new[:8]}, the old value kept in {spec.previous}"
                           + (f" and exercised by {', '.join(refs)}" if refs else ""))
-            if not refs:
-                problems.append(f"{spec.path}: moved {old[:8]} -> {new[:8]} keeping {old[:8]} in {spec.previous} "
-                                f"(the old bits reproduced), but no test under tests/ or src/ holds its full value "
-                                f"{old} and no previous-tests entry names one: add the test that reproduces the old "
-                                f"generation, or treat the move as a change of meaning (breaking version, value out "
-                                f"of the list)")
+            if not refs and not why:
+                problems.append(f"{spec.path}: moved {old[:8]} -> {new[:8]} keeping {old[:8]} in {spec.previous}, "
+                                f"but no previous-tests entry showed it depends on the old value")
         else:
             report.append(f"{spec.path}: moved {old[:8]} -> {new[:8]}")
         if not in_previous and not is_breaking(base_version, head_version):
@@ -553,7 +639,7 @@ def judge(base_version: str, head_version: str, base: dict[str, dict | None],
 
 def check(root: Path, base_ref: str | None, base_from: str = "auto") -> tuple[list[str], list[str]]:
     cfg = load_config(root)
-    missing = completeness(cfg, id_constants((root / cfg.manifest).resolve().parent, cfg))
+    missing = completeness(cfg, id_constants((root / cfg.manifest).resolve().parent, cfg, root))
     problems, report = check_values(root, base_ref, base_from)
     return missing + problems, report
 
@@ -588,10 +674,11 @@ def check_values(root: Path, base_ref: str | None, base_from: str = "auto") -> t
     else:
         base = None
     if base is not None:
-        shutil.rmtree(work, ignore_errors=True)
-        problems, report = judge(base_version, head_version, base, head, changelog, cfg,
-                                tests_naming((root / cfg.manifest).resolve().parent),
-                                (root / cfg.manifest).resolve().parent)
+        try:
+            problems, report = judge(base_version, head_version, base, head, changelog, cfg,
+                                    PreviousVerifier(root, cfg, _DOC.get(str(root)), target))
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
         report.insert(0, f"base {base_ref}: {source}, working tree {head_version}")
         return problems, report
     # the base tree sits next to the root, at the same depth, so a path dependency on a
@@ -608,13 +695,13 @@ def check_values(root: Path, base_ref: str | None, base_from: str = "auto") -> t
             if r.returncode != 0:
                 raise CheckError(f"git {args[0]} {base_ref}: {r.stderr.strip()}")
         base = read_ids(wt, cfg, target, with_previous=False)
+        shutil.rmtree(wt, ignore_errors=True)
         head = read_ids(root, cfg, target)
+        problems, report = judge(base_version, head_version, base, head, changelog, cfg,
+                                PreviousVerifier(root, cfg, _DOC.get(str(root)), target))
     finally:
         shutil.rmtree(wt, ignore_errors=True)
         shutil.rmtree(work, ignore_errors=True)
-    problems, report = judge(base_version, head_version, base, head, changelog, cfg,
-                                tests_naming((root / cfg.manifest).resolve().parent),
-                                (root / cfg.manifest).resolve().parent)
     report.insert(0, f"base {base_ref}: the tag's tree ({base_version}), working tree {head_version}")
     return problems, report
 
