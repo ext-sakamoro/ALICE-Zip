@@ -48,18 +48,27 @@ note = "no library source calls `mul_add`/`fma` at all (src/generators/polynomia
 reference_repo = ""
 
 [G4]
-status = "fail-known"
-evidence = ["tests/determinism_golden.rs", "tests/analytic_law_id.rs", "tests/residual_container_oracle.rs", ".github/workflows/ci.yml test job"]
+status = "pass"
+evidence = [
+    "tests/float_edge_golden.rs (20 tests, expected bits to_bits): signed zero and exact cancellation through the law and polynomial evaluation (polynomial_at_exact_cancellation_is_positive_zero_in_both_orders, polynomial_at_negative_zero_input_keeps_sign_only_with_negative_zero_constant, polynomial_at_large_opposite_terms_leave_exact_survivor_two, horner_cancellation_is_positive_zero_not_the_fma_rounding_error, law_evaluate_exact_cancellation_is_positive_zero and the rest); tests/analytic_law_id.rs (negative_zero_is_observable_in_evaluation_so_it_changes_the_id), tests/minmax_sign_golden.rs and tests/determinism_golden.rs pin the rest",
+    "debug x {x86_64, aarch64}: .github/workflows/ci.yml test job, matrix ubuntu-latest (x86_64), macos-latest (aarch64), windows-latest (x86_64), default features and the docs.rs feature set, through scripts/run_tests.sh (a named file that runs no test fails the step), no continue-on-error",
+    "release x {x86_64, aarch64}: .github/workflows/release-profile.yml job release-goldens, matrix ubuntu-latest (x86_64) and macos-latest (aarch64), default features and every feature (std, fft, parallel, lzma), the same run_tests.sh guard, no continue-on-error; mirrored in scripts/preflight.sh",
+]
+mutant = "measured 2026-10-17, reverted: polynomial_at_negative_zero_input_keeps_sign_only_with_negative_zero_constant expecting +0 instead of -0 fails float_edge_golden under --release (19 passed, 1 failed); the expected value is a constant, so it fails on every leg"
 since = ""
-note = "the bit-pattern goldens exist — tests/determinism_golden.rs records fixed digests of generator/analysis output (with an emptiness gate: hashes >= min_bytes), tests/analytic_law_id.rs::negative_zero_is_observable_in_evaluation_so_it_changes_the_id and tests/residual_container_oracle.rs exercise signed-zero/denormal cases — but CI runs the whole test suite only under the DEBUG profile, on ubuntu-latest (x86_64), macos-latest (aarch64) and windows-latest (x86_64) (ci.yml test job: `cargo test`, `cargo test --no-default-features`; no `--release`). The {debug,release} x {x86_64,aarch64} matrix this gate requires is therefore missing both release legs (C5). The only `--release` in CI is `cargo run --release --example compression_ratio` on x86_64 ubuntu, which is not the golden suite and not aarch64. Mutant once release legs exist: flip one digest in determinism_golden.rs -> fails on every leg."
-reference_repo = ""
+note = "the debug legs and the release goldens existed since the G14 work (release-profile.yml); the release step with every feature is added here, so the lzma, fft and parallel paths of the goldens also run in release on both architectures."
+reference_repo = "ALICE-Analytics"
 
 [G5]
-status = "fail-known"
-evidence = [".github/workflows/ci.yml", "scripts/preflight.sh"]
+status = "pass"
+evidence = [
+    ".github/workflows/release-profile.yml job release-golden(s), runner labels ubuntu-latest (x86_64) and macos-latest (aarch64): cargo test --release for tests/analytic_law_id.rs, float_edge_golden.rs, determinism_golden.rs and float_environment.rs with the default features, and with every feature also minmax_sign_golden.rs and order_determinism.rs, through scripts/run_tests.sh",
+    "no paths filter: every commit to main and ci/** runs it",
+]
+mutant = "measured 2026-10-17: the macos-latest leg is the only aarch64 release run of the goldens; the flipped expected bit of the G4 mutant fails the release step"
 since = ""
-note = "no job anywhere runs the Law-bearing test suite under `--release`, on aarch64 or any arch: the ci.yml test matrix runs `cargo test` in debug only (macos-latest provides an aarch64 runner, but debug), and the sole `--release` invocations are an example run (`cargo run --release --example compression_ratio`, x86_64 ubuntu), the libalice cdylib/CLI build, and the maturin wheel build — none of which runs the Law tests. The required aarch64 release leg (the one leg that executes a hardware fma and can catch a G3/G4 regression) does not exist (C5)."
-reference_repo = ""
+note = "an aarch64 release-only divergence (contraction into fma, reassociation) fails macos-latest."
+reference_repo = "ALICE-Analytics"
 
 [G6]
 status = "pass"
@@ -147,11 +156,16 @@ note = "the public-text.yml job runs scripts/public_text.sh, which fetches ALICE
 reference_repo = "ALICE-Law"
 
 [G13]
-status = "fail-known"
-evidence = ["src/generators/perlin.rs"]
+status = "pass"
+evidence = [
+    "type-resolved half (the lint): clippy.toml disallowed-methods std::thread::spawn, std::thread::scope, std::thread::Builder::spawn, std::thread::Builder::spawn_scoped and std::thread::available_parallelism, disallowed-types std::collections::HashMap, HashSet and their iterators (hash_map::Iter / Keys / Values / IntoIter, hash_set::Iter / IntoIter) and std::thread::Builder / JoinHandle / ScopedJoinHandle, on every target and the no_std, default and docs.rs feature sets with -D warnings (ci.yml clippy job); paths resolve through module aliases, re-exports and glob imports; scripts/clippy_canary.py plants every entry, the generic thread functions with turbofish type arguments: 191 planted, 0 skipped",
+    "parallel reduction: the only parallel code is the parallel feature's per-row 2D Perlin generation (src/generators/perlin.rs, indexed into_par_iter + flat_map_iter + collect, no float reduced across rows); tests/order_determinism.rs perlin_texture_is_the_same_bits_for_every_thread_count builds it in rayon pools of 1, 4 and 7 threads and compares the bits with each other and with the serial composition of PerlinNoise::fbm (ci.yml docs.rs feature-set test step and release-profile.yml every-feature step)",
+    "text and dependency layer: scripts/order_guard.py (the same file as ALICE-Analytics' and ALICE-Edge's, tests scripts/test_order_guard.py; ci.yml clippy job and preflight) with scripts/order_allowlist.toml: the two parallel lines of src/generators/perlin.rs and the optional rayon dependency, each with its count and reason; any other HashMap / HashSet, thread path, rayon / crossbeam use, pointer-to-integer cast or order dependency fails, a stale entry fails, reading no file fails: 19 files, 3 allowed lines",
+]
+mutant = "measured 2026-10-17, each reverted: the Perlin collect made unordered (into_par_iter replaced by par_bridge) fails perlin_texture_is_the_same_bits_for_every_thread_count; appended to src/generators/polynomial.rs, each fails cargo clippy --lib -D warnings with disallowed_methods: `use std::thread as t; t::spawn(..)`, `mod zz { pub use std::thread as pool; } zz::pool::spawn(..)`, `use std::thread::{self as t}`, `use std::thread::*`, `use std as s; s::thread::Builder::new().spawn(..)`, `std::thread::scope(..)`"
 since = ""
-note = "the published crate's library src/ names HashMap / HashSet / BTreeMap nowhere (a full scan of src/*.rs returned zero), so no Law-bearing output iterates an unspecified-order collection today; the `parallel` feature's rayon use generates each 2D Perlin row independently into its own slot (src/generators/perlin.rs), a per-row write with no float reduction whose combination order could vary. But the gate's evidence is a lint banning HashMap/HashSet iteration in the Law modules (or a reasoned allowlist), and there is none, so nothing ratchets the absence (C6). Classified fail-known C6: the property holds as a current snapshot (0 sites) but is not a machine-checked gate. (libalice/src/residual.rs uses std::collections::HashMap, but that is the excluded libalice crate, not alice-zip, and is residual-reconstruction bookkeeping, not a Law-bearing float output.)"
-reference_repo = ""
+note = "libalice (a separate crate in this repository, not built by the root clippy job) keeps a HashMap in residual.rs for reconstruction bookkeeping; it is outside alice-zip's Law-bearing output. std::thread::Scope is not a disallowed type because the scope function (its only source) is a disallowed method, and the canary's scope plant names the type."
+reference_repo = "ALICE-Analytics"
 
 [G14]
 status = "pass"

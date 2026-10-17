@@ -45,7 +45,7 @@ jobs:
       - name: Test (default features)
         run: scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment=2,int2d_oracle=23 -- cargo test
       - name: Test (docs.rs feature set)
-        run: scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment=2,int2d_oracle=23 -- cargo test --features "$ALL_FEATURES"
+        run: scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment=2,int2d_oracle=23,order_determinism -- cargo test --features "$ALL_FEATURES"
       - name: Test (no_std, lib unit tests)
         run: cargo test --lib --no-default-features
       # The golden records bit patterns, so it is the one suite whose result
@@ -213,6 +213,11 @@ jobs:
         run: python3 scripts/test_entropy_guard.py
       - name: Entropy guard (no OS entropy or wall clock in production code)
         run: python3 scripts/entropy_guard.py
+      # G13: no unspecified-order collection, thread combination or address order in production code
+      - name: Order guard (tests)
+        run: python3 scripts/test_order_guard.py
+      - name: Order guard
+        run: python3 scripts/order_guard.py
 
   no_std:
     name: no_std (rlib, thumbv7em-none-eabihf)
