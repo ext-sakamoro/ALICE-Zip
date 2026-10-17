@@ -452,7 +452,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 |---|---|---|
 | G1 no-libm-direct | 適合 | every method the G1 list marks banned is in clippy.toml, the pending powi is banned, every feature and the no_std target are linted with -D warnings, and the … |
 | G2 ieee-max-min | 適合 | met for the Rust crates (alice-zip and libalice). The Python package computes no max / min that feeds a stored identifier. |
-| G3 no-outer-fneg-of-fma | 未達 | no library source calls `mul_add`/`fma` at all (src/generators/polynomial.rs:63 is a doc comment deliberately keeping Horner as separate multiply-and-add … |
+| G3 no-outer-fneg-of-fma | 適合 | no fused multiply-add call in the library sources (the polynomial and law evaluators multiply and add separately): the syntax-tree check reads 41 files and … |
 | G4 debug-release-arch-goldens | 未達 | the bit-pattern goldens exist — tests/determinism_golden.rs records fixed digests of generator/analysis output (with an emptiness gate: hashes >= min_bytes), … |
 | G5 release-profile-test-leg | 未達 | no job anywhere runs the Law-bearing test suite under `--release`, on aarch64 or any arch: the ci.yml test matrix runs `cargo test` in debug only (macos-latest … |
 | G6 semantics-id | 適合 | the identifier moves when a pinned output, a tag or the det-math generation moves, not with the crate version. The law identifier goldens are not entries: they … |
