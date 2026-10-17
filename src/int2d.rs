@@ -709,6 +709,62 @@ impl IntLaw2 for PlanePerTile {
     }
 }
 
+// ------------------------------------------------------------------ causal laws
+
+/// Kind tag of [`Prev`] in its law identifier
+pub const CAUSAL_PREV_KIND: &[u8] = b"int-law-2d/causal-prev/v1";
+
+/// A law that predicts a cell from the values already decoded before it, in the domain's
+/// order (row by row for a lattice, `(i, j)` order for points)
+///
+/// The object holds no state: `decoded` is exactly the reconstructed values of cells
+/// `0..k`, and the prediction for cell `k` (at `cell`) may depend on them, on `k` and on the
+/// cell, and on nothing else. Encoder and decoder call it with the same prefix (the decoder's
+/// own reconstruction), so a bounded archive is closed loop.
+pub trait CausalLaw2 {
+    /// The prediction for cell number `k` at `cell`, from the reconstructed values `decoded`
+    /// of cells `0..k`
+    ///
+    /// # Errors
+    ///
+    /// [`Int2dError::Overflow`] when the prediction does not fit
+    fn predict(&self, k: usize, cell: (i64, i64), decoded: &[i64]) -> Result<i64, Int2dError>;
+
+    /// A content identifier of the law (as for [`IntLaw2::law_id`])
+    fn law_id(&self) -> [u8; 32];
+}
+
+/// The previous value in the domain's order (0 for the first cell): the residuals are the
+/// plain previous-value deltas
+///
+/// On an adaptive TIN in `(i, j)` order (1.07 M vertices) the 2-D predictors measured no
+/// gain over this one (median / plane of left and up within 1%, up alone 40% larger), so
+/// only the previous value is built in; a law over a lattice's neighbours can be added as
+/// another [`CausalLaw2`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Prev;
+
+impl CausalLaw2 for Prev {
+    fn predict(&self, k: usize, _cell: (i64, i64), decoded: &[i64]) -> Result<i64, Int2dError> {
+        if k == 0 {
+            return Ok(0);
+        }
+        decoded
+            .get(k - 1)
+            .copied()
+            .ok_or(Int2dError::InvalidParameter(
+                "decoded holds fewer than k values",
+            ))
+    }
+
+    fn law_id(&self) -> [u8; 32] {
+        let mut h = Sha256::new();
+        update_length_prefixed(&mut h, LAW_ID_DOMAIN);
+        update_length_prefixed(&mut h, CAUSAL_PREV_KIND);
+        h.finalize().into()
+    }
+}
+
 // ------------------------------------------------------------------ residuals
 
 /// How the residuals are stored
@@ -897,7 +953,42 @@ pub fn encode_with(
     mode: Mode,
     codec: Codec,
 ) -> Result<Encoded, Int2dError> {
-    let r = residuals(domain, values, law)?;
+    encode_core(
+        &MAGIC,
+        law.law_id(),
+        domain,
+        values,
+        mode,
+        codec,
+        &mut |_, (i, j), _| law.predict(i, j),
+    )
+}
+
+/// The prediction for cell number `k` at a cell from the values rebuilt so far
+#[cfg(feature = "std")]
+type Predictor<'a> = dyn FnMut(usize, (i64, i64), &[i64]) -> Result<i64, Int2dError> + 'a;
+
+#[cfg(feature = "std")]
+#[allow(clippy::too_many_arguments)]
+fn encode_core(
+    magic: &[u8; 4],
+    law_id: [u8; 32],
+    domain: &Domain,
+    values: &[i64],
+    mode: Mode,
+    codec: Codec,
+    predict: &mut Predictor<'_>,
+) -> Result<Encoded, Int2dError> {
+    let n = domain.len();
+    if n == 0 {
+        return Err(Int2dError::EmptyDomain);
+    }
+    if n != values.len() {
+        return Err(Int2dError::LengthMismatch {
+            cells: n,
+            values: values.len(),
+        });
+    }
     let (mode_byte, q) = match mode {
         // q = 1 keeps every value, so it is written as the lossless mode (one encoding each)
         Mode::Lossless | Mode::Bounded { q: 1 } => (MODE_LOSSLESS, 1_u64),
@@ -905,14 +996,17 @@ pub fn encode_with(
         Mode::Bounded { q } => (MODE_BOUNDED, q),
     };
     let qi = i128::from(q);
-    let mut raw = Vec::with_capacity(r.len() * 2);
-    let mut rebuilt = Vec::with_capacity(r.len());
+    let mut raw = Vec::with_capacity(n * 2);
+    let mut rebuilt: Vec<i64> = Vec::with_capacity(n);
     let mut max_err = 0_u64;
-    for ((&res, &v), (i, j)) in r.iter().zip(values).zip(domain.cells()) {
+    // closed loop: each prediction sees the values a decoder will have rebuilt, not the
+    // originals, so a bounded archive keeps its bound at every cell
+    for (k, (&v, cell)) in values.iter().zip(domain.cells()).enumerate() {
+        let p = predict(k, cell, &rebuilt)?;
+        let res = v.checked_sub(p).ok_or(Int2dError::Overflow)?;
         let quot = to_i64(round_half_up(i128::from(res), qi)?)?;
         put_varint(&mut raw, zigzag(quot));
-        let back = add(i128::from(law.predict(i, j)?), mul(i128::from(quot), qi)?)?;
-        let back = to_i64(back)?;
+        let back = to_i64(add(i128::from(p), mul(i128::from(quot), qi)?)?)?;
         let err = (i128::from(v) - i128::from(back)).unsigned_abs();
         max_err = max_err.max(u64::try_from(err).map_err(|_| Int2dError::Overflow)?);
         rebuilt.push(back);
@@ -925,10 +1019,10 @@ pub fn encode_with(
         ),
         Codec::Raw => (CODEC_RAW, raw),
     };
-    let mut bytes = Vec::with_capacity(HEADER_LEN + payload.len());
-    bytes.extend_from_slice(&MAGIC);
+    let mut bytes = Vec::with_capacity(HEADER_LEN + payload.len() + TRAILER_LEN);
+    bytes.extend_from_slice(magic);
     bytes.extend_from_slice(&VERSION.to_be_bytes());
-    bytes.extend_from_slice(&law.law_id());
+    bytes.extend_from_slice(&law_id);
     bytes.extend_from_slice(&domain.digest());
     bytes.push(mode_byte);
     bytes.extend_from_slice(&q.to_be_bytes());
@@ -965,6 +1059,57 @@ fn take_u64(b: &[u8], at: &mut usize) -> Result<u64, Int2dError> {
     Ok(u64::from_be_bytes(a))
 }
 
+/// Magic of an archive of a [`CausalLaw2`] ([`encode_causal`]); the layout is that of
+/// [`encode`] with this magic, so neither decoder reads the other's archives
+pub const MAGIC_CAUSAL: [u8; 4] = *b"ALC2";
+
+/// Encode `values` on `domain` as residuals against a causal `law`, closed loop: the
+/// prediction for each cell is made from the values a decoder will have rebuilt, so
+/// [`Mode::Bounded`] keeps `|value - decoded| <= floor(q / 2)` at every cell
+///
+/// # Errors
+///
+/// As [`encode`]
+#[cfg(feature = "std")]
+pub fn encode_causal(
+    domain: &Domain,
+    values: &[i64],
+    law: &dyn CausalLaw2,
+    mode: Mode,
+    codec: Codec,
+) -> Result<Encoded, Int2dError> {
+    encode_core(
+        &MAGIC_CAUSAL,
+        law.law_id(),
+        domain,
+        values,
+        mode,
+        codec,
+        &mut |k, cell, prefix| law.predict(k, cell, prefix),
+    )
+}
+
+/// Decode an archive written by [`encode_causal`] for `domain` with `law`, with the checks
+/// of [`decode`]
+///
+/// # Errors
+///
+/// As [`decode`]
+#[cfg(feature = "std")]
+pub fn decode_causal(
+    bytes: &[u8],
+    domain: &Domain,
+    law: &dyn CausalLaw2,
+) -> Result<Vec<i64>, Int2dError> {
+    decode_core(
+        &MAGIC_CAUSAL,
+        law.law_id(),
+        bytes,
+        domain,
+        &mut |k, cell, prefix| law.predict(k, cell, prefix),
+    )
+}
+
 /// zlib-inflate `payload`, stopping after `limit` bytes of output (so a small payload cannot
 /// expand without bound in memory)
 #[cfg(feature = "std")]
@@ -993,8 +1138,21 @@ fn inflate_bounded(payload: &[u8], limit: u64) -> Result<Vec<u8>, Int2dError> {
 /// law's errors and [`Int2dError::Overflow`]
 #[cfg(feature = "std")]
 pub fn decode(bytes: &[u8], domain: &Domain, law: &dyn IntLaw2) -> Result<Vec<i64>, Int2dError> {
+    decode_core(&MAGIC, law.law_id(), bytes, domain, &mut |_, (i, j), _| {
+        law.predict(i, j)
+    })
+}
+
+#[cfg(feature = "std")]
+fn decode_core(
+    magic: &[u8; 4],
+    law_id: [u8; 32],
+    bytes: &[u8],
+    domain: &Domain,
+    predict: &mut Predictor<'_>,
+) -> Result<Vec<i64>, Int2dError> {
     let mut at = 0;
-    if take(bytes, &mut at, 4)? != MAGIC {
+    if take(bytes, &mut at, 4)? != magic {
         return Err(Int2dError::BadHeader("magic"));
     }
     let v = take(bytes, &mut at, 2)?;
@@ -1011,7 +1169,7 @@ pub fn decode(bytes: &[u8], domain: &Domain, law: &dyn IntLaw2) -> Result<Vec<i6
         return Err(Int2dError::HashMismatch);
     }
     let bytes = body;
-    if take(bytes, &mut at, 32)? != law.law_id() {
+    if take(bytes, &mut at, 32)? != law_id {
         return Err(Int2dError::LawIdMismatch);
     }
     if take(bytes, &mut at, 32)? != domain.digest() {
@@ -1062,9 +1220,10 @@ pub fn decode(bytes: &[u8], domain: &Domain, law: &dyn IntLaw2) -> Result<Vec<i6
     let qi = i128::from(q);
     let mut out = Vec::with_capacity(n);
     let mut p = 0;
-    for (i, j) in domain.cells() {
+    for (k, cell) in domain.cells().enumerate() {
         let quot = unzigzag(get_varint(&raw, &mut p)?);
-        let back = add(i128::from(law.predict(i, j)?), mul(i128::from(quot), qi)?)?;
+        let pred = predict(k, cell, &out)?;
+        let back = add(i128::from(pred), mul(i128::from(quot), qi)?)?;
         out.push(to_i64(back)?);
     }
     if p != raw.len() {
