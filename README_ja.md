@@ -462,7 +462,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 | G10 no-run-varying-artifacts | 適合 | the Python package has no other unseeded randomness, clock or UUID (a scan of alice_zip/ finds only RandomState(seed) at media_generators.py and … |
 | G11 gate-self-tests | 未達 | unmet: clause (c). scripts/clippy_canary.py, scripts/test_clippy_canary.py, scripts/gen_clippy_canary_calls.py, scripts/test_gen_clippy_canary_calls.py, … |
 | G12 public-repo-text-rules | 適合 | the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names … |
-| G13 no-unspecified-order | 適合 | libalice (a separate crate in this repository, not built by the root clippy job) keeps a HashMap in residual.rs for reconstruction bookkeeping; it is outside … |
+| G13 no-unspecified-order | 適合 | libalice (alice-zip-cli, a separate crate in this repository that preflight lints with the same clippy.toml) reads its JSON header into a BTreeMap (keyed … |
 | G14 float-environment-invariants | 適合 | the static scan covers the files of this repository (libalice/ included) and the dynamic check covers the alice-zip builds CI runs on ubuntu and macOS; a flag … |
 
 ### feature と保証の範囲
