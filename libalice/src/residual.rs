@@ -22,7 +22,7 @@
 //! # License
 //! ALICE-Zip Commercial License
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Maximum header size (10 MiB) — mirrors Python `MAX_HEADER_SIZE`.
 ///
@@ -442,7 +442,7 @@ impl ResidualData {
     /// - `"base_value"` — present for `Delta`
     #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
-        // Build the JSON header using a plain HashMap to avoid pulling in a
+        // Build the JSON header using a plain map to avoid pulling in a
         // heavyweight serialiser dependency (serde_json may not be available).
         // We construct the JSON string manually for portability.
         // the header keys of the Python writer (the canonical form): the
@@ -528,7 +528,7 @@ impl ResidualData {
     /// `alice_zip::law::check_semantics`; `None` for versions 1 to 4, which
     /// must not carry one.
     fn header_semantics(
-        map: &HashMap<String, Json>,
+        map: &BTreeMap<String, Json>,
         version: u32,
     ) -> Result<Option<[u8; 32]>, ResidualError> {
         match (version >= 5, map.get("semantics")) {
@@ -718,7 +718,7 @@ impl ResidualData {
 
     /// Minimalist JSON object parser.
     ///
-    /// Parses a flat `{"key": value, ...}` object into a `HashMap<String, String>`.
+    /// Parses a flat `{"key": value, ...}` object into a `BTreeMap<String, String>`.
     /// String values have their surrounding quotes stripped. Numeric and boolean
     /// values are kept as-is. Nested objects/arrays are not supported (not needed
     /// for our header format).
@@ -762,14 +762,14 @@ impl ResidualData {
         })
     }
 
-    fn parse_json_header(json: &str) -> Result<HashMap<String, Json>, String> {
+    fn parse_json_header(json: &str) -> Result<BTreeMap<String, Json>, String> {
         let json = json.trim();
         if !json.starts_with('{') || !json.ends_with('}') {
             return Err(format!("JSON header must be a flat object, got: {json}"));
         }
 
         let inner = &json[1..json.len() - 1];
-        let mut map = HashMap::new();
+        let mut map = BTreeMap::new();
 
         // Split into members; commas inside `shape` lists and strings stay
         for pair in Self::split_members(inner) {
@@ -807,7 +807,7 @@ impl ResidualData {
     /// `residual_dtype`, `exceptions`, and the decompressed payload split into
     /// the residual stream, the positions and the original elements.
     fn from_header_map_v4(
-        map: &HashMap<String, Json>,
+        map: &BTreeMap<String, Json>,
         compressed: Vec<u8>,
     ) -> Result<Self, ResidualError> {
         let residual_f64 = match map.get("residual_dtype") {
@@ -828,7 +828,7 @@ impl ResidualData {
             })?,
             None => return Err(ResidualError::MissingField("exceptions".to_owned())),
         };
-        let mut base: HashMap<String, Json> = map.clone();
+        let mut base: BTreeMap<String, Json> = map.clone();
         base.remove("residual_dtype");
         base.remove("exceptions");
         let mut rd = Self::from_header_map(&base, Vec::new(), 2)?;
@@ -888,7 +888,7 @@ impl ResidualData {
 
     /// Construct `ResidualData` from a parsed header map and a compressed payload.
     fn from_header_map(
-        map: &HashMap<String, Json>,
+        map: &BTreeMap<String, Json>,
         mut compressed: Vec<u8>,
         version: u32,
     ) -> Result<Self, ResidualError> {

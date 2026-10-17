@@ -164,7 +164,7 @@ evidence = [
 ]
 mutant = "measured 2026-10-17, each reverted: the Perlin collect made unordered (into_par_iter replaced by par_bridge) fails perlin_texture_is_the_same_bits_for_every_thread_count; appended to src/generators/polynomial.rs, each fails cargo clippy --lib -D warnings with disallowed_methods: `use std::thread as t; t::spawn(..)`, `mod zz { pub use std::thread as pool; } zz::pool::spawn(..)`, `use std::thread::{self as t}`, `use std::thread::*`, `use std as s; s::thread::Builder::new().spawn(..)`, `std::thread::scope(..)`"
 since = ""
-note = "libalice (a separate crate in this repository, not built by the root clippy job) keeps a HashMap in residual.rs for reconstruction bookkeeping; it is outside alice-zip's Law-bearing output. std::thread::Scope is not a disallowed type because the scope function (its only source) is a disallowed method, and the canary's scope plant names the type."
+note = "libalice (alice-zip-cli, a separate crate in this repository that preflight lints with the same clippy.toml) reads its JSON header into a BTreeMap (keyed lookups only, converted from a HashMap here). std::thread::Scope is not a disallowed type because the scope function (its only source) is a disallowed method, and the canary's scope plant names the type."
 reference_repo = "ALICE-Analytics"
 
 [G14]
