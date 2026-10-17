@@ -151,13 +151,25 @@ class EndToEnd(unittest.TestCase):
             "pub type Digest = [u8; 32];\npub const ZZ_H: Digest = [0; 32];\n"
             "mod inner { #[allow(dead_code)] pub const ZZ_I: [u8; 32] = [0; 32]; }\n"
             "const ZZ_J: [u8; 32] = [0; 32];\n"
-            "pub const NOT_16: [u8; 16] = [0; 16];\npub const NOT_I8: [i8; 32] = [0; 32];\n")
+            "pub const NOT_16: [u8; 16] = [0; 16];\npub const NOT_I8: [i8; 32] = [0; 32];\n"
+            "#[cfg(feature = \"extra\")]\npub const ZZ_K: [u8; 32] = [0; 32];\n"
+            "pub struct ZzH;\nimpl ZzH { pub const ID: [u8; 32] = [0; 32]; }\n"
+            "pub trait Stamp { const TID: [u8; 32]; }\nimpl Stamp for ZzH { const TID: [u8; 32] = [2; 32]; }\n")
+        (d / "Cargo.toml").write_text('[package]\nname = "forms"\nversion = "0.1.0"\nedition = "2021"\n\n'
+                                      '[features]\nextra = []\n\n[workspace]\n')
         cfg = imc.Config("forms", "Cargo.toml", (), True, ("v{version}",), (imc.IdSpec("forms::ZZ_A", None),))
         found = imc.id_constants(d, cfg)
-        self.assertEqual(sorted(found), [f"ZZ_{c}" for c in "ABCDEFGHIJ"])
+        self.assertEqual(sorted(found), sorted([f"ZZ_{c}" for c in "ABCDEFGHIJK"] + ["ZzH::ID", "ZzH::TID", "Stamp::TID"]))
         self.assertEqual(found["ZZ_B"], ["src/lib.rs:2"])
         problems = imc.completeness(cfg, found)
-        self.assertEqual(len(problems), 9, problems)
+        self.assertEqual(len(problems), 13, problems)
+        # an associated const is listed by Type::NAME
+        listed = imc.Config("forms", "Cargo.toml", (), True, ("v{version}",),
+                            (imc.IdSpec("forms::ZZ_A", None), imc.IdSpec("forms::ZzH::ID", None)))
+        self.assertFalse(any(p.startswith("ZzH::ID ") for p in imc.completeness(listed, found)))
+        # without the feature the gated item is not seen: rustdoc runs with every feature
+        narrow = imc.Config("forms", "Cargo.toml", (), True, ("v{version}",), cfg.ids, (), ())
+        self.assertNotIn("ZZ_K", imc.id_constants(d, narrow))
 
     def test_unmoved_passes(self):
         d = self.repo()

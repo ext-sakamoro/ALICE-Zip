@@ -30,8 +30,13 @@ listed under [exempt] with a reason, so a second identifier (a format id next to
 SEMANTICS_ID) cannot be left out. The items come from rustdoc's JSON output (RUSTC_BOOTSTRAP=1,
 --document-private-items, format_version 60, as scripts/api_boundary.py reads it), where the
 compiler has resolved the types: a text scan misses a type on the next line or behind an
-alias. An [exempt] entry that names no such item fails, and finding none fails as having
-compared nothing. A `const` inside a function body is not an item rustdoc lists.
+alias. Associated consts count too (an inherent impl's, a trait's and a trait impl's), named
+`Type::NAME` / `Trait::NAME`. rustdoc runs with every feature (`--all-features`, or the
+config's `doc-features` when a feature cannot build here), so an identifier behind a feature
+is seen; the values are still read with the config's `features`. An [exempt] entry that names
+no such item fails, and finding none fails as having compared nothing. A `const` inside a
+function body is not an item rustdoc lists, and an item behind a target cfg (`target_os`) is
+seen only on that target.
 
 The base's identifiers are read from the version as published (crates.io, `={version}`),
 which is what a stored value was stamped by; a version never published is read from the tag's
@@ -48,6 +53,7 @@ config: scripts/id_move.toml
     features = ["std"]                    # features the probe builds it with (optional)
     default-features = true               # (optional)
     tags = ["v{version}"]                 # release tag patterns
+    doc-features = ["std", "lzma"]        # rustdoc's features for completeness (default: all)
     [exempt]                              # [u8; 32] constants that are not identifiers
     SOME_KEY = "why it is not an identifier"
     [[id]]
@@ -92,6 +98,7 @@ class Config:
     tags: tuple[str, ...]
     ids: tuple[IdSpec, ...]
     exempt: tuple[tuple[str, str], ...] = ()
+    doc_features: tuple[str, ...] | None = None
 
 
 MIN_REASON = 12
@@ -104,10 +111,11 @@ def rustdoc_json(crate_dir: Path, cfg: Config) -> dict:
     try:
         cmd = ["cargo", "rustdoc", "-q", "--lib", "--manifest-path", str(crate_dir / "Cargo.toml"),
                "--target-dir", str(target)]
-        if not cfg.default_features:
-            cmd.append("--no-default-features")
-        if cfg.features:
-            cmd += ["--features", ",".join(cfg.features)]
+        # every feature: an identifier behind one must be listed too
+        if cfg.doc_features is None:
+            cmd.append("--all-features")
+        elif cfg.doc_features:
+            cmd += ["--features", ",".join(cfg.doc_features)]
         cmd += ["--", "-Z", "unstable-options", "--output-format", "json",
                 "--document-private-items", "--document-hidden-items"]
         r = subprocess.run(cmd, capture_output=True, text=True, env=env)
@@ -159,17 +167,30 @@ def id_constants_from_doc(doc: dict) -> dict[str, list[str]]:
     resolves to [u8; 32]"""
     index = doc.get("index", {})
     root_crate = index.get(str(doc.get("root")), {}).get("crate_id", 0)
-    out: dict[str, list[str]] = {}
+    # the owner of an associated const: the impl's self type, or the trait
+    owner: dict[str, str] = {}
     for item in index.values():
+        inner = item.get("inner", {})
+        if "impl" in inner:
+            for_ty = inner["impl"].get("for") or {}
+            name = (for_ty.get("resolved_path") or {}).get("path", "").rsplit("::", 1)[-1] or "?"
+            for child in inner["impl"].get("items", []):
+                owner[str(child)] = name
+        elif "trait" in inner:
+            for child in inner["trait"].get("items", []):
+                owner[str(child)] = item.get("name") or "?"
+    out: dict[str, list[str]] = {}
+    for key, item in index.items():
         if item.get("crate_id") != root_crate or not item.get("name"):
             continue
         inner = item.get("inner", {})
-        kind = "constant" if "constant" in inner else "static" if "static" in inner else None
+        kind = next((k for k in ("constant", "static", "assoc_const") if k in inner), None)
         if kind is None or not is_id_type(inner[kind].get("type"), index):
             continue
+        name = item["name"] if kind != "assoc_const" else f"{owner.get(str(key), '?')}::{item['name']}"
         span = item.get("span") or {}
         where = f"{span.get('filename', '?')}:{(span.get('begin') or ['?'])[0]}"
-        out.setdefault(item["name"], []).append(where)
+        out.setdefault(name, []).append(where)
     return {k: sorted(v) for k, v in out.items()}
 
 
@@ -181,7 +202,8 @@ def completeness(cfg: Config, found: dict[str, list[str]]) -> list[str]:
     problems = []
     if not found:
         return ["no const / static item of type [u8; 32] found in the crate (compared nothing)"]
-    listed = {spec.path.rsplit("::", 1)[1] for spec in cfg.ids}
+    # a constant by its name, an associated const by Type::NAME (the last two segments)
+    listed = {spec.path.rsplit("::", 1)[1] for spec in cfg.ids} | {"::".join(spec.path.split("::")[-2:]) for spec in cfg.ids}
     exempt = dict(cfg.exempt)
     for name, where in sorted(found.items()):
         if name not in listed and name not in exempt:
@@ -222,8 +244,12 @@ def load_config(root: Path) -> Config:
     exempt = doc.get("exempt", {})
     if not isinstance(exempt, dict) or not all(isinstance(v, str) for v in exempt.values()):
         raise CheckError(f"{CONFIG}: [exempt] must map names to reasons")
+    doc_features = doc.get("doc-features")
+    if doc_features is not None and not (isinstance(doc_features, list) and all(isinstance(f, str) for f in doc_features)):
+        raise CheckError(f"{CONFIG}: doc-features must be a list of feature names")
     return Config(doc["package"], doc["manifest"], tuple(doc.get("features", [])),
-                  bool(doc.get("default-features", True)), tuple(tags), tuple(ids), tuple(sorted(exempt.items())))
+                  bool(doc.get("default-features", True)), tuple(tags), tuple(ids), tuple(sorted(exempt.items())),
+                  None if doc_features is None else tuple(doc_features))
 
 
 def parse_version(v: str) -> tuple[int, int, int]:
