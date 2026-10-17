@@ -271,6 +271,23 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(imc.check(d, None, "tag")[0], [])
         self.assertEqual(imc.check(d, None, "tag")[0], [])
 
+    def test_previous_tests_build_with_the_doc_features(self):
+        # two features that cannot be on together: the named test must build with doc-features
+        d = self.repo()
+        self.write(d, "0.3.1", "0x22", "[0x11; 32]")
+        cargo = (d / "Cargo.toml").read_text().replace("[workspace]", '[features]\na = []\nb = []\n\n[workspace]')
+        (d / "Cargo.toml").write_text(cargo)
+        with open(d / "src" / "lib.rs", "a") as f:
+            f.write('#[cfg(all(feature = "a", feature = "b"))]\ncompile_error!("a and b are mutually exclusive");\n')
+        self.golden(d, "11")
+        (d / "CHANGELOG.md").write_text("11111111 -> 22222222\n")
+        cfg = (d / "scripts" / "id_move.toml").read_text()
+        # every feature on: the crate does not build at all
+        with self.assertRaisesRegex(imc.CheckError, "rustdoc failed"):
+            imc.check(d, None, "tag")
+        (d / "scripts" / "id_move.toml").write_text('doc-features = ["a"]\n' + cfg)
+        self.assertEqual(imc.check(d, None, "tag")[0], [])
+
     def test_moved_kept_with_a_test_that_only_names_the_value_fails(self):
         d = self.repo()
         self.write(d, "0.3.1", "0x22", "[0x11; 32]")
