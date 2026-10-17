@@ -95,6 +95,10 @@ python3 scripts/test_clippy_canary.py
 step "ci.yml / clippy: libm ban list (tests)"
 python3 scripts/test_libm_ban_check.py
 
+step "ci.yml / clippy: Identifier moves (tests, then against the published release)"
+python3 scripts/test_id_move_check.py
+python3 scripts/id_move_check.py
+
 step "ci.yml / no_std: Build rlib for a target without std"
 rustup target list --installed | grep -q '^thumbv7em-none-eabihf$' || rustup target add thumbv7em-none-eabihf
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo rustc --lib --no-default-features --crate-type rlib --target thumbv7em-none-eabihf )
