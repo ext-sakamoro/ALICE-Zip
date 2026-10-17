@@ -43,7 +43,9 @@ MIN_REASON = 12
 PATTERNS = {
     "HashMap": r"\b(?:HashMap|FxHashMap|AHashMap|IndexMap|DashMap)\b|\bhash_map\s*::",
     "HashSet": r"\b(?:HashSet|FxHashSet|AHashSet|IndexSet|DashSet)\b|\bhash_set\s*::",
-    "parallel": r"\brayon\b|\.par_(?:iter|iter_mut|chunks|chunks_mut|bridge|extend)\b|\binto_par_iter\b|\bcrossbeam\b",
+    # every rayon parallel method (par_iter, par_windows, par_chunks_exact, par_sort_*,
+    # par_drain, par_split, ...): a method an allowed `use rayon::prelude::*` brings in
+    "parallel": r"\brayon\b|\.par_\w+|\binto_par_\w+|\bpar_bridge\b|\bcrossbeam\b",
     # any path through std::thread, a braced or glob import of it, or a glob of std
     # (sleep / yield_now / current / park only wait or name the calling thread)
     "threads": r"\bthread\s*::\s*(?!(?:sleep|yield_now|current|park|park_timeout)\b)[\w{*]"

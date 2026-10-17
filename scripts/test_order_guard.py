@@ -69,6 +69,13 @@ class OrderGuardTest(unittest.TestCase):
         problems = order_guard.check(self.tree({"src/lib.rs": before, "scripts/order_allowlist.toml": bare}))[0]
         self.assertTrue(any("not the reviewed ones" in p for p in problems), problems)
 
+    def test_every_rayon_parallel_method_is_found(self):
+        for call in ("v.par_windows(2).map(|w| w[0] * w[1]).sum::<f64>()", "v.par_chunks_exact(4).count()",
+                     "v.par_sort_unstable()", "v.par_drain(..).count()", "v.par_split(|x| *x == 0.0).count()",
+                     "s.into_par_iter().count()", "it.par_bridge().count()"):
+            problems = order_guard.check(self.tree({"src/lib.rs": f"pub fn f() {{ let _ = {call}; }}\n"}))[0]
+            self.assertTrue(any("src/lib.rs::parallel" in p for p in problems), (call, problems))
+
     def test_import_forms_of_threads_and_hash_modules_are_found(self):
         for line in ("use std::thread::{self as t};", "use std::thread::{spawn};", "use std::thread::*;",
                      "use std::{thread as t};", "use std::*;", "use std::thread as t;",
