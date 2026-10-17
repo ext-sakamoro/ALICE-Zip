@@ -41,12 +41,21 @@ note = "met for the Rust crates (alice-zip and libalice). The Python package com
 reference_repo = "ALICE-Physics"
 
 [G3]
-status = "fail-known"
-evidence = ["src/generators/polynomial.rs:63"]
+status = "pass"
+evidence = [
+    "tools/no-outer-fneg-of-fma/src/main.rs (syntax-tree pre-check, byte-identical to ALICE-LOL's, built with --locked: the fma family mul_add / fma / fmaf / fmaf32 / fmaf64 / aarch64 vfma* vfms* / x86 _mm*_fmadd and the rest, every negation spelling of the gate, fma results through casts, From, branch arms and let aliases; a renamed fma-family import or a fma-family path used as a value fails; 73 tests over its own fixtures and the shared probes)",
+    "tools/no-outer-fneg-of-fma/Cargo.toml (the checker's own workspace, byte-identical to ALICE-LOL's)",
+    "tools/no-outer-fneg-of-fma/Cargo.lock (byte-identical to ALICE-LOL's; the checker is built and tested with --locked, and scripts/lock_check.py checks it against its manifest)",
+    "scripts/fneg_fma_ir_check.py (the gate, byte-identical to ALICE-LOL's: the release LLVM IR of alice-zip with every feature, built with -C link-dead-code; a negation whose operand traces back to a fma call fails at the source line; a missing or empty .ll, a module without functions, or a missing floor fails)",
+    "scripts/test_fneg_fma_ir_check.py with tools/fneg-fma-ir-probes/*.rs (byte-identical to ALICE-LOL's: 47 probes, 35 negated shapes and 12 safe ones, compiled at test time for an aarch64 and an x86_64 target)",
+    "scripts/no-outer-fneg-of-fma-allowlist.toml (expected-fma-calls 5 and expected-src-fma-calls 0, compared exactly: src/ has no fma call, the 5 in tests/ are reference computations; [[ir]] floors 0 for x86_64-unknown-linux-gnu and aarch64-unknown-linux-gnu; no [[allow]] entry)",
+    ".github/workflows/ci.yml test job (ubuntu, macOS, Windows): the tool's tests and the check; scripts/preflight.sh the same, and the probe tests and the IR check on the host in the full run",
+    ".github/workflows/g3-ir.yml (x86_64-unknown-linux-gnu and aarch64-unknown-linux-gnu, each on a runner native to it (ubuntu-latest, ubuntu-24.04-arm); a changes job decides from merge-base(origin/main) with scripts/changed_paths.py (ALICE-LOL's copy) and .github/paths/g3-ir.txt, and a gate job is red when a job that should have run did not; weekly as well)",
+]
+mutant = "measured 2026-10-17, reverted: `pub fn g3_mutant(a: f32, b: f32, c: f32) -> f32 { -a.mul_add(b, c) }` appended to src/lib.rs makes tools/no-outer-fneg-of-fma exit 1 (3 violations: the negated form at src/lib.rs:90, and expected-fma-calls 5 / expected-src-fma-calls 0 against 6 / 1 found) and scripts/fneg_fma_ir_check.py exit 1 (`src/lib.rs:90:5: fneg of a fma result in ...g3_mutant`, aarch64-apple-darwin, 2281 functions, 1 fma call, 1 negated)"
 since = ""
-note = "no library source calls `mul_add`/`fma` at all (src/generators/polynomial.rs:63 is a doc comment deliberately keeping Horner as separate multiply-and-add rather than `f64::mul_add`), so there is no outer-negation-of-fma to catch today; but the gate's mechanism — a syntax-tree checker over src/ of every published member, with its own tests over each negation shape — does not exist, so nothing ratchets the absence if a `mul_add` is introduced later (C5). The gate's dynamic backstop (G4's release-profile aarch64 cancellation leg) is also absent here (see G4/G5)."
-reference_repo = ""
-
+note = "no fused multiply-add call in the library sources (the polynomial and law evaluators multiply and add separately): the syntax-tree check reads 41 files and counts 5 fma-family calls, all in tests/, against the declared 5 and 0 in src/; the release IR with every feature holds 0 fma calls on aarch64-apple-darwin (2280 functions) and x86_64-unknown-linux-gnu (2180). Porting the IR check found 60 negated fma results in the fft feature's rustfft (src/neon/neon_butterflies.rs and src/array_utils.rs inlined into this crate on aarch64), which is why that feature now uses the in-crate f64 transform. Residual: code compiled only for another target (wasm32, thumbv7em) and a generic function never instantiated in this crate are checked by the syntax tree only."
+reference_repo = "ALICE-LOL"
 [G4]
 status = "pass"
 evidence = [

@@ -166,6 +166,10 @@ python3 scripts/test_build_config_guard.py
 python3 scripts/build_config_guard.py
 python3 scripts/test_build_flags_check.py
 
+step "ci.yml / test: No negated fma result (syntax tree, tests then check)"
+cargo test --quiet --locked --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml
+cargo run --quiet --locked --release --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml -- --root .
+
 step "ci.yml / test: Tracked lock files match their manifests"
 ( python3 scripts/test_lock_check.py && python3 scripts/lock_check.py )
 
@@ -590,5 +594,12 @@ step "security-audit.yml / audit: cargo audit (libalice)"
 
 step "security-audit.yml / audit: cargo audit (libalice-enterprise)"
 ( export CARGO_TERM_COLOR="always" CARGO_NET_RETRY="5" CARGO_HTTP_MULTIPLEXING="false"; cargo audit --deny yanked --file libalice-enterprise/Cargo.lock )
+
+
+step "g3-ir.yml / ir: Probe tests (each probe compiled for both architectures, expected verdicts)"
+python3 scripts/test_fneg_fma_ir_check.py
+
+step "g3-ir.yml / ir: No negated fma result in alice-zip's release IR (host target)"
+CARGO_TARGET_DIR=target/g3-ir python3 scripts/fneg_fma_ir_check.py --package alice-zip --all-features --findings-only
 
 echo; echo "preflight OK"

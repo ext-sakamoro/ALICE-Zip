@@ -149,3 +149,5 @@ mutants.out/
 
 # container fixtures (earlier ALICE_ZIP files written by tests/data/container/container_ref.py)
 !tests/data/container/*.alice
+!tools/no-outer-fneg-of-fma/Cargo.lock
+/tools/no-outer-fneg-of-fma/target/
