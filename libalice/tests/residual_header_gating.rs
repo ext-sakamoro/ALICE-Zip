@@ -4,7 +4,7 @@
 //! reader; shared with tests/test_residual_header_gating.py). Both readers
 //! must give every verdict.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use alice_core::residual::ResidualData;
@@ -24,7 +24,7 @@ fn the_rust_reader_gives_every_verdict() {
         .lines()
         .filter(|l| !l.starts_with('#') && !l.is_empty())
         .collect();
-    let bases: HashMap<&str, Vec<u8>> = lines
+    let bases: BTreeMap<&str, Vec<u8>> = lines
         .iter()
         .filter_map(|l| l.strip_prefix("base "))
         .map(|l| {
