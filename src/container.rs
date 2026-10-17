@@ -236,7 +236,7 @@ pub enum ContainerError {
         section: [u8; 32],
     },
     /// The container was stamped with a semantics id the running arithmetic
-    /// does not reproduce (`alice_det_math::check_semantics` reads it as a
+    /// does not reproduce ([`crate::law::check_semantics`] reads it as a
     /// mismatch), so its law identifiers are not claims about the bits this
     /// build computes. The container itself still opens.
     NotThisArithmetic {
@@ -877,8 +877,8 @@ impl<'a> ContainerView<'a> {
     }
 
     /// Rows of every [`Tag::LIDS`] section, trusted as claims about this
-    /// build's arithmetic: the header's semantics id must be one the running
-    /// `alice-det-math` reproduces (`check_semantics(..).is_reproducible()`),
+    /// build's arithmetic: the header's semantics id must be one this build
+    /// reproduces ([`crate::law::check_semantics`]`(..).is_reproducible()`),
     /// and every row must carry the header's id (as [`Self::law_ids`]).
     ///
     /// # Errors
@@ -887,10 +887,10 @@ impl<'a> ContainerView<'a> {
     /// reproduced (checked first, before any row is read), then as
     /// [`Self::law_ids`].
     pub fn law_ids_for_this_arithmetic(&self) -> Result<Vec<LawIdEntry>, ContainerError> {
-        if !alice_det_math::check_semantics(&self.semantics_id).is_reproducible() {
+        if !crate::law::check_semantics(&self.semantics_id).is_reproducible() {
             return Err(ContainerError::NotThisArithmetic {
                 container: self.semantics_id,
-                running: alice_det_math::SEMANTICS_ID,
+                running: crate::law::SEMANTICS_ID,
             });
         }
         self.law_ids()

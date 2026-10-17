@@ -74,6 +74,7 @@ pub mod lz77;
 pub(crate) mod math;
 pub mod prelude;
 pub mod quantize;
+pub mod semantics;
 
 #[cfg(test)]
 mod integration_tests;

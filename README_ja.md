@@ -220,9 +220,9 @@ use alice_zip::law::{Provenance, SignalLaw};
 let pts: Vec<(f64, f64)> = (0..5).map(|i| (i as f64, 1.0 + 2.0 * i as f64)).collect();
 let law = SignalLaw::fit_polynomial(&pts, 1, Provenance::new("bench run 1", "least squares"))?;
 
-// 32 bytes identifying the arithmetic used to evaluate the law. For a law
-// evaluated through this crate that is `law::SEMANTICS_ID`, re-exported from
-// `alice-det-math`; pass another value only if another arithmetic is used.
+// 32 bytes identifying what the law is evaluated with. For a law evaluated
+// through this crate that is `law::SEMANTICS_ID`, alice-zip's own identifier
+// (it folds alice-det-math's); pass another value only if another arithmetic is used.
 let id = law.law_id(&alice_zip::law::SEMANTICS_ID);
 # Ok::<(), alice_zip::law::LawError>(())
 ```
@@ -441,7 +441,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 | G3 no-outer-fneg-of-fma | 未達 | no library source calls `mul_add`/`fma` at all (src/generators/polynomial.rs:63 is a doc comment deliberately keeping Horner as separate multiply-and-add … |
 | G4 debug-release-arch-goldens | 未達 | the bit-pattern goldens exist — tests/determinism_golden.rs records fixed digests of generator/analysis output (with an emptiness gate: hashes >= min_bytes), … |
 | G5 release-profile-test-leg | 未達 | no job anywhere runs the Law-bearing test suite under `--release`, on aarch64 or any arch: the ci.yml test matrix runs `cargo test` in debug only (macos-latest … |
-| G6 semantics-id | 未達 | `src/law.rs:84` is `pub use alice_det_math::SEMANTICS_ID;` — a re-export of the upstream arithmetic identifier, not an identifier of this crate's own that … |
+| G6 semantics-id | 適合 | the identifier moves when a pinned output, a tag or the det-math generation moves, not with the crate version. The law identifier goldens are not entries: they … |
 | G7 handshake-carries-id | 適合 | the published crate's only type-erasing boundaries that receive a Law-bearing identifier are the container decode paths (serialized bytes / file; the crate has … |
 | G8 persisted-semantics-id | 未達 | G8 asks for a persisted-meaning identifier distinct from G6's in-process arithmetic id. Here the 32-byte id written into the container header (to_bytes, … |
 | G9 persisted-meaning-change-is-major | 適合 | the one identifier move in this crate's history is recorded as a breaking release naming both ids: CHANGELOG.md [0.10.0] (a 0.x minor, the semver-major … |

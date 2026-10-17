@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - CI: `scripts/run_tests.sh` が名前ごとの最低の件数 (`float_environment=2`) を受け付けるようにし (ALICE-DB と同じ中身)、G14 の `tests/float_environment.rs` を名指す全 step を `float_environment=2` にした 2 つの試験の片方を `#[ignore]` にする・cfg で外す・名前を変えると、その step が失敗する
 - CI: 公開する文面の検査の pin を ALICE-Law 779fa44 (checker sha256 e439fdd7…) に進めた 新しい版で HEAD の全 file に指摘 0 件
 - ALICE-Law G2: 浮動小数点の max / min を全部 `alice_det_math` の `max` / `min` / `max64` / `min64` (IEEE 754 maximumNumber / minimumNumber、-0.0 < +0.0) にした library は `src/law.rs` の残差の最大と ingest の幅、`src/generators/polynomial.rs` の最小二乗の `r_max` (domain の上下限は既に det-math)、加えて test・example・libalice の全箇所 `clippy.toml` で `f64::max` / `f64::min` / `f32::max` / `f32::min` を禁じ (libalice も同じ設定を読む)、canary の表に 4 行を足した 置き換えた箇所は abs() の値か `<=` の比較にしか効かないので、goldens (46 件) は前後で変わらない
+- **Breaking** ALICE-Law G6: `law::SEMANTICS_ID` を `alice-det-math` の識別子の再 export から alice-zip 自身の識別子にした (`src/semantics.rs`) 生成器の golden 4 件・法則の識別子を作る tag 5 件の SHA-256・解決した `alice-det-math` の識別子を、`alice-det-math` と同じ手順 (名前の順、u32 の長さ、SHA-256) で畳み込む det-math の世代ごとの表 `ZIP_SEMANTICS_BY_DET_MATH` から引き、表に無い世代は compile が止まる 値は 65ba78c1… (det-math 0.5.1) で、crate の版では動かない 0.10 までの値 (det-math の 85e08846… と 135c407d…) は `law::PREVIOUS_SEMANTICS_IDS` に入れ、`law::check_semantics` が再現できる (VerifiedPrevious) と読む container の `law_ids_for_this_arithmetic` はこの判定を使う `law::SEMANTICS_ID` で作った法則の識別子はすべて変わる (85e08846… を渡すと 0.10 の値に戻る) 上流の識別子は `law::DET_MATH_SEMANTICS_ID`
 
 ## [0.10.0] - 2026-10-12
 

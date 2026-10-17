@@ -62,11 +62,18 @@ note = "no job anywhere runs the Law-bearing test suite under `--release`, on aa
 reference_repo = ""
 
 [G6]
-status = "fail-known"
-evidence = ["src/law.rs:84", "src/law.rs:63", "src/law.rs:70", "tests/analytic_law_id.rs"]
+status = "pass"
+evidence = [
+    "src/semantics.rs: ZIP_SEMANTICS_PINS (the 4 generator goldens of tests/determinism_golden.rs, the SHA-256 of LAW_ID_DOMAIN, SIGNAL_LAW_KIND and int2d's ZERO_LAW_KIND, PLANE_PER_TILE_KIND and DOMAIN_DIGEST_DOMAIN, and the resolved alice_det_math::SEMANTICS_ID), folded as alice-det-math folds its own (names sorted, u32 length prefix, SHA-256)",
+    "src/semantics.rs: ZIP_SEMANTICS_BY_DET_MATH (one row per known alice-det-math generation, 0.5.0 and 0.5.1) and semantics_id_for, which stops the compile for a generation with no row; src/law.rs: pub const SEMANTICS_ID = semantics_id_for(&alice_det_math::SEMANTICS_ID) (65ba78c1… with det-math 0.5.1), DET_MATH_SEMANTICS_ID for the upstream one",
+    "src/semantics.rs: PREVIOUS_SEMANTICS_IDS (85e08846… and 135c407d…, the det-math identifiers this crate published as its own up to 0.10) and check_semantics (Verified / VerifiedPrevious / Mismatch), used by container::ContainerView::law_ids_for_this_arithmetic",
+    "tests/zip_semantics_id.rs (every golden entry read from tests/determinism_golden.rs, every tag entry against the tag, the det-math entry against the resolved crate, every row recomputed, the doc's hex form, each entry reaching the identifier, check_semantics on this, previous and unknown identifiers)",
+    "tests/determinism_golden.rs semantics_id_is_the_recorded_value and law_id_digest_under_the_previous_zip_identifier_is_unchanged (with 85e08846… the law identifier golden of 0.10 comes back)",
+]
+mutant = "measured 2026-10-17, each reverted: re-recording a golden digest in tests/determinism_golden.rs without its pin -> every_entry_matches_its_source fails; changing SIGNAL_LAW_KIND -> the law identifier goldens fail; dropping the DOMAIN_DIGEST_DOMAIN entry -> every_entry_matches_its_source, every_row_is_the_fold_of_the_pins and the_identifier_moves_with_each_entry fail; removing 85e08846… from PREVIOUS_SEMANTICS_IDS -> law_id_digest_under_the_previous_zip_identifier_is_unchanged fails"
 since = ""
-note = "`src/law.rs:84` is `pub use alice_det_math::SEMANTICS_ID;` — a re-export of the upstream arithmetic identifier, not an identifier of this crate's own that folds alice-zip's Law pins (LAW_ID_DOMAIN at src/law.rs:63, SIGNAL_LAW_KIND at src/law.rs:70) together with upstream ids and is guarded by this crate's version and toolchain. `SignalLaw::law_id` (src/law.rs:525) is a per-law content hash over domain+coeffs+semantics_id, pinned and injectivity-tested in tests/analytic_law_id.rs (changes with each coefficient, the count, the domain, the semantics id, and -0.0), but that is a per-value identifier, not the crate-level G6 fold with a staleness guard. What alice-zip's own meaning pin should be, and whether to fold it, is the design memo C4 opens; classified fail-known C4, located at src/law.rs:84."
-reference_repo = "alice-det-math"
+note = "the identifier moves when a pinned output, a tag or the det-math generation moves, not with the crate version. The law identifier goldens are not entries: they are computed with this identifier and follow it."
+reference_repo = "ALICE-Physics"
 
 [G7]
 status = "pass"

@@ -69,19 +69,26 @@ pub const LAW_ID_DOMAIN: &[u8] = b"alice-zip/law-id/v1";
 /// incompatible encodings indistinguishable.
 pub const SIGNAL_LAW_KIND: &[u8] = b"signal-law/polynomial/v1";
 
-/// The numeric semantics this crate evaluates laws with, to pass as
-/// `semantics_id` to [`SignalLaw::law_id`]
+/// The semantics this crate evaluates laws with, to pass as `semantics_id` to
+/// [`SignalLaw::law_id`]
 ///
-/// Re-exported from `alice-det-math`, which derives it from the reference
-/// values its kernels are pinned against. It is a parameter of `law_id` rather
-/// than a constant baked into it, so that a caller evaluating a law with other
-/// arithmetic can say so; this constant is the right value for a law evaluated
-/// through this crate.
+/// This crate's own identifier: the fold of its recorded bit-pattern goldens, the tags a
+/// law identifier is built from and `alice-det-math`'s identifier
+/// ([`crate::semantics`]), looked up by the resolved `alice-det-math`. It moves when what
+/// this crate computes moves, not with its version. It is a parameter of `law_id` rather
+/// than a constant baked into it, so that a caller evaluating a law with other arithmetic
+/// can say so; this constant is the right value for a law evaluated through this crate.
 ///
-/// Without it a caller has nothing to pass but an invented array, and an
-/// identifier whose arithmetic half is invented does not identify the
-/// arithmetic.
-pub use alice_det_math::SEMANTICS_ID;
+/// Up to 0.10 this name re-exported `alice-det-math`'s identifier; those values are in
+/// [`PREVIOUS_SEMANTICS_IDS`] and [`check_semantics`] reads data stamped with them as
+/// reproducible.
+pub const SEMANTICS_ID: [u8; 32] =
+    crate::semantics::semantics_id_for(&alice_det_math::SEMANTICS_ID);
+
+pub use crate::semantics::{check_semantics, PREVIOUS_SEMANTICS_IDS};
+/// `alice-det-math`'s identifier (the transcendental functions), which this crate's
+/// [`SEMANTICS_ID`] folds
+pub use alice_det_math::SEMANTICS_ID as DET_MATH_SEMANTICS_ID;
 use alice_det_math::{max64, min64};
 
 /// Length prefix, so that concatenating two fields cannot be confused with a

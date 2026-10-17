@@ -116,9 +116,14 @@ fn integer_signal(n: usize) -> Vec<f32> {
 fn semantics_id_is_the_recorded_value() {
     assert_eq!(
         hex(&SEMANTICS_ID),
+        "65ba78c17a0cab6d1717270ad7ceca8856c293425f92289de943767ecb1ae883",
+        "the semantics changed: every law identifier published under \
+         the old value now describes something else"
+    );
+    // alice-zip's identifier folds alice-det-math's, pinned separately
+    assert_eq!(
+        hex(&alice_zip::law::DET_MATH_SEMANTICS_ID),
         "85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315",
-        "the numeric semantics changed: every law identifier published under \
-         the old value now describes different arithmetic"
     );
 }
 
@@ -148,6 +153,33 @@ fn law_id_and_evaluation_are_the_recorded_bits() {
     }
     assert_golden(
         "law_id and evaluate",
+        bits,
+        32 + 41 * 8,
+        "b8a5064b51c71bf4388082efe3ccfce7e73e1989accb4a0f07c4e38dbe11f022",
+    );
+}
+
+/// The digest recorded up to 0.10, when this crate published alice-det-math 0.5.1's
+/// identifier (`85e08846…`, now in `alice_zip::law::PREVIOUS_SEMANTICS_IDS`) as its own:
+/// passing that identifier to `law_id` still gives it, so the move to alice-zip's own
+/// identifier changed the identifier input only
+#[test]
+fn law_id_digest_under_the_previous_zip_identifier_is_unchanged() {
+    let previous = alice_zip::law::PREVIOUS_SEMANTICS_IDS
+        .iter()
+        .find(|id| {
+            hex(&id[..]) == "85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"
+        })
+        .expect("alice-zip keeps the identifier it published up to 0.10 as a previous one");
+    let law = line_law();
+    let mut bits = Bits::default();
+    bits.raw(&law.law_id(previous));
+    for i in 0..=40_u32 {
+        let x = f64::from(i) / 10.0;
+        bits.f64(law.evaluate(x).expect("inside the domain"));
+    }
+    assert_golden(
+        "law_id and evaluate under the previous alice-zip identifier",
         bits,
         32 + 41 * 8,
         "7269c5962d23f95f4488a3e316630d880dc58446d7d085d10ebcae7b1ddb3bb8",
@@ -212,6 +244,11 @@ fn law_id_digest_under_the_previous_identifier_is_unchanged() {
 // (`law_id_digest_under_the_previous_identifier_is_unchanged` below), and
 // the fitted domain, coefficients and evaluation bits of `line_law` are the
 // same bits as before.
+//
+// 0.11.0 replaced the re-exported alice-det-math identifier by alice-zip's own
+// (`src/semantics.rs`, 85e08846… -> 65ba78c1…), so the law identifier pin was
+// re-recorded once more (7269c596… -> b8a5064b…); with 85e08846… passed to `law_id`
+// the old digest comes back (`law_id_digest_under_the_previous_zip_identifier_is_unchanged`).
 //
 // `polynomial_generation_is_the_recorded_bits` and
 // `law_id_and_evaluation_are_the_recorded_bits` are unchanged: the polynomial
