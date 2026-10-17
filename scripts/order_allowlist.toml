@@ -1,5 +1,9 @@
 # scripts/order_guard.py (ALICE-Law G13): production sites whose order cannot
-# reach a Law-bearing output, with the exact line count and the reason
+# reach a Law-bearing output, with the exact line count, the SHA-256 of each
+# allowed line (stripped, in file order; the comment shows the line) and the reason
 [allow]
-"src/generators/perlin.rs::parallel" = { count = 2, reason = "the parallel feature generates each 2D Perlin row into its own slot with an indexed flat_map_iter + collect, which keeps row order; no float value is reduced across rows (tests/order_determinism.rs compares 1, 4 and 7 threads bit for bit)" }
+"src/generators/perlin.rs::parallel" = { count = 2, lines = [
+    "bbef5897b670253dbae5f0572a5fbcd6a96df7a626792cd336705a6031f28990", # use rayon::prelude::*;
+    "be60fa1af9504b6f5a817bdefbfeefa114bcbe40e8d4ddeed8a7438d6af25378", # let out = (0..height).into_par_iter().flat_map_iter(row).collect();
+], reason = "the parallel feature generates each 2D Perlin row into its own slot with an indexed flat_map_iter + collect, which keeps row order; no float value is reduced across rows (tests/order_determinism.rs compares 1 to 16 threads, 4 runs each, with the serial composition bit for bit)" }
 "Cargo.toml::rayon" = { count = 1, reason = "optional dependency of the parallel feature, used only by the per-row Perlin generation above" }

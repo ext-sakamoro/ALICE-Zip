@@ -2,17 +2,21 @@
 //! (ALICE-Law G13).
 //!
 //! oracle: the texture is a row-major function of (x, y) alone, so the output
-//! computed with 1 thread, with 4 and with 7 must be the same bits, and must
-//! equal the serial composition of `PerlinNoise::fbm` over the rows (the
-//! per-point formula of `generate_perlin_advanced`, written out here); a
-//! combination that depended on scheduling (an unordered collect, a reduction
-//! across rows) would differ between the pools.
+//! computed in every pool must be the same bits as the serial composition of
+//! `PerlinNoise::fbm` over the rows (the per-point formula of
+//! `generate_perlin_advanced`, written out here); a combination that depended
+//! on scheduling (an unordered collect, rows appended in completion order, a
+//! reduction across rows) would differ from it.
+//!
+//! The tooth has to fire on every run, not on a lucky schedule: many short
+//! rows (H rows of W points) give the scheduler thousands of chances to finish
+//! rows out of order, and each pool (2 to 16 threads) is run several times.
 #![cfg(feature = "parallel")]
 
 use alice_zip::generators::{generate_perlin_advanced, PerlinNoise};
 
-const W: usize = 37;
-const H: usize = 61;
+const W: usize = 4;
+const H: usize = 4096;
 const SEED: u64 = 0x5eed_1234;
 const SCALE: f32 = 9.5;
 const OCTAVES: u32 = 4;
@@ -46,13 +50,17 @@ fn serial() -> Vec<u32> {
 
 #[test]
 fn perlin_texture_is_the_same_bits_for_every_thread_count() {
-    let one = in_pool(1);
-    assert_eq!(one.len(), W * H);
-    assert_eq!(in_pool(4), one, "4 threads differ from 1");
-    assert_eq!(in_pool(7), one, "7 threads differ from 1");
-    assert_eq!(
-        serial(),
-        one,
-        "the parallel texture differs from the serial composition"
-    );
+    let expected = serial();
+    assert_eq!(expected.len(), W * H);
+    let mut runs = 0;
+    for threads in [1usize, 2, 4, 8, 16] {
+        for run in 0..4 {
+            assert!(
+                in_pool(threads) == expected,
+                "{threads} threads (run {run}) differ from the serial composition"
+            );
+            runs += 1;
+        }
+    }
+    assert_eq!(runs, 20);
 }
