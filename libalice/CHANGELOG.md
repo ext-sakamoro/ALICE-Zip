@@ -4,6 +4,10 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking** 版を 4.0.0 に上げた core crate を `alice-zip` 0.11 に上げ、CLI が書く残差容器 (`compression` の quantised / lossless / xor) は model の semantics 識別子を持つ新しい形式 (0xFB / 0xFA / 0xF9) になった 3.x 以前の CLI はこの容器を読めない 3.x 以前が書いた容器は読める (識別子が無いので `Legacy` として扱う) container (`alice_zip::container`) は先頭に形式の識別子の section を持つ
+
 ## [3.1.0] - 2026-10-12
 
 ### Changed
