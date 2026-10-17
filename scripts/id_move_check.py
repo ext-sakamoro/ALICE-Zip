@@ -490,11 +490,17 @@ def check_values(root: Path, base_ref: str | None, base_from: str = "auto") -> t
     # sibling repository (`../ALICE-SDF`) resolves from it as it does from the root
     wt = root.resolve().parent / f".{root.resolve().name}.id-move-base-{os.getpid()}"
     try:
-        git(root, "worktree", "add", "--detach", "--quiet", str(wt), base_ref)
+        # the tag's files only (git archive), no checkout of another branch in the repository
+        wt.mkdir()
+        archive = subprocess.run(["git", "-C", str(root), "archive", "--format=tar", base_ref],
+                                 capture_output=True)
+        if archive.returncode != 0:
+            raise CheckError(f"git archive {base_ref}: {archive.stderr.decode(errors='replace').strip()}")
+        subprocess.run(["tar", "-x", "-C", str(wt)], input=archive.stdout, check=True, capture_output=True)
         base = read_ids(wt, cfg, target, with_previous=False)
         head = read_ids(root, cfg, target)
     finally:
-        subprocess.run(["git", "-C", str(root), "worktree", "remove", "--force", str(wt)], capture_output=True)
+        shutil.rmtree(wt, ignore_errors=True)
         shutil.rmtree(work, ignore_errors=True)
     problems, report = judge(base_version, head_version, base, head, changelog, cfg)
     report.insert(0, f"base {base_ref}: the tag's tree ({base_version}), working tree {head_version}")
