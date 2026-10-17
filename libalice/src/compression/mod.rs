@@ -64,7 +64,7 @@ mod tests {
             .iter()
             .zip(restored.iter())
             .map(|(a, b)| (a - b).abs())
-            .fold(0.0, f32::max);
+            .fold(0.0, alice_det_math::max);
 
         // Max error should be reasonable for 8-bit quantization
         assert!(max_err < 1.0, "Max error too high: {}", max_err);

@@ -468,8 +468,12 @@ fn a_quantised_container_written_by_the_previous_version_still_decodes() {
         .expect("v0 quantised container must keep decoding");
     assert_eq!(back.len(), residual.len());
     // 8-bit quantisation, so compare within the step, not bit for bit.
-    let tol = (residual.iter().fold(f32::MIN, |a, &b| a.max(b))
-        - residual.iter().fold(f32::MAX, |a, &b| a.min(b)))
+    let tol = (residual
+        .iter()
+        .fold(f32::MIN, |a, &b| alice_det_math::max(a, b))
+        - residual
+            .iter()
+            .fold(f32::MAX, |a, &b| alice_det_math::min(a, b)))
         / 255.0;
     for (i, (a, b)) in residual.iter().zip(back.iter()).enumerate() {
         assert!(

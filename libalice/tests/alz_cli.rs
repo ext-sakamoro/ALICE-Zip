@@ -114,14 +114,17 @@ fn max_err(a: &[f32], b: &[f32]) -> f64 {
     a.iter()
         .zip(b)
         .map(|(x, y)| (f64::from(*x) - f64::from(*y)).abs())
-        .fold(0.0, f64::max)
+        .fold(0.0, alice_det_math::max64)
 }
 
 /// Half a quantisation step of `bits` over the range of `v`: the largest
 /// error a correct quantiser of that width can make (plus f32 rounding).
 fn half_step(v: &[f32], bits: u32) -> f64 {
-    let lo = v.iter().copied().fold(f32::INFINITY, f32::min);
-    let hi = v.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let lo = v.iter().copied().fold(f32::INFINITY, alice_det_math::min);
+    let hi = v
+        .iter()
+        .copied()
+        .fold(f32::NEG_INFINITY, alice_det_math::max);
     (f64::from(hi) - f64::from(lo)) / f64::from((1u32 << bits) - 1) / 2.0 * (1.0 + 1e-6) + 1e-6
 }
 

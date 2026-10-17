@@ -27,11 +27,18 @@ note = "every method the G1 list marks banned is in clippy.toml, the pending pow
 reference_repo = ""
 
 [G2]
-status = "fail-known"
-evidence = ["src/law.rs:318", "src/law.rs:319", "src/law.rs:550", "src/law.rs:597", "src/generators/polynomial.rs:231"]
+status = "pass"
+evidence = [
+    "src/law.rs:324 and :325 (the domain bounds that feed law_id: alice_det_math::min64 / max64), src/law.rs:556 (residual max_abs: max64), src/law.rs:603 (ingest band: max64), src/generators/polynomial.rs:233 (least_squares_fit r_max: max64)",
+    "clippy.toml: disallowed-methods f64::max, f64::min, f32::max, f32::min (reason: use the alice_det_math helper, defined sign of zero), read by every clippy run of this crate and of libalice (no clippy.toml of its own): .github/workflows/ci.yml lines 174, 176 and 180 (default, all features, no default features; all targets) and 358 and 391 (libalice codec and python)",
+    "raw-helper manifest: no raw_* exception exists; the ban has no allow anywhere in src/, tests/, examples/, benches/ or libalice/ (every float max / min there calls alice_det_math), so the default-deny list is empty",
+    "tests/minmax_sign_golden.rs (the helpers' sign of zero and NaN behaviour pinned at scalar width; this crate builds no SIMD max / min, so scalar is the only width)",
+    "scripts/clippy_canary_calls.tsv rows for f64::max / f64::min / f32::max / f32::min (the canary plants each and requires exactly one disallowed diagnostic: 175 planted, 176 diagnostics, control clean)",
+]
+mutant = "measured 2026-10-17, reverted: src/law.rs:556 put back to `max_abs.max(d.abs())` -> `cargo clippy --lib -- -D warnings` reports `src/law.rs:556:31: error: use of a disallowed method f64::max`. The goldens (determinism_golden, float_edge_golden, analytic_law_id, minmax_sign_golden: 46 tests) pass unchanged before and after the switch: the replaced sites only see abs() values or compare with <=, where a ±0 tie cannot change the result"
 since = ""
-note = "the published crate computes f64 max/min on runtime values in Law-bearing paths with the std inherent `f64::max`/`f64::min`, not an IEEE maximumNumber/minimumNumber Law helper, and has no `raw_*` default-deny manifest and no clippy ban on max/min (C5). Sites: src/law.rs:318-319 (domain lo/hi folded from the evidence points — these feed law_id directly), src/law.rs:550 (residual max_abs), src/law.rs:597 (ingest band), src/generators/polynomial.rs:231 (least_squares_fit r_max). alice-zip computes these only at scalar f64 width (it builds no SIMD max/min of its own), so the per-SIMD-width clause has no additional width here, but nothing asserts even the scalar claim through a Law helper. (The `.max`/`.min` elsewhere in src — compression.rs, lz77.rs, polynomial.rs:48/120/156 — are on integer widths, out of G2 scope.)"
-reference_repo = ""
+note = "met for the Rust crates (alice-zip and libalice). The Python package computes no max / min that feeds a stored identifier."
+reference_repo = "ALICE-Physics"
 
 [G3]
 status = "fail-known"

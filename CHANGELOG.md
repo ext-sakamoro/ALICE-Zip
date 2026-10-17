@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - CI: clippy の禁止一覧の canary (`scripts/clippy_canary.py`) が `clippy.toml` の全 entry を植えて確かめるようにした 植える呼び出しの表 `scripts/clippy_canary_calls.tsv` は `scripts/gen_clippy_canary_calls.py` が `clippy.toml` から 1 entry 1 行で生成し (この repo は 171 件、以前は手書きの 7 件)、CI が再生成して byte で比べる canary は全 entry に行があること (植えるか、理由付きで飛ばすか) を確かめ、外部 crate の path は `Cargo.lock` の版を固定して依存に足す この repo の `libm::` の path は `Cargo.lock` が固定する libm (0.2.16) を依存に足して植える 型も禁止された inherent method (`RandomState::new`) は、その型の診断を 1 件だけ許す
 - CI: `scripts/run_tests.sh` が名前ごとの最低の件数 (`float_environment=2`) を受け付けるようにし (ALICE-DB と同じ中身)、G14 の `tests/float_environment.rs` を名指す全 step を `float_environment=2` にした 2 つの試験の片方を `#[ignore]` にする・cfg で外す・名前を変えると、その step が失敗する
 - CI: 公開する文面の検査の pin を ALICE-Law 779fa44 (checker sha256 e439fdd7…) に進めた 新しい版で HEAD の全 file に指摘 0 件
+- ALICE-Law G2: 浮動小数点の max / min を全部 `alice_det_math` の `max` / `min` / `max64` / `min64` (IEEE 754 maximumNumber / minimumNumber、-0.0 < +0.0) にした library は `src/law.rs` の残差の最大と ingest の幅、`src/generators/polynomial.rs` の最小二乗の `r_max` (domain の上下限は既に det-math)、加えて test・example・libalice の全箇所 `clippy.toml` で `f64::max` / `f64::min` / `f32::max` / `f32::min` を禁じ (libalice も同じ設定を読む)、canary の表に 4 行を足した 置き換えた箇所は abs() の値か `<=` の比較にしか効かないので、goldens (46 件) は前後で変わらない
 
 ## [0.10.0] - 2026-10-12
 

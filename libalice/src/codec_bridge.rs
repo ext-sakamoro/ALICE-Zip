@@ -133,7 +133,7 @@ pub fn estimate_ratio(subband: SubBand3D, data_len: usize) -> f64 {
         SubBand3D::HHH => 1.2,
     };
     // Larger data generally compresses better due to pattern repetition
-    let size_factor = alice_det_math::ln64(data_len as f64 / 1024.0).max(1.0);
+    let size_factor = alice_det_math::max64(alice_det_math::ln64(data_len as f64 / 1024.0), 1.0);
     base_ratio * size_factor
 }
 

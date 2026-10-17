@@ -1158,8 +1158,14 @@ pub fn estimate_entropy(data: &[f32]) -> f32 {
     }
 
     // Find range.
-    let min_val = data.iter().copied().fold(f32::INFINITY, f32::min);
-    let max_val = data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let min_val = data
+        .iter()
+        .copied()
+        .fold(f32::INFINITY, alice_det_math::min);
+    let max_val = data
+        .iter()
+        .copied()
+        .fold(f32::NEG_INFINITY, alice_det_math::max);
     let scale = max_val - min_val;
 
     // Build 256-bin histogram.
@@ -1774,11 +1780,11 @@ fn quantize_python(data: &[f32], bits: u8) -> Result<Vec<u8>, ResidualError> {
     let min = data
         .iter()
         .map(|&v| f64::from(v))
-        .fold(f64::INFINITY, f64::min);
+        .fold(f64::INFINITY, alice_det_math::min64);
     let max = data
         .iter()
         .map(|&v| f64::from(v))
-        .fold(f64::NEG_INFINITY, f64::max);
+        .fold(f64::NEG_INFINITY, alice_det_math::max64);
     let mut scale = max - min;
     if scale < 1e-10 {
         scale = 1.0;

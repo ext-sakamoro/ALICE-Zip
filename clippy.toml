@@ -27,6 +27,14 @@
 # Pinned by tests/determinism_golden.rs, which runs on the CI matrix with and
 # without default features.
 disallowed-methods = [
+    # ALICE-Law G2: the std max / min leave the sign of a pair of zeros unspecified and
+    # differ between targets (aarch64 returns -0.0 for min(-0.0, +0.0), x86_64 the second
+    # operand), so every float max / min goes through alice_det_math (IEEE 754
+    # maximumNumber / minimumNumber with -0.0 < +0.0). tests/minmax_sign_golden.rs pins it.
+    { path = "f64::max", reason = "ALICE-Law G2: use alice_det_math::max64 (defined sign of zero)" },
+    { path = "f64::min", reason = "ALICE-Law G2: use alice_det_math::min64 (defined sign of zero)" },
+    { path = "f32::max", reason = "ALICE-Law G2: use alice_det_math::max (defined sign of zero)" },
+    { path = "f32::min", reason = "ALICE-Law G2: use alice_det_math::min (defined sign of zero)" },
     { path = "f32::sin", reason = "platform libm is not cross-platform bit-exact; use alice_det_math" },
     { path = "f32::cos", reason = "platform libm is not cross-platform bit-exact; use alice_det_math" },
     { path = "f32::sin_cos", reason = "platform libm is not cross-platform bit-exact; use alice_det_math" },

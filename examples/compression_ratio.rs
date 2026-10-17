@@ -76,7 +76,7 @@ fn measure(name: &'static str, original: &[f32], model: &[f32], params: usize) -
         .iter()
         .zip(model.iter())
         .map(|(o, m)| (o - m).abs())
-        .fold(0.0f32, f32::max);
+        .fold(0.0f32, alice_det_math::max);
 
     // (2a) parameters + xor residual — exact by construction
     let xor = compress_residual_xor(original, model, LEVEL).expect("xor container");
@@ -108,7 +108,7 @@ fn measure(name: &'static str, original: &[f32], model: &[f32], params: usize) -
         .zip(model.iter())
         .zip(qback.iter())
         .map(|((o, m), r)| (m + r - o).abs())
-        .fold(0.0f32, f32::max);
+        .fold(0.0f32, alice_det_math::max);
 
     Row {
         name,

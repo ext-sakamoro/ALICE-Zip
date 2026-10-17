@@ -372,7 +372,10 @@ mod tests {
         assert_eq!(a.len(), b.len());
         for ((ka, ma, pa), (kb, mb, pb)) in a.iter().zip(&b) {
             assert_eq!(ka, kb);
-            assert!((ma - mb).abs() < 1e-2 * ma.max(1.0), "{ma} vs {mb}");
+            assert!(
+                (ma - mb).abs() < 1e-2 * alice_det_math::max(*ma, 1.0),
+                "{ma} vs {mb}"
+            );
             assert!((pa - pb).abs() < 1e-3, "{pa} vs {pb}");
         }
         // With every bin kept, both spectra reconstruct the same signal (the

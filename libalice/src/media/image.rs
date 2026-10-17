@@ -187,8 +187,8 @@ impl ImageGenerator {
         let cy = h as f32 * 0.5;
 
         // Maximum possible distance from centre (to a corner)
-        let dx_max = cx.max(w as f32 - cx);
-        let dy_max = cy.max(h as f32 - cy);
+        let dx_max = alice_det_math::max(cx, w as f32 - cx);
+        let dy_max = alice_det_math::max(cy, h as f32 - cy);
         let max_dist = alice_det_math::hypot(dx_max, dy_max);
         let rcp_max = if max_dist > 1e-10 {
             1.0 / max_dist

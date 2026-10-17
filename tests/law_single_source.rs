@@ -41,7 +41,7 @@ fn max_abs_err(got: &[f32], truth: &[f64]) -> f64 {
     got.iter()
         .zip(truth)
         .map(|(g, t)| (f64::from(*g) - t).abs())
-        .fold(0.0_f64, f64::max)
+        .fold(0.0_f64, alice_det_math::max64)
 }
 
 #[test]

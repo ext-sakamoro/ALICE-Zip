@@ -553,7 +553,7 @@ impl SignalLaw {
         for &(x, y) in points {
             let d = y - self.eval_unchecked(x);
             sum_sq += d * d;
-            max_abs = max_abs.max(d.abs());
+            max_abs = max64(max_abs, d.abs());
         }
         #[allow(clippy::cast_precision_loss)]
         let rms = if points.is_empty() {
@@ -600,7 +600,7 @@ impl SignalLaw {
         if outside > 0 {
             return Verdict::OutOfRange { outside };
         }
-        let band = policy.abs_tolerance.max(self.residual.rms);
+        let band = max64(policy.abs_tolerance, self.residual.rms);
         let rms = self.residual_over(points).rms;
         if rms <= band {
             return Verdict::Supports { rms };

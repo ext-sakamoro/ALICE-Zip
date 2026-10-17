@@ -287,7 +287,7 @@ fn fit_polynomial_recovers_f32_sampled_polynomials() {
             }
             let regen = generate_polynomial(n, &fit);
             for (a, b) in regen.iter().zip(&values) {
-                assert!((a - b).abs() < 1e-5 * b.abs().max(1.0));
+                assert!((a - b).abs() < 1e-5 * alice_det_math::max(b.abs(), 1.0));
             }
         }
     }
@@ -756,7 +756,7 @@ fn fit_error_is_normalised_mse_of_the_returned_fit() {
         let expected = mse / var;
         assert!(expected > 1e-4, "noise must be visible: {expected}");
         assert!(
-            (err - expected).abs() < 1e-6 * expected.max(1.0),
+            (err - expected).abs() < 1e-6 * alice_det_math::max64(expected, 1.0),
             "{err} vs {expected}"
         );
     }
@@ -855,8 +855,14 @@ fn quantisation_error_is_bounded_by_half_a_step_and_endpoints_are_exact() {
                 ((lcg >> 40) as f32 / 16_777_216.0) * 200.0 - 100.0
             })
             .collect();
-        let lo = data.iter().cloned().fold(f32::INFINITY, f32::min);
-        let hi = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let lo = data
+            .iter()
+            .cloned()
+            .fold(f32::INFINITY, alice_det_math::min);
+        let hi = data
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, alice_det_math::max);
         for bits in [8u32, 16] {
             let (q, min, scale) = if bits == 8 {
                 quantize_8bit(&data)
@@ -884,8 +890,8 @@ fn quantisation_error_is_bounded_by_half_a_step_and_endpoints_are_exact() {
             // min and max samples reconstruct exactly (up to f32 rounding)
             let i_lo = data.iter().position(|v| *v == lo).unwrap();
             let i_hi = data.iter().position(|v| *v == hi).unwrap();
-            assert!((out[i_lo] - lo).abs() <= 1e-5 * lo.abs().max(1.0));
-            assert!((out[i_hi] - hi).abs() <= 1e-5 * hi.abs().max(1.0));
+            assert!((out[i_lo] - lo).abs() <= 1e-5 * alice_det_math::max(lo.abs(), 1.0));
+            assert!((out[i_hi] - hi).abs() <= 1e-5 * alice_det_math::max(hi.abs(), 1.0));
         }
     }
 }
@@ -918,10 +924,23 @@ fn residual_containers_have_the_documented_layout_and_round_trip() {
         let scale = f64::from_le_bytes(c[11..19].try_into().unwrap());
         let len = u32::from_le_bytes(c[19..23].try_into().unwrap()) as usize;
         assert!(
-            (min - f64::from(residual.iter().cloned().fold(f32::INFINITY, f32::min))).abs() < 1e-12
+            (min - f64::from(
+                residual
+                    .iter()
+                    .cloned()
+                    .fold(f32::INFINITY, alice_det_math::min)
+            ))
+            .abs()
+                < 1e-12
         );
-        let lo = residual.iter().cloned().fold(f32::INFINITY, f32::min);
-        let hi = residual.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let lo = residual
+            .iter()
+            .cloned()
+            .fold(f32::INFINITY, alice_det_math::min);
+        let hi = residual
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, alice_det_math::max);
         assert!((scale - f64::from(hi - lo)).abs() < 1e-5, "{scale}");
         assert_eq!(c.len(), QUANTIZED_HEADER + len);
         let out = decompress_residual_quantized(&c).unwrap();

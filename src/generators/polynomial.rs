@@ -228,7 +228,9 @@ pub(crate) fn least_squares_fit(xs: &[f64], ys: &[f64], degree: usize) -> Option
         diag[k] = alpha;
     }
 
-    let r_max = diag.iter().fold(0.0_f64, |acc, d| acc.max(d.abs()));
+    let r_max = diag
+        .iter()
+        .fold(0.0_f64, |acc, d| alice_det_math::max64(acc, d.abs()));
     if diag.iter().any(|d| d.abs() <= RANK_TOLERANCE * r_max) {
         return None;
     }

@@ -609,7 +609,7 @@ impl ProceduralCompressionDesigner {
             let max_abs_residual = residual_f32
                 .iter()
                 .map(|&v| v.abs())
-                .fold(0.0_f32, f32::max);
+                .fold(0.0_f32, alice_det_math::max);
 
             let residual = if max_abs_residual > 1e-10 {
                 let mut residual_bytes = Vec::with_capacity(residual_f32.len() * 4);
@@ -863,7 +863,7 @@ mod tests {
             .iter()
             .zip(recovered.iter())
             .map(|(&a, &b)| (a - b).abs())
-            .fold(0.0_f32, f32::max);
+            .fold(0.0_f32, alice_det_math::max);
 
         assert!(
             max_err < 1e-4,
@@ -893,7 +893,7 @@ mod tests {
             .iter()
             .zip(recovered.iter())
             .map(|(&a, &b)| (a - b).abs())
-            .fold(0.0_f32, f32::max);
+            .fold(0.0_f32, alice_det_math::max);
 
         assert!(
             max_err < 1e-4,
