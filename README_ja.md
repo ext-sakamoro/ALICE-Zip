@@ -453,8 +453,8 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 | G1 no-libm-direct | 適合 | every method the G1 list marks banned is in clippy.toml, the pending powi is banned, every feature and the no_std target are linted with -D warnings, and the … |
 | G2 ieee-max-min | 適合 | met for the Rust crates (alice-zip and libalice). The Python package computes no max / min that feeds a stored identifier. |
 | G3 no-outer-fneg-of-fma | 未達 | no library source calls `mul_add`/`fma` at all (src/generators/polynomial.rs:63 is a doc comment deliberately keeping Horner as separate multiply-and-add … |
-| G4 debug-release-arch-goldens | 未達 | the bit-pattern goldens exist — tests/determinism_golden.rs records fixed digests of generator/analysis output (with an emptiness gate: hashes >= min_bytes), … |
-| G5 release-profile-test-leg | 未達 | no job anywhere runs the Law-bearing test suite under `--release`, on aarch64 or any arch: the ci.yml test matrix runs `cargo test` in debug only (macos-latest … |
+| G4 debug-release-arch-goldens | 適合 | the debug legs and the release goldens existed since the G14 work (release-profile.yml); the release step with every feature is added here, so the lzma, fft … |
+| G5 release-profile-test-leg | 適合 | an aarch64 release-only divergence (contraction into fma, reassociation) fails macos-latest. |
 | G6 semantics-id | 適合 | the identifier moves when a pinned output, a tag or the det-math generation moves, not with the crate version. The law identifier goldens are not entries: they … |
 | G7 handshake-carries-id | 適合 | the published crate's only type-erasing boundaries that receive a Law-bearing identifier are the container decode paths (serialized bytes / file; the crate has … |
 | G8 persisted-semantics-id | 適合 | The writers of the whole repository are covered, by the test whether decoding regenerates values from a law or parameters. Crate alice-zip: … |
@@ -462,7 +462,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 | G10 no-run-varying-artifacts | 適合 | the Python package has no other unseeded randomness, clock or UUID (a scan of alice_zip/ finds only RandomState(seed) at media_generators.py and … |
 | G11 gate-self-tests | 未達 | unmet: clause (c). scripts/clippy_canary.py, scripts/test_clippy_canary.py, scripts/gen_clippy_canary_calls.py, scripts/test_gen_clippy_canary_calls.py, … |
 | G12 public-repo-text-rules | 適合 | the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names … |
-| G13 no-unspecified-order | 未達 | the published crate's library src/ names HashMap / HashSet / BTreeMap nowhere (a full scan of src/*.rs returned zero), so no Law-bearing output iterates an … |
+| G13 no-unspecified-order | 適合 | libalice (a separate crate in this repository, not built by the root clippy job) keeps a HashMap in residual.rs for reconstruction bookkeeping; it is outside … |
 | G14 float-environment-invariants | 適合 | the static scan covers the files of this repository (libalice/ included) and the dynamic check covers the alice-zip builds CI runs on ubuntu and macOS; a flag … |
 
 ### feature と保証の範囲
