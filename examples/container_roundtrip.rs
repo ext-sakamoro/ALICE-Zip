@@ -39,7 +39,7 @@ fn main() {
     c.push(Tag::SREF, true, sref);
     c.push(Tag::LAW, true, b"law payload".to_vec());
     let mut lids = 1u64.to_le_bytes().to_vec();
-    lids.extend_from_slice(&3u64.to_le_bytes());
+    lids.extend_from_slice(&4u64.to_le_bytes()); // after FMID, SHAP, PHYS, SREF
     lids.extend_from_slice(&law.law_id(&SEMANTICS_ID));
     lids.extend_from_slice(&SEMANTICS_ID);
     c.push(Tag::LIDS, true, lids);
@@ -52,7 +52,7 @@ fn main() {
         .references_with_builders(&[BUILDER])
         .expect("references resolve");
     assert!(
-        refs.iter().all(|r| r.section == 0),
+        refs.iter().all(|r| r.section == 1),
         "one shape, stored once"
     );
     view.verify_law_ids(|_, _, semantics| Some(law.law_id(semantics)))

@@ -26,6 +26,35 @@
 //! format can be a prefix of it, and a transfer that rewrites line endings
 //! or drops the eighth bit changes the magic.
 //!
+//! # Format identifier
+//!
+//! Section 0 of every container this version writes is a [`Tag::FMID`]
+//! section: critical, 32 bytes, holding [`FORMAT_ID`]. **It must be the first
+//! section**, and there is at most one. [`FORMAT_ID`] is the SHA-256 of the
+//! format's definition: each of the following prefixed with its length as a
+//! big-endian `u64`, in this order: [`FORMAT_DOMAIN`], [`MAGIC`], [`MAJOR`]
+//! as a little-endian `u16`, [`HEADER_LEN`], [`ENTRY_LEN`] and
+//! [`TRAILER_LEN`] as little-endian `u64`, [`ID_DOMAIN`], and the four bytes
+//! of every tag of [`Tag::KNOWN`] in order. A change to any of them is a new
+//! format with a new identifier.
+//!
+//! A reader classifies what it opens ([`FormatStatus`]):
+//!
+//! * section 0 is [`Tag::FMID`] holding [`FORMAT_ID`]: [`FormatStatus::Verified`];
+//! * no [`Tag::FMID`] section at all: [`FormatStatus::Legacy`], a container
+//!   written before the identifier existed (alice-zip 0.10 and earlier). It
+//!   is read, and the status says so; [`Container::from_bytes_strict`] and
+//!   [`ContainerView::open_strict`] refuse it with
+//!   [`ContainerError::LegacyFormat`];
+//! * [`Tag::FMID`] holding another value: [`ContainerError::UnknownFormat`];
+//! * [`Tag::FMID`] that is not section 0, not critical, not 32 bytes, or
+//!   present twice: [`ContainerError::Malformed`].
+//!
+//! Since the section is critical, a reader of a version that does not know
+//! the tag refuses a container that carries it
+//! ([`ContainerError::UnknownCritical`]) instead of reading it as its own
+//! format.
+//!
 //! # Identifier and trailer
 //!
 //! The two hashes answer different questions:
@@ -81,6 +110,13 @@ pub const HEADER_LEN: usize = 56;
 pub const ENTRY_LEN: usize = 56;
 /// Length of the trailer.
 pub const TRAILER_LEN: usize = 32;
+/// Domain separation for [`FORMAT_ID`].
+pub const FORMAT_DOMAIN: &[u8] = b"alice/container/format/v1";
+/// Identifier of this format's definition, the payload of the
+/// [`Tag::FMID`] section (see the module documentation for what it hashes;
+/// `tests/container_format_id.rs` recomputes it).
+pub const FORMAT_ID: [u8; 32] =
+    crate::semantics::hex32("aa8ff8631b76065443ef3bc63db4d9d1905b752e03c23a7611788818d378c001");
 
 /// Section kind: four bytes stored as they are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -111,9 +147,12 @@ impl Tag {
     pub const SREF: Self = Self(*b"SREF");
     /// Law identifiers of the sections that hold a law.
     pub const LIDS: Self = Self(*b"LIDS");
+    /// Identifier of the format ([`FORMAT_ID`]); section 0 of every
+    /// container this version writes.
+    pub const FMID: Self = Self(*b"FMID");
 
     /// The tags this version of the format defines.
-    pub const KNOWN: [Self; 12] = [
+    pub const KNOWN: [Self; 13] = [
         Self::RAW,
         Self::RESD,
         Self::LAW,
@@ -126,6 +165,7 @@ impl Tag {
         Self::ORCL,
         Self::SREF,
         Self::LIDS,
+        Self::FMID,
     ];
 
     /// Whether this version of the format defines the tag.
@@ -147,6 +187,9 @@ pub struct Section {
 }
 
 /// A container held in memory.
+///
+/// [`Container::new`] starts with the [`Tag::FMID`] section, so the first
+/// section added with [`Container::push`] has index 1.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Container {
     /// Minor version (written as is; [`MINOR`] for a new container).
@@ -211,7 +254,8 @@ pub enum ContainerError {
         /// The tag.
         tag: Tag,
     },
-    /// A [`Tag::SREF`] or [`Tag::LIDS`] payload is not well formed.
+    /// A [`Tag::SREF`] or [`Tag::LIDS`] payload is not well formed, or a
+    /// [`Tag::FMID`] section is not the single critical 32-byte section 0.
     Malformed {
         /// Tag of the section.
         tag: Tag,
@@ -222,6 +266,15 @@ pub enum ContainerError {
         /// SHA-256 the reference names.
         target: [u8; 32],
     },
+    /// The [`Tag::FMID`] section holds another identifier than
+    /// [`FORMAT_ID`]: a format this version does not define.
+    UnknownFormat {
+        /// The identifier found.
+        found: [u8; 32],
+    },
+    /// The container has no [`Tag::FMID`] section ([`FormatStatus::Legacy`])
+    /// and the caller asked for a strict read.
+    LegacyFormat,
     /// A reference names a builder the caller does not accept.
     UnknownBuilder {
         /// Row of the reference.
@@ -321,6 +374,13 @@ impl fmt::Display for ContainerError {
                     "container: a reference names a section that is not present"
                 )
             }
+            Self::UnknownFormat { .. } => {
+                write!(f, "container: the format identifier is not one this version defines")
+            }
+            Self::LegacyFormat => write!(
+                f,
+                "container: written before the format identifier, refused by a strict read"
+            ),
             Self::UnknownBuilder { row } => {
                 write!(f, "container: reference {row} names an unaccepted builder")
             }
@@ -426,6 +486,42 @@ fn identifier(header: &[u8], table: &[u8]) -> [u8; 32] {
     h.finalize().into()
 }
 
+/// How a container identifies its format (see the module documentation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FormatStatus {
+    /// Section 0 is [`Tag::FMID`] holding [`FORMAT_ID`].
+    Verified,
+    /// No [`Tag::FMID`] section: written before the format identifier
+    /// existed (alice-zip 0.10 and earlier).
+    Legacy,
+}
+
+/// The [`FormatStatus`] of a container whose first section is `first` (tag,
+/// critical, payload) and which has `fmid_count` sections tagged
+/// [`Tag::FMID`].
+fn classify(
+    first: Option<(Tag, bool, &[u8])>,
+    fmid_count: usize,
+) -> Result<FormatStatus, ContainerError> {
+    let malformed = ContainerError::Malformed { tag: Tag::FMID };
+    match first {
+        Some((Tag::FMID, critical, payload)) => {
+            if !critical || payload.len() != FORMAT_ID.len() || fmid_count != 1 {
+                return Err(malformed);
+            }
+            if payload != FORMAT_ID {
+                return Err(ContainerError::UnknownFormat {
+                    found: array32(payload, 0),
+                });
+            }
+            Ok(FormatStatus::Verified)
+        }
+        _ if fmid_count != 0 => Err(malformed),
+        _ => Ok(FormatStatus::Legacy),
+    }
+}
+
 /// A section entry as read from the table.
 #[derive(Debug, Clone, Copy)]
 struct Entry {
@@ -445,6 +541,7 @@ pub struct ContainerView<'a> {
     bytes: &'a [u8],
     minor: u16,
     semantics_id: [u8; 32],
+    format: FormatStatus,
     entries: Vec<Entry>,
 }
 
@@ -461,14 +558,34 @@ pub enum Format {
 }
 
 impl Container {
-    /// An empty container written with semantics `semantics_id`.
+    /// A container written with semantics `semantics_id`, holding only the
+    /// [`Tag::FMID`] section.
     #[must_use]
     pub fn new(semantics_id: [u8; 32]) -> Self {
         Self {
             minor: MINOR,
             semantics_id,
-            sections: Vec::new(),
+            sections: alloc::vec![Section {
+                tag: Tag::FMID,
+                critical: true,
+                payload: FORMAT_ID.to_vec(),
+            }],
         }
+    }
+
+    /// How the container identifies its format.
+    ///
+    /// # Errors
+    ///
+    /// As [`ContainerView::open`] for the [`Tag::FMID`] section:
+    /// [`ContainerError::UnknownFormat`] or [`ContainerError::Malformed`].
+    pub fn format_status(&self) -> Result<FormatStatus, ContainerError> {
+        classify(
+            self.sections
+                .first()
+                .map(|s| (s.tag, s.critical, s.payload.as_slice())),
+            self.sections.iter().filter(|s| s.tag == Tag::FMID).count(),
+        )
     }
 
     /// Appends a section and returns the SHA-256 of its payload.
@@ -553,6 +670,20 @@ impl Container {
             sections,
         })
     }
+
+    /// [`Self::from_bytes`], refusing a container without the format
+    /// identifier ([`FormatStatus::Legacy`]).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::from_bytes`], and [`ContainerError::LegacyFormat`].
+    pub fn from_bytes_strict(bytes: &[u8]) -> Result<Self, ContainerError> {
+        let c = Self::from_bytes(bytes)?;
+        if c.format_status()? == FormatStatus::Legacy {
+            return Err(ContainerError::LegacyFormat);
+        }
+        Ok(c)
+    }
 }
 
 impl<'a> ContainerView<'a> {
@@ -560,14 +691,18 @@ impl<'a> ContainerView<'a> {
     ///
     /// The checks run in this order, and the first that fails is returned:
     /// length, magic, major version, reserved fields and flag bits, layout,
-    /// trailer, unknown critical sections.
+    /// trailer, unknown critical sections, the format identifier (see the
+    /// module documentation; a container without one opens as
+    /// [`FormatStatus::Legacy`]).
     ///
     /// # Errors
     ///
     /// [`ContainerError::TooShort`], [`ContainerError::BadMagic`],
     /// [`ContainerError::UnsupportedMajor`], [`ContainerError::Reserved`],
-    /// [`ContainerError::Layout`], [`ContainerError::Trailer`] or
-    /// [`ContainerError::UnknownCritical`].
+    /// [`ContainerError::Layout`], [`ContainerError::Trailer`],
+    /// [`ContainerError::UnknownCritical`], [`ContainerError::SectionHash`]
+    /// (of the [`Tag::FMID`] section), [`ContainerError::Malformed`] or
+    /// [`ContainerError::UnknownFormat`].
     pub fn open(bytes: &'a [u8]) -> Result<Self, ContainerError> {
         if bytes.len() < HEADER_LEN + TRAILER_LEN {
             return Err(ContainerError::TooShort);
@@ -630,12 +765,44 @@ impl<'a> ContainerView<'a> {
         if let Some(e) = entries.iter().find(|e| e.critical && !e.tag.is_known()) {
             return Err(ContainerError::UnknownCritical { tag: e.tag });
         }
+        let first = match entries.first() {
+            Some(e) => {
+                let payload = &bytes[e.offset..e.offset + e.len];
+                if e.tag == Tag::FMID && sha256(payload) != e.sha {
+                    return Err(ContainerError::SectionHash { index: 0 });
+                }
+                Some((e.tag, e.critical, payload))
+            }
+            None => None,
+        };
+        let format = classify(first, entries.iter().filter(|e| e.tag == Tag::FMID).count())?;
         Ok(Self {
             bytes,
             minor,
             semantics_id,
+            format,
             entries,
         })
+    }
+
+    /// [`Self::open`], refusing a container without the format identifier
+    /// ([`FormatStatus::Legacy`]).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::open`], and [`ContainerError::LegacyFormat`].
+    pub fn open_strict(bytes: &'a [u8]) -> Result<Self, ContainerError> {
+        let view = Self::open(bytes)?;
+        if view.format == FormatStatus::Legacy {
+            return Err(ContainerError::LegacyFormat);
+        }
+        Ok(view)
+    }
+
+    /// How the container identifies its format.
+    #[must_use]
+    pub fn format_status(&self) -> FormatStatus {
+        self.format
     }
 
     /// Number of sections.
@@ -1087,7 +1254,13 @@ pub fn read_legacy_alice_zip(bytes: &[u8]) -> Result<Container, ContainerError> 
     if header.compressed_size != payload.len() as u64 {
         return Err(ContainerError::Layout);
     }
-    let mut c = Container::new([0; 32]);
+    // not written in this format: no FMID section, so it reads as
+    // FormatStatus::Legacy and keeps the two sections the documentation states
+    let mut c = Container {
+        minor: MINOR,
+        semantics_id: [0; 32],
+        sections: Vec::new(),
+    };
     c.push(Tag::PROV, true, bytes[..header_len].to_vec());
     c.push(Tag::RAW, true, payload.to_vec());
     Ok(c)

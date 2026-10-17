@@ -19,6 +19,7 @@ keywords = ["compression", "lz77", "fourier", "polynomial", "no-std"]
 categories = ["compression", "algorithms", "no-std", "science"]
 exclude = [
     "/alice",
+    "/compat",
     "/alice_zip",
     "/assets",
     "/benchmarks",

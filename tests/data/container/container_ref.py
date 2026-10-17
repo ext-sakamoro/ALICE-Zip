@@ -28,6 +28,15 @@ Layout (all integers little endian unless noted):
                             || be64(56) || header
                             || be64(len(table)) || table )
     with domain = b"alice/container/v1"; the trailer is not part of the id.
+
+    Section 0 is the format identifier: tag FMID, critical, 32 bytes =
+    format id = SHA-256 over, each prefixed with be64(len):
+      b"alice/container/format/v1", the magic, le16(major),
+      le64(56), le64(56), le64(32) (header, entry and trailer lengths),
+      b"alice/container/v1", the 13 known tags concatenated in order
+      (RAW_ RESD LAW_ VRDT SHAP PHYS ASET SIMS PROV ORCL SREF LIDS FMID)
+    Containers written before the identifier existed have no FMID section;
+    the v1_*.bin fixtures are such files.
 """
 import hashlib
 import json
@@ -37,6 +46,9 @@ from pathlib import Path
 
 MAGIC = bytes([0x89, 0x41, 0x4C, 0x43, 0x0D, 0x0A, 0x1A, 0x0A])
 DOMAIN = b"alice/container/v1"
+FORMAT_DOMAIN = b"alice/container/format/v1"
+KNOWN_TAGS = [b"RAW_", b"RESD", b"LAW_", b"VRDT", b"SHAP", b"PHYS", b"ASET", b"SIMS",
+              b"PROV", b"ORCL", b"SREF", b"LIDS", b"FMID"]
 HERE = Path(__file__).resolve().parent
 
 
@@ -48,9 +60,18 @@ def be64(n: int) -> bytes:
     return struct.pack(">Q", n)
 
 
-def build(semantics: bytes, sections, minor=0, major=1):
-    """sections: list of (tag: bytes(4), critical: bool, payload: bytes)"""
+def format_id() -> bytes:
+    items = [FORMAT_DOMAIN, MAGIC, struct.pack("<H", 1), struct.pack("<Q", 56),
+             struct.pack("<Q", 56), struct.pack("<Q", 32), DOMAIN, b"".join(KNOWN_TAGS)]
+    return sha(b"".join(be64(len(x)) + x for x in items))
+
+
+def build(semantics: bytes, sections, minor=0, major=1, fmid=True):
+    """sections: list of (tag: bytes(4), critical: bool, payload: bytes);
+    with fmid the format identifier section is written first"""
     assert len(semantics) == 32
+    if fmid:
+        sections = [(b"FMID", True, format_id())] + list(sections)
     header = MAGIC + struct.pack("<HHI", major, minor, 0) + semantics + struct.pack("<Q", len(sections))
     offset = len(header) + 56 * len(sections)
     table = b""
@@ -120,15 +141,30 @@ def scenes():
                 (shape_sha, b"SHAP", b"alice-sdf/compiled-field/v1"),
                 (shape_sha, b"SHAP", b"alice-sdf/compiled-field/v1"),
             ])),
-            (b"LIDS", True, lids([(1, bytes([0xAB]) * 32, SEM)])),
+            (b"LIDS", True, lids([(2, bytes([0xAB]) * 32, SEM)])),
+        ]),
+    }
+
+
+def v1_scenes():
+    """Containers as alice-zip 0.10 and earlier wrote them: no FMID section"""
+    return {
+        "v1_one": (SEM, [(b"RAW_", True, b"hello")]),
+        "v1_lids": (SEM, [
+            (b"LAW_", True, b"law-bytes"),
+            (b"LIDS", True, lids([(0, bytes([0xCD]) * 32, SEM)])),
         ]),
     }
 
 
 def main():
-    golden = {}
+    golden = {"format_id": format_id().hex()}
     for name, (sem, secs) in scenes().items():
         data, cid = build(sem, secs)
+        (HERE / f"{name}.bin").write_bytes(data)
+        golden[name] = {"id": cid.hex(), "file_sha256": sha(data).hex(), "len": len(data)}
+    for name, (sem, secs) in v1_scenes().items():
+        data, cid = build(sem, secs, fmid=False)
         (HERE / f"{name}.bin").write_bytes(data)
         golden[name] = {"id": cid.hex(), "file_sha256": sha(data).hex(), "len": len(data)}
     data, cid = build(SEM, [(b"RAW_", True, big_payload())])

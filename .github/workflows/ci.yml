@@ -62,6 +62,12 @@ jobs:
         run: scripts/run_tests.sh container_oracle -- cargo test --test container_oracle --no-default-features
       - name: Container example (reads back, resolves references, refuses a changed byte)
         run: cargo run --example container_roundtrip
+      # alice-zip 0.10.0 from crates.io (in its own package and lock file)
+      # against this version: 0.10 refuses every container and residual
+      # container this version writes instead of reading it as its own format,
+      # and what 0.10 wrote reads here as legacy, to the same samples
+      - name: Released 0.10 formats against the current ones (refused one way, legacy the other)
+        run: scripts/run_tests.sh refuses_the_current_format=2,residual_containers_across_versions=2 -- cargo test --manifest-path compat/v0_10_reader/Cargo.toml --locked
       # each published version in one place (libalice from its Cargo.toml) or
       # agreeing where it is written twice; 0 comparisons fail
       - name: Versions agree
@@ -295,6 +301,8 @@ jobs:
         run: cargo fmt -- --check
       - name: Check formatting (libalice)
         run: cargo fmt --manifest-path libalice/Cargo.toml -- --check
+      - name: Check formatting (released-reader check)
+        run: cargo fmt --manifest-path compat/v0_10_reader/Cargo.toml -- --check
 
   claim-check:
     name: README の主張と test の対応

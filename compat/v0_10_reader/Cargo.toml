@@ -1,0 +1,19 @@
+# The formats as released before the format and semantics identifiers existed
+# (alice-zip 0.10.0 from crates.io) against the current crate: the released
+# reader refuses what the current version writes instead of reading it as its
+# own format, and the current reader reads what the released one wrote as
+# legacy. Separate from the crate's workspace and lock file on purpose: the
+# crate itself must not link two versions of alice-zip.
+[package]
+name = "alice-zip-compat-v0-10-reader"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.87"
+license = "Apache-2.0"
+publish = false
+
+[workspace]
+
+[dependencies]
+released = { package = "alice-zip", version = "=0.10.0" }
+current = { package = "alice-zip", path = "../.." }

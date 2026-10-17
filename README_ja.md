@@ -23,8 +23,8 @@
 
 ALICE-Zip は、データそのものではなく**「データの生成方法」**を保存する次世代圧縮ツール
 
-パターン、波形、数学的データに対して**元のサンプルをビット単位で復元したまま 75 倍〜806 倍**、
-1e-12 の誤差を許すなら 160 倍〜1286 倍 法則が当たらないデータは byte 圧縮に落ち、
+パターン、波形、数学的データに対して**元のサンプルをビット単位で復元したまま 75 倍〜758 倍**、
+1e-12 の誤差を許すなら 158 倍〜1166 倍 法則が当たらないデータは byte 圧縮に落ち、
 素の zlib と同じサイズに着地します (悪化しません) 本ページの数値はすべて
 `cargo run --release --example compression_ratio --features lzma` の出力
 <!-- claim-test: the_lossless_container_is_not_worse_than_this_crates_own_zlib_wrapper -->
@@ -175,7 +175,7 @@ Analysis: one Fourier coefficient — "freq bin 50, amp 1.0, phase 0"
         ↓
 Output: 20 bytes of parameters + 5,306 bytes of compressed xor residual
         ↓
-Result: 400,000 -> 5,326 bytes = 75x, and the samples come back bit for bit
+Result: 400,000 -> 5,358 bytes = 75x, and the samples come back bit for bit
         (plain zlib on the same bytes: 8,742 -> 45.8x)
 ```
 
@@ -262,6 +262,12 @@ SHA-256 で識別する section は既存の形式の bytes をそのまま運�
 - **版**: major が 1 以外は拒否、minor は何でも読む 未知の tag の section は
   critical なら拒否、そうでなければそのまま保持するので、読んで書き戻すと同じ
   bytes になる
+- **形式の識別子**: section 0 は critical な `FMID` section で、形式の定義の
+  SHA-256 である `container::FORMAT_ID` を持つ これより前の読み手 (0.10 以前) は
+  自分の形式として読まずに拒否する この section の無い container (0.10 以前が書いたもの) は
+  読めて `FormatStatus::Legacy` と報告され、`Container::from_bytes_strict` は拒否する
+  別の値の `FMID` は `ContainerError::UnknownFormat` section の番号は `FMID` を
+  0 番と数える <!-- claim-test: every_reference_fixture_carries_the_identifier_first -->
 - **参照**: `SREF` section は他の section を SHA-256 で指すので、何度使う
   payload も 1 回だけ置かれ、無い section への参照は拒否される `LIDS`
   section は法則の識別子を並べ、header の semantics id と、
@@ -284,7 +290,7 @@ SHA-256 で識別する section は既存の形式の bytes をそのまま運�
   parameter なので Python package だけが復元する <!-- claim-test: python_lzma_fallback_files_decode_to_the_original_bytes -->
 
 <!-- claim-test: every_single_bit_flip_is_refused_by_the_expected_check -->
-コンテナのどの 1 bit を変えても拒否される (4 section の fixture の全 bit で確認)
+コンテナのどの 1 bit を変えても拒否される (5 section の fixture の全 bit で確認)
 bytes と識別子は独立の参照実装と Linux / macOS / Windows / `wasm32-wasip1` で
 一致する (`tests/container_oracle.rs`、`tests/data/container/container_ref.py`)
 
@@ -344,10 +350,10 @@ assert_eq!(decode(&enc.bytes, &domain, &law)?, values);
 
 | データタイプ | 圧縮後 | 圧縮率 | ビット一致 | zlib alone |
 |-------------|--------|-------|-----------|----------|
-| サイン波 | 5,326 B | **75倍** | はい | 8,742 B (45.8倍) |
-| 多項式 (3次) | 3,916 B | **102倍** | はい | 330,123 B (1.2倍) |
-| 線形グラデーション | 496 B | **806倍** | はい | 293,616 B (1.4倍) |
-| ランダムデータ | 364,645 B | 1倍 | はい | 364,641 B (1.1倍) |
+| サイン波 | 5,358 B | **75倍** | はい | 8,742 B (45.8倍) |
+| 多項式 (3次) | 3,948 B | **101倍** | はい | 330,123 B (1.2倍) |
+| 線形グラデーション | 528 B | **758倍** | はい | 293,616 B (1.4倍) |
+| ランダムデータ | 364,677 B | 1倍 | はい | 364,641 B (1.1倍) |
 
 <!-- claim-test: the_xor_container_is_bit_exact_on_every_law_family_the_readme_quotes -->
 
@@ -355,22 +361,27 @@ assert_eq!(decode(&enc.bytes, &domain, &law)?, values);
 
 | データタイプ | パラメータのみ | 圧縮率 | 最大絶対誤差 | 量子化残差 (16bit) | 圧縮率 | 最大絶対誤差 |
 |-------------|--------------|-------|------------|------------------|-------|------------|
-| サイン波 | 20 B | 20,000倍 | 1.8e-7 | 2,075 B | 193倍 | 1.4e-12 |
-| 多項式 (3次) | 36 B | 11,111倍 | 6.0e-8 | 2,500 B | 160倍 | 9.1e-13 |
-| 線形グラデーション | 20 B | 20,000倍 | 7.5e-9 | 311 B | 1,286倍 | 5.0e-14 |
-| ランダムデータ | 4 B | 100,000倍 | 1.0e0 | 200,062 B | 2倍 | 1.5e-5 |
+| サイン波 | 20 B | 20,000倍 | 1.8e-7 | 2,107 B | 190倍 | 1.4e-12 |
+| 多項式 (3次) | 36 B | 11,111倍 | 6.0e-8 | 2,532 B | 158倍 | 9.1e-13 |
+| 線形グラデーション | 20 B | 20,000倍 | 7.5e-9 | 343 B | 1,166倍 | 5.0e-14 |
+| ランダムデータ | 4 B | 100,000倍 | 1.0e0 | 200,094 B | 2倍 | 1.5e-5 |
 
 表の読み方:
 
 - **ランダムデータはフォールバックが働いている状態** 法則が当たらないので信号全体が
-  byte 圧縮を通り、結果は素の zlib と 4 バイト差で並ぶ フォールバックの目的は
+  byte 圧縮を通り、結果は素の zlib と 36 バイト差で並ぶ フォールバックの目的は
   勝つことではなく負けないこと
 - **パラメータのみの列は復元ではない** 20,000 倍は法則のサイズで、誤差列がその代償
 - **xor 容器が買うのは厳密性でサイズではない** 旧来の減算残差も利用可能
-  (`compress_residual_lossless`) で、多項式では小さく (2,783 B vs 3,916 B)、短い信号では
+  (`compress_residual_lossless`) で、多項式では小さく (2,815 B vs 3,948 B)、短い信号では
   サイン波でも逆転する (4,096 サンプルでは減算側が小さい) が、ビット一致しない
   サンプルをそのまま戻す必要があるなら `compress_residual_xor`、誤差の上限を許せて
   サイズが要るなら減算側を選ぶ
+- **残差容器はどれも model の semantics 識別子を記録する** (32 byte、この crate の
+  法則で評価した model なら `law::SEMANTICS_ID`) 復元側は記録された識別子を
+  `law::check_semantics` で照合し、それ以外は復元の前に両方の識別子を示す
+  `compression::ResidualIdError::Mismatch` で拒否する 0.10 以前が書いた容器も復元でき
+  (`residual_container_status` は `Legacy` を返し、`*_strict` の復元は拒否する) <!-- claim-test: another_identifier_is_refused_naming_both_before_decoding -->
 
 ## 最適なユースケース
 
@@ -443,7 +454,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 | G5 release-profile-test-leg | 未達 | no job anywhere runs the Law-bearing test suite under `--release`, on aarch64 or any arch: the ci.yml test matrix runs `cargo test` in debug only (macos-latest … |
 | G6 semantics-id | 適合 | the identifier moves when a pinned output, a tag or the det-math generation moves, not with the crate version. The law identifier goldens are not entries: they … |
 | G7 handshake-carries-id | 適合 | the published crate's only type-erasing boundaries that receive a Law-bearing identifier are the container decode paths (serialized bytes / file; the crate has … |
-| G8 persisted-semantics-id | 未達 | G8 asks for a persisted-meaning identifier distinct from G6's in-process arithmetic id. Here the 32-byte id written into the container header (to_bytes, … |
+| G8 persisted-semantics-id | 適合 | int2d needs no float semantics identifier: it is integer arithmetic only (tests/durable_writers.rs checks its source), and its archive names its law by … |
 | G9 persisted-meaning-change-is-major | 適合 | the one identifier move in this crate's history is recorded as a breaking release naming both ids: CHANGELOG.md [0.10.0] (a 0.x minor, the semver-major … |
 | G10 no-run-varying-artifacts | 適合 | the Python package has no other unseeded randomness, clock or UUID (a scan of alice_zip/ finds only RandomState(seed) at media_generators.py and … |
 | G11 gate-self-tests | 未達 | unmet: clause (c). scripts/clippy_canary.py, scripts/test_clippy_canary.py, scripts/gen_clippy_canary_calls.py, scripts/test_gen_clippy_canary_calls.py, … |

@@ -27,16 +27,16 @@ const LEGACY_MAJOR2: &[u8] = include_bytes!("data/container/legacy_major2.alice"
 const LEGACY_UNKNOWN_PAYLOAD: &[u8] = include_bytes!("data/container/legacy_unknown_payload.alice");
 
 // golden.json (reference writer)
-const ID_EMPTY: &str = "f9742fba5c7fc270267322cca82ad98ab7856fd489e1776e8f63e44e4134c8f5";
-const ID_ONE: &str = "779be9720071d3f9d150e90fef514d939687f418edad01e06e8c68a4b0838b38";
-const ID_DUP_TAG: &str = "b375a0cd50313ac42638c474d0df58a86ef4ea1c88d1e8fed249a3d9c62424d0";
-const ID_ZERO_LEN: &str = "fb5ebc0dbc1f1913c9103f694886ed0c733ed1c1791921b20456c2cde265809e";
+const ID_EMPTY: &str = "d4d649c989c903e2e967235353038eb442a5eb61f77d710fa7aa7d31a4048d09";
+const ID_ONE: &str = "632d666a99f79cd02778574b15ce68e48fcebc5c7dcf924e46937b4d725306e3";
+const ID_DUP_TAG: &str = "6248c8c32b75e6ad19e008bf66ec315b76c95fa8fe09d1f090c3f4ed1626f6d8";
+const ID_ZERO_LEN: &str = "d5029f05702f8434a90c341d2ecf1513d6efe0e31dc424a0cc8c5052b841cde2";
 const ID_UNKNOWN_NONCRITICAL: &str =
-    "2500f98fba0b7763abd8a329605fecaf353e54d6dc490ea95afe3a1b382f6693";
-const ID_BUNDLE: &str = "875e9529be98c8a2566b08c38a551b76704c38edc7b791d5f5908cfd4dbb6162";
-const ID_BIG: &str = "c3f550d152c7e161ffe4330216bfedb3a6f5fb8365e3d2d7a24e1b8995efa7ec";
-const FILE_SHA_BIG: &str = "a50c46a05e553bc198a4bb82f434d9ca6719744b623ba87c520f1ed78a72656d";
-const LEN_BIG: usize = 1_048_720;
+    "e018b933189bd1152cf88d54dca036e73313d8198ddc2ab79b05f8109847d9c5";
+const ID_BUNDLE: &str = "b37587ed5198290c53c6a4c8ac296b59bc3bf9745e79eece30045bc0da6a6bd9";
+const ID_BIG: &str = "c6f107c8f87d5778a39eb97fa02e675d19d8a578e524cea5de7c5fafa21638ae";
+const FILE_SHA_BIG: &str = "6410498531696e1afee429dce8e5a3c7c21c78314f05f5968b6f761149ecbdcf";
+const LEN_BIG: usize = 1_048_808;
 
 const BUILDER: &[u8] = b"alice-sdf/compiled-field/v1";
 
@@ -107,7 +107,7 @@ fn bundle() -> Container {
             true,
             &sref_payload(&[(s, *b"SHAP", BUILDER), (s, *b"SHAP", BUILDER)]),
         ),
-        (Tag::LIDS, true, &lids_payload(&[(1, [0xAB; 32], SEM)])),
+        (Tag::LIDS, true, &lids_payload(&[(2, [0xAB; 32], SEM)])),
     ])
 }
 
@@ -188,7 +188,9 @@ fn push_returns_the_payload_sha256_and_keeps_order() {
     let mut c = Container::new(SEM);
     assert_eq!(c.push(Tag::RAW, true, b"b".to_vec()), sha(b"b"));
     assert_eq!(c.push(Tag::RAW, true, b"a".to_vec()), sha(b"a"));
-    assert_eq!(c.sections[0].payload, b"b");
+    assert_eq!(c.sections[0].tag, Tag::FMID, "the identifier stays first");
+    assert_eq!(c.sections[1].payload, b"b");
+    assert_eq!(c.sections[2].payload, b"a");
     assert_eq!(c.minor, alice_zip::container::MINOR);
 }
 
@@ -259,7 +261,7 @@ fn kind(e: &ContainerError) -> &'static str {
 
 #[test]
 fn every_single_bit_flip_is_refused_by_the_expected_check() {
-    let sections = 4;
+    let sections = 5;
     let mut refused = 0usize;
     let mut wrong = Vec::new();
     for pos in 0..BUNDLE.len() {
@@ -290,34 +292,35 @@ fn every_single_bit_flip_is_refused_by_the_expected_check() {
 #[test]
 fn a_payload_changed_with_a_matching_trailer_fails_its_section_hash() {
     let mut v = ONE.to_vec();
-    let at = HEADER_LEN + ENTRY_LEN; // first payload byte
+    let at = HEADER_LEN + 2 * ENTRY_LEN + 32; // first byte of the RAW payload, after FMID
+    assert_eq!(v[at], b'h');
     v[at] ^= 0x01;
     let v = retrail(v);
     let view = ContainerView::open(&v).expect("header, table and trailer are intact");
     assert_eq!(
-        view.section(0),
-        Err(ContainerError::SectionHash { index: 0 })
+        view.section(1),
+        Err(ContainerError::SectionHash { index: 1 })
     );
     assert_eq!(
         Container::from_bytes(&v),
-        Err(ContainerError::SectionHash { index: 0 })
+        Err(ContainerError::SectionHash { index: 1 })
     );
 }
 
 #[test]
 fn only_the_requested_section_is_checked() {
     let mut v = DUP_TAG.to_vec();
-    // second payload ("b") sits right after the first ("a")
-    let at = HEADER_LEN + 3 * ENTRY_LEN + 1;
+    // the payload "b" sits right after the FMID payload and "a"
+    let at = HEADER_LEN + 4 * ENTRY_LEN + 32 + 1;
     assert_eq!(v[at], b'b');
     v[at] = b'c';
     let v = retrail(v);
     let view = ContainerView::open(&v).unwrap();
-    assert_eq!(view.section(0).unwrap(), b"a");
-    assert_eq!(view.section(2).unwrap(), b"note");
+    assert_eq!(view.section(1).unwrap(), b"a");
+    assert_eq!(view.section(3).unwrap(), b"note");
     assert_eq!(
-        view.section(1),
-        Err(ContainerError::SectionHash { index: 1 })
+        view.section(2),
+        Err(ContainerError::SectionHash { index: 2 })
     );
 }
 
@@ -351,8 +354,8 @@ fn any_minor_version_is_read() {
 
 #[test]
 fn an_unknown_critical_section_is_refused() {
-    // flags of the second entry: critical bit on
-    let at = HEADER_LEN + ENTRY_LEN + 4;
+    // flags of the ZZZZ entry (after FMID and RAW_): critical bit on
+    let at = HEADER_LEN + 2 * ENTRY_LEN + 4;
     let mut v = UNKNOWN_NONCRITICAL.to_vec();
     v[at] |= 1;
     let v = retrail(v);
@@ -370,7 +373,7 @@ fn an_unknown_critical_section_is_refused() {
 fn an_unknown_non_critical_section_is_kept_and_written_back() {
     let c = Container::from_bytes(UNKNOWN_NONCRITICAL).unwrap();
     assert_eq!(
-        c.sections[1],
+        c.sections[2],
         Section {
             tag: Tag(*b"ZZZZ"),
             critical: false,
@@ -382,7 +385,7 @@ fn an_unknown_non_critical_section_is_kept_and_written_back() {
 
 #[test]
 fn undefined_flag_bits_are_refused() {
-    let at = HEADER_LEN + 4;
+    let at = HEADER_LEN + ENTRY_LEN + 4; // the RAW_ entry
     for bit in 1..16u16 {
         let v = with_u16(ONE, at, 1 | (1 << bit));
         assert_eq!(
@@ -405,7 +408,7 @@ fn references_resolve_to_the_shared_shape_section() {
         assert_eq!(r.target, sha(&shape));
         assert_eq!(r.kind, Tag::SHAP);
         assert_eq!(r.builder, BUILDER);
-        assert_eq!(r.section, 0, "both rows name the one shape section");
+        assert_eq!(r.section, 1, "both rows name the one shape section");
     }
     assert_eq!(view.references_with_builders(&[BUILDER]).unwrap(), refs);
 }
@@ -517,13 +520,13 @@ fn law_ids_are_compared_with_the_recomputed_identifier() {
     let c = {
         let mut c = Container::new(SEMANTICS_ID);
         c.push(Tag::LAW, true, b"law-bytes".to_vec());
-        c.push(Tag::LIDS, true, lids_payload(&[(0, id, SEMANTICS_ID)]));
+        c.push(Tag::LIDS, true, lids_payload(&[(1, id, SEMANTICS_ID)]));
         c
     };
     let bytes = c.to_bytes();
     let view = ContainerView::open(&bytes).unwrap();
     view.verify_law_ids(|i, payload, sem| {
-        assert_eq!((i, payload), (0, &b"law-bytes"[..]));
+        assert_eq!((i, payload), (1, &b"law-bytes"[..]));
         Some(law.law_id(sem))
     })
     .unwrap();
@@ -533,11 +536,11 @@ fn law_ids_are_compared_with_the_recomputed_identifier() {
             other[31] ^= 1;
             Some(other)
         }),
-        Err(ContainerError::LawIdMismatch { section: 0 })
+        Err(ContainerError::LawIdMismatch { section: 1 })
     );
     assert_eq!(
         view.verify_law_ids(|_, _, _| None),
-        Err(ContainerError::LawIdMismatch { section: 0 })
+        Err(ContainerError::LawIdMismatch { section: 1 })
     );
 }
 

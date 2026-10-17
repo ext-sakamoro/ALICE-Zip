@@ -23,8 +23,8 @@
 
 ALICE-Zip is a next-generation compression tool that stores **"how to generate the data"** instead of the data itself.
 
-For patterns, waves and mathematical data it reaches **75x to 806x with the
-original samples recovered bit for bit**, and 160x to 1286x if a 1e-12 error is
+For patterns, waves and mathematical data it reaches **75x to 758x with the
+original samples recovered bit for bit**, and 158x to 1166x if a 1e-12 error is
 acceptable. When no law fits, it falls back to byte compression and lands on the
 same size as plain zlib rather than worse. Every figure on this page comes from
 `cargo run --release --example compression_ratio --features lzma`.
@@ -196,7 +196,7 @@ Analysis: one Fourier coefficient — "freq bin 50, amp 1.0, phase 0"
         ↓
 Output: 20 bytes of parameters + 5,306 bytes of compressed xor residual
         ↓
-Result: 400,000 -> 5,326 bytes = 75x, and the samples come back bit for bit
+Result: 400,000 -> 5,358 bytes = 75x, and the samples come back bit for bit
         (plain zlib on the same bytes: 8,742 -> 45.8x)
 ```
 
@@ -323,6 +323,13 @@ header, the section table and the integrity of the file.
 - **Versions**: a major version other than 1 is refused; any minor version is
   read. A section with an unknown tag is refused if it is marked critical and
   kept unchanged otherwise, so writing back what was read gives the same bytes.
+- **Format identifier**: section 0 is a critical `FMID` section holding
+  `container::FORMAT_ID`, the SHA-256 of the format's definition, so a reader
+  from before it (0.10 and earlier) refuses the file instead of reading it as
+  its own format. A container without it (written by 0.10 or earlier) is read
+  and reported as `FormatStatus::Legacy`; `Container::from_bytes_strict`
+  refuses it, and an `FMID` with another value is `ContainerError::UnknownFormat`.
+  Section indices count `FMID` as section 0. <!-- claim-test: every_reference_fixture_carries_the_identifier_first -->
 - **References**: an `SREF` section names other sections by SHA-256, so a
   payload used several times is stored once and a reference to a missing
   section is refused. An `LIDS` section lists law identifiers, which are
@@ -352,7 +359,7 @@ header, the section table and the integrity of the file.
 
 <!-- claim-test: every_single_bit_flip_is_refused_by_the_expected_check -->
 Changing any single bit of a container is refused (checked for every bit of a
-four-section fixture), and the bytes and identifiers equal those of an
+five-section fixture), and the bytes and identifiers equal those of an
 independent reference writer on Linux, macOS, Windows and `wasm32-wasip1`
 (`tests/container_oracle.rs`, `tests/data/container/container_ref.py`).
 
@@ -416,10 +423,10 @@ the same level — the floor the fallback has to match.
 
 | Data type | Compressed | Ratio | Bit-exact | zlib alone |
 |-----------|-----------|-------|-----------|------------|
-| Sine wave | 5,326 B | **75x** | yes | 8,742 B (45.8x) |
-| Polynomial (degree 3) | 3,916 B | **102x** | yes | 330,123 B (1.2x) |
-| Linear gradient | 496 B | **806x** | yes | 293,616 B (1.4x) |
-| Random data | 364,645 B | 1x | yes | 364,641 B (1.1x) |
+| Sine wave | 5,358 B | **75x** | yes | 8,742 B (45.8x) |
+| Polynomial (degree 3) | 3,948 B | **101x** | yes | 330,123 B (1.2x) |
+| Linear gradient | 528 B | **758x** | yes | 293,616 B (1.4x) |
+| Random data | 364,677 B | 1x | yes | 364,641 B (1.1x) |
 
 <!-- claim-test: the_xor_container_is_bit_exact_on_every_law_family_the_readme_quotes -->
 
@@ -427,25 +434,32 @@ the same level — the floor the fallback has to match.
 
 | Data type | Law parameters only | Ratio | Max abs error | Quantised residual (16-bit) | Ratio | Max abs error |
 |-----------|--------------------|-------|---------------|----------------------------|-------|---------------|
-| Sine wave | 20 B | 20,000x | 1.8e-7 | 2,075 B | 193x | 1.4e-12 |
-| Polynomial (degree 3) | 36 B | 11,111x | 6.0e-8 | 2,500 B | 160x | 9.1e-13 |
-| Linear gradient | 20 B | 20,000x | 7.5e-9 | 311 B | 1,286x | 5.0e-14 |
-| Random data | 4 B | 100,000x | 1.0e0 | 200,062 B | 2x | 1.5e-5 |
+| Sine wave | 20 B | 20,000x | 1.8e-7 | 2,107 B | 190x | 1.4e-12 |
+| Polynomial (degree 3) | 36 B | 11,111x | 6.0e-8 | 2,532 B | 158x | 9.1e-13 |
+| Linear gradient | 20 B | 20,000x | 7.5e-9 | 343 B | 1,166x | 5.0e-14 |
+| Random data | 4 B | 100,000x | 1.0e0 | 200,094 B | 2x | 1.5e-5 |
 
 Reading the table:
 
 - **Random data is the fallback working.** No law fits, so the whole signal goes
-  through byte compression and the result matches plain zlib to four bytes. That
+  through byte compression and the result matches plain zlib to 36 bytes. That
   is the point of the fallback — not to win, but not to lose.
 - **The parameters-only column is not a reconstruction.** 20,000x is the size of
   the law; the error column is what you give up for it.
 - **The xor container buys exactness, not size.** The subtraction residual the
   earlier releases used is still available (`compress_residual_lossless`) and is
-  smaller on the polynomial (2,783 B against 3,916 B) and on short signals (at
+  smaller on the polynomial (2,815 B against 3,948 B) and on short signals (at
   4,096 samples the sine goes the other way too), but it is not bit-exact.
   `compress_residual_xor` is the one to use when the samples have to come back
   unchanged; pick the other one when a bounded error is acceptable and size is
   what matters.
+- **Every residual container records the model's semantics identifier** (32
+  bytes, `law::SEMANTICS_ID` for a model evaluated by this crate). The
+  decoders compare the stored identifier with `law::check_semantics` and refuse
+  any other with `compression::ResidualIdError::Mismatch`, naming both, before
+  decoding; containers written by 0.10 and earlier still decode
+  (`residual_container_status` reports `Legacy`, the `*_strict` decoders refuse
+  them). <!-- claim-test: another_identifier_is_refused_naming_both_before_decoding -->
 
 ## Ideal Use Cases
 
@@ -519,7 +533,7 @@ Generated by ALICE-Law `scripts/gen-law-readme-block.py` from ALICE-Law `5c63633
 | G5 release-profile-test-leg | known unmet | no job anywhere runs the Law-bearing test suite under `--release`, on aarch64 or any arch: the ci.yml test matrix runs `cargo test` in debug only (macos-latest … |
 | G6 semantics-id | pass | the identifier moves when a pinned output, a tag or the det-math generation moves, not with the crate version. The law identifier goldens are not entries: they … |
 | G7 handshake-carries-id | pass | the published crate's only type-erasing boundaries that receive a Law-bearing identifier are the container decode paths (serialized bytes / file; the crate has … |
-| G8 persisted-semantics-id | known unmet | G8 asks for a persisted-meaning identifier distinct from G6's in-process arithmetic id. Here the 32-byte id written into the container header (to_bytes, … |
+| G8 persisted-semantics-id | pass | int2d needs no float semantics identifier: it is integer arithmetic only (tests/durable_writers.rs checks its source), and its archive names its law by … |
 | G9 persisted-meaning-change-is-major | pass | the one identifier move in this crate's history is recorded as a breaking release naming both ids: CHANGELOG.md [0.10.0] (a 0.x minor, the semver-major … |
 | G10 no-run-varying-artifacts | pass | the Python package has no other unseeded randomness, clock or UUID (a scan of alice_zip/ finds only RandomState(seed) at media_generators.py and … |
 | G11 gate-self-tests | known unmet | unmet: clause (c). scripts/clippy_canary.py, scripts/test_clippy_canary.py, scripts/gen_clippy_canary_calls.py, scripts/test_gen_clippy_canary_calls.py, … |

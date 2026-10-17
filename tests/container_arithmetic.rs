@@ -52,7 +52,7 @@ fn stamped(semantics: [u8; 32]) -> Vec<u8> {
     c.push(
         Tag::LIDS,
         true,
-        lids_payload(&[(0, l.law_id(&semantics), semantics)]),
+        lids_payload(&[(1, l.law_id(&semantics), semantics)]),
     );
     c.to_bytes()
 }

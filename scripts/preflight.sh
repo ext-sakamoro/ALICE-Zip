@@ -137,6 +137,9 @@ step "ci.yml / fmt: Check formatting (core)"
 step "ci.yml / fmt: Check formatting (libalice)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo fmt --manifest-path libalice/Cargo.toml -- --check )
 
+step "ci.yml / fmt: Check formatting (released-reader check)"
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo fmt --manifest-path compat/v0_10_reader/Cargo.toml -- --check )
+
 step "ci.yml / claim-check: claim-test marker が実在の試験を指しているか"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; python3 scripts/claim_check.py )
 
@@ -554,6 +557,9 @@ step "ci.yml / test: Container (no_std build, same bytes and identifiers)"
 
 step "ci.yml / test: Container example (reads back, resolves references, refuses a changed byte)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo run --example container_roundtrip )
+
+step "ci.yml / test: Released 0.10 formats against the current ones (refused one way, legacy the other)"
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh refuses_the_current_format=2,residual_containers_across_versions=2 -- cargo test --manifest-path compat/v0_10_reader/Cargo.toml --locked )
 
 step "ci.yml / test: Feature-gated suites run on this OS"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; set -o pipefail; for t in residual_container_oracle container_oracle; do cargo test --features "$ALL_FEATURES" --test "$t" 2>&1 | tee "${CARGO_TARGET_DIR:-target}/gated-$t.log"; sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "${CARGO_TARGET_DIR:-target}/gated-$t.log" | grep -E 'test result: ok\. [1-9][0-9]* passed'; done )

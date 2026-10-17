@@ -16,15 +16,34 @@
 //!
 //! | container | layout |
 //! |-----------|--------|
-//! | quantised (`compress_residual_quantized`) | `0xFC` · `codec: u8` · `bits: u8` (8 or 16) · `min: f64` · `scale: f64` · `len: u32` · codec(quantised bytes) |
-//! | lossless (`compress_residual_lossless`) | `0xFD` · `codec: u8` · `len: u32` · codec(`f32` LE samples) |
-//! | xor (`compress_residual_xor`) | `0xFE` · `codec: u8` · `len: u32` · codec(`u32` LE `bits ^ bits`) |
+//! | quantised (`compress_residual_quantized`) | `0xFB` · `codec: u8` · `semantics: [u8; 32]` · `bits: u8` (8 or 16) · `min: f64` · `scale: f64` · `len: u32` · codec(quantised bytes) |
+//! | lossless (`compress_residual_lossless`) | `0xFA` · `codec: u8` · `semantics: [u8; 32]` · `len: u32` · codec(`f32` LE samples) |
+//! | xor (`compress_residual_xor`) | `0xF9` · `codec: u8` · `semantics: [u8; 32]` · `len: u32` · codec(`u32` LE `bits ^ bits`) |
 //!
-//! Versions written before the codec byte existed still decode: `0xFF` ·
-//! `len: u32` · LZMA(`f32` LE) for the lossless container, and
-//! `bits: u8` · `min: f64` · `scale: f64` · `len: u32` · LZMA(..) for the
-//! quantised one (reading either needs the `lzma` feature). Containers written
-//! from 0.8.0 onwards need 0.8.0 or later to read.
+//! # The semantics identifier
+//!
+//! A residual is only meaningful against the model it was taken from, and the
+//! model's samples depend on the arithmetic that evaluated it. Every container
+//! records `semantics`, the identifier the model was evaluated under
+//! ([`crate::law::SEMANTICS_ID`] for a model evaluated by this crate's laws).
+//! A reader compares the **stored** identifier with
+//! [`crate::law::check_semantics`]: its own identifier or a verified earlier
+//! one ([`ResidualStatus::Verified`] / [`ResidualStatus::VerifiedPrevious`])
+//! decodes; any other is refused with [`ResidualIdError::Mismatch`], which
+//! names both identifiers, before anything is decoded.
+//!
+//! # Containers written before the identifier
+//!
+//! They still decode, and [`residual_container_status`] reports them as
+//! [`ResidualStatus::Legacy`]; the `*_strict` decoders refuse them with
+//! [`ResidualIdError::Legacy`]. They are: `0xFC` · `codec` · `bits` · `min` ·
+//! `scale` · `len` · .. (quantised), `0xFD` · `codec` · `len` · .. (lossless)
+//! and `0xFE` · `codec` · `len` · .. (xor), written from 0.8.0 to 0.10; and,
+//! from before the codec byte existed, `0xFF` · `len: u32` · LZMA(`f32` LE)
+//! for the lossless container and `bits: u8` · `min: f64` · `scale: f64` ·
+//! `len: u32` · LZMA(..) for the quantised one (reading either needs the
+//! `lzma` feature). Containers written from 0.11.0 onwards need 0.11.0 or
+//! later to read.
 //!
 //! # Example
 //!
@@ -36,6 +55,8 @@
 //! let decompressed = zlib_decompress(&compressed).unwrap();
 //! assert_eq!(payload, decompressed);
 //! ```
+
+use core::fmt;
 
 use flate2::read::{DeflateDecoder, ZlibDecoder};
 use flate2::write::{DeflateEncoder, ZlibEncoder};
@@ -180,6 +201,18 @@ const LOSSLESS_V1_MARKER: u8 = 0xFD;
 const XOR_MARKER: u8 = 0xFE;
 /// Marker of the lossless container, version 0 (LZMA payload, no codec byte)
 const LOSSLESS_V0_MARKER: u8 = 0xFF;
+/// Marker of the quantised container with the semantics identifier
+///
+/// Like [`QUANTIZED_V1_MARKER`], told apart from a version 0 container by its
+/// first byte; a version 0 container written with `bits == 0xFB` would be
+/// misread in the same way.
+const QUANTIZED_V2_MARKER: u8 = 0xFB;
+/// Marker of the lossless container with the semantics identifier
+const LOSSLESS_V2_MARKER: u8 = 0xFA;
+/// Marker of the xor container with the semantics identifier
+const XOR_V2_MARKER: u8 = 0xF9;
+/// Length of the semantics identifier the current containers carry
+const SEMANTICS_LEN: usize = 32;
 
 /// `marker · codec · len: u32`
 const V1_HEADER: usize = 1 + 1 + 4;
@@ -193,6 +226,141 @@ const QUANTIZED_V0_HEADER: usize = 1 + 8 + 8 + 4;
 
 fn invalid(msg: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, msg.into())
+}
+
+/// How a residual container identifies the arithmetic of its model (see the
+/// module documentation)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ResidualStatus {
+    /// The stored identifier is this build's ([`crate::law::SEMANTICS_ID`]).
+    Verified,
+    /// The stored identifier is an earlier one this build reproduces bit for
+    /// bit ([`crate::law::PREVIOUS_SEMANTICS_IDS`]).
+    VerifiedPrevious([u8; 32]),
+    /// Written before containers carried an identifier (alice-zip 0.10 and
+    /// earlier).
+    Legacy,
+}
+
+/// Why a residual container's identifier was refused; carried inside the
+/// [`io::Error`] the decoders return (`io::Error::get_ref` and
+/// `downcast_ref::<ResidualIdError>()` recover it)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ResidualIdError {
+    /// The stored identifier is neither this build's nor a verified earlier
+    /// one.
+    Mismatch {
+        /// The identifier in the container.
+        stored: [u8; 32],
+        /// This build's identifier ([`crate::law::SEMANTICS_ID`]).
+        running: [u8; 32],
+    },
+    /// A strict decoder was given a container written before the identifier.
+    Legacy,
+}
+
+impl fmt::Display for ResidualIdError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Mismatch { stored, running } => {
+                write!(f, "residual container: model evaluated under semantics ")?;
+                hex(f, stored)?;
+                write!(f, ", this build reproduces ")?;
+                hex(f, running)?;
+                write!(f, " and its verified predecessors only")
+            }
+            Self::Legacy => write!(
+                f,
+                "residual container written before the semantics identifier, refused by a strict read"
+            ),
+        }
+    }
+}
+
+fn hex(f: &mut fmt::Formatter<'_>, bytes: &[u8; 32]) -> fmt::Result {
+    for b in bytes {
+        write!(f, "{b:02x}")?;
+    }
+    Ok(())
+}
+
+impl std::error::Error for ResidualIdError {}
+
+/// The status of a stored identifier, or the mismatch error
+fn status_of(stored: &[u8]) -> io::Result<ResidualStatus> {
+    let mut id = [0u8; SEMANTICS_LEN];
+    id.copy_from_slice(&stored[..SEMANTICS_LEN]);
+    match crate::law::check_semantics(&id) {
+        alice_det_math::SemanticsCheck::Verified => Ok(ResidualStatus::Verified),
+        alice_det_math::SemanticsCheck::VerifiedPrevious(p) => {
+            Ok(ResidualStatus::VerifiedPrevious(p))
+        }
+        alice_det_math::SemanticsCheck::Mismatch => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            ResidualIdError::Mismatch {
+                stored: id,
+                running: crate::law::SEMANTICS_ID,
+            },
+        )),
+    }
+}
+
+/// How the residual container `data` identifies the arithmetic of its model,
+/// read from the header without decoding the payload
+///
+/// # Errors
+///
+/// [`io::ErrorKind::InvalidData`] when `data` is empty or too short for its
+/// header, or carries a marker this version does not know, and
+/// [`ResidualIdError::Mismatch`] (inside the [`io::Error`]) when the stored
+/// identifier is not one this build reproduces
+pub fn residual_container_status(data: &[u8]) -> io::Result<ResidualStatus> {
+    match data.first() {
+        None => Err(invalid("empty container")),
+        Some(&QUANTIZED_V2_MARKER | &LOSSLESS_V2_MARKER | &XOR_V2_MARKER) => {
+            if data.len() < 2 + SEMANTICS_LEN {
+                return Err(invalid("container too short for its semantics identifier"));
+            }
+            status_of(&data[2..2 + SEMANTICS_LEN])
+        }
+        Some(&QUANTIZED_V1_MARKER | &LOSSLESS_V1_MARKER | &XOR_MARKER | &LOSSLESS_V0_MARKER)
+        | Some(&8 | &16) => Ok(ResidualStatus::Legacy),
+        Some(other) => Err(invalid(format!("unknown container marker 0x{other:02X}"))),
+    }
+}
+
+/// `data`'s status, refusing [`ResidualStatus::Legacy`]
+fn strict(data: &[u8]) -> io::Result<()> {
+    if residual_container_status(data)? == ResidualStatus::Legacy {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            ResidualIdError::Legacy,
+        ));
+    }
+    Ok(())
+}
+
+/// `semantics · extra`, the bytes the current containers put between the codec
+/// byte and the length
+fn with_semantics(extra: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(SEMANTICS_LEN + extra.len());
+    out.extend_from_slice(&crate::law::SEMANTICS_ID);
+    out.extend_from_slice(extra);
+    out
+}
+
+/// [`unpack_v1`] for a container with the semantics identifier: checks the
+/// identifier first and returns `(codec, extra after the identifier, payload)`
+fn unpack_v2(
+    data: &[u8],
+    marker: u8,
+    extra_len: usize,
+) -> io::Result<(ResidualCodec, &[u8], &[u8])> {
+    let (codec, extra, payload) = unpack_v1(data, marker, SEMANTICS_LEN + extra_len)?;
+    status_of(&extra[..SEMANTICS_LEN])?;
+    Ok((codec, &extra[SEMANTICS_LEN..], payload))
 }
 
 /// Compress `payload` with `codec`
@@ -306,7 +474,10 @@ pub fn residual_container_codec(data: &[u8]) -> io::Result<ResidualCodec> {
         None => Err(invalid("empty container")),
         Some(&LOSSLESS_V0_MARKER) => Ok(ResidualCodec::Lzma),
         Some(&8 | &16) => Ok(ResidualCodec::Lzma), // v0 quantised: first byte is `bits`
-        Some(&QUANTIZED_V1_MARKER | &LOSSLESS_V1_MARKER | &XOR_MARKER) => {
+        Some(
+            &QUANTIZED_V1_MARKER | &LOSSLESS_V1_MARKER | &XOR_MARKER | &QUANTIZED_V2_MARKER
+            | &LOSSLESS_V2_MARKER | &XOR_V2_MARKER,
+        ) => {
             let tag = *data
                 .get(1)
                 .ok_or_else(|| invalid("container has no codec byte"))?;
@@ -353,21 +524,48 @@ pub fn compress_residual_quantized_with(
     extra.extend_from_slice(&min_val.to_le_bytes());
     extra.extend_from_slice(&scale.to_le_bytes());
     debug_assert_eq!(extra.len(), QUANTIZED_V1_EXTRA);
-    pack_v1(QUANTIZED_V1_MARKER, codec, &payload, &extra)
+    pack_v1(
+        QUANTIZED_V2_MARKER,
+        codec,
+        &payload,
+        &with_semantics(&extra),
+    )
+}
+
+/// [`decompress_residual_quantized`], refusing a container written before the
+/// semantics identifier ([`ResidualIdError::Legacy`])
+///
+/// # Errors
+///
+/// As [`decompress_residual_quantized`], and [`ResidualIdError::Legacy`]
+/// (inside the [`io::Error`])
+pub fn decompress_residual_quantized_strict(data: &[u8]) -> io::Result<Vec<f32>> {
+    strict(data)?;
+    decompress_residual_quantized(data)
 }
 
 /// Inverse of [`compress_residual_quantized`]
 ///
-/// Accepts both the current container and the version 0 one (first byte 8 or
-/// 16, LZMA payload) that earlier releases wrote.
+/// Accepts the current container and the ones earlier releases wrote
+/// ([`ResidualStatus::Legacy`]: `0xFC`, and version 0 whose first byte is 8 or
+/// 16 with an LZMA payload); [`residual_container_status`] tells them apart.
 ///
 /// # Errors
 ///
 /// [`io::ErrorKind::InvalidData`] when the header is truncated, the declared
 /// payload length exceeds `data`, or the payload is not a valid stream for the
-/// codec the header names
+/// codec the header names; [`ResidualIdError::Mismatch`] (inside the
+/// [`io::Error`]) when the stored semantics identifier is not one this build
+/// reproduces
 pub fn decompress_residual_quantized(data: &[u8]) -> io::Result<Vec<f32>> {
     let (bits, min_val, scale, quantized) = match data.first() {
+        Some(&QUANTIZED_V2_MARKER) => {
+            let (codec, extra, payload) = unpack_v2(data, QUANTIZED_V2_MARKER, QUANTIZED_V1_EXTRA)?;
+            let bits = extra[0];
+            let min_val = f64::from_le_bytes(extra[1..9].try_into().map_err(|_| invalid("min"))?);
+            let scale = f64::from_le_bytes(extra[9..17].try_into().map_err(|_| invalid("scale"))?);
+            (bits, min_val, scale, codec_decompress(payload, codec)?)
+        }
         Some(&QUANTIZED_V1_MARKER) => {
             let (codec, extra, payload) = unpack_v1(data, QUANTIZED_V1_MARKER, QUANTIZED_V1_EXTRA)?;
             let bits = extra[0];
@@ -444,22 +642,40 @@ pub fn compress_residual_lossless_with(
 ) -> io::Result<Vec<u8>> {
     let bytes: Vec<u8> = residual.iter().flat_map(|&v| v.to_le_bytes()).collect();
     let payload = codec_compress(&bytes, codec, level)?;
-    pack_v1(LOSSLESS_V1_MARKER, codec, &payload, &[])
+    pack_v1(LOSSLESS_V2_MARKER, codec, &payload, &with_semantics(&[]))
+}
+
+/// [`decompress_residual_lossless`], refusing a container written before the
+/// semantics identifier ([`ResidualIdError::Legacy`])
+///
+/// # Errors
+///
+/// As [`decompress_residual_lossless`], and [`ResidualIdError::Legacy`]
+/// (inside the [`io::Error`])
+pub fn decompress_residual_lossless_strict(data: &[u8]) -> io::Result<Vec<f32>> {
+    strict(data)?;
+    decompress_residual_lossless(data)
 }
 
 /// Inverse of [`compress_residual_lossless`]
 ///
-/// Accepts both the current container and the version 0 one (`0xFF`, LZMA
-/// payload, no codec byte) that earlier releases wrote.
+/// Accepts the current container and the ones earlier releases wrote
+/// ([`ResidualStatus::Legacy`]: `0xFD`, and `0xFF` with an LZMA payload and no
+/// codec byte); [`residual_container_status`] tells them apart.
 ///
 /// # Errors
 ///
 /// [`io::ErrorKind::InvalidData`] when the marker is unknown, the header or
 /// payload is truncated, or the payload is not a valid stream for the codec the
-/// header names
+/// header names; [`ResidualIdError::Mismatch`] (inside the [`io::Error`]) when
+/// the stored semantics identifier is not one this build reproduces
 pub fn decompress_residual_lossless(data: &[u8]) -> io::Result<Vec<f32>> {
     let bytes = match data.first() {
         None => return Err(invalid("empty container")),
+        Some(&LOSSLESS_V2_MARKER) => {
+            let (codec, _, payload) = unpack_v2(data, LOSSLESS_V2_MARKER, 0)?;
+            codec_decompress(payload, codec)?
+        }
         Some(&LOSSLESS_V1_MARKER) => {
             let (codec, _, payload) = unpack_v1(data, LOSSLESS_V1_MARKER, 0)?;
             codec_decompress(payload, codec)?
@@ -489,8 +705,8 @@ pub fn decompress_residual_lossless(data: &[u8]) -> io::Result<Vec<f32>> {
         }
         Some(other) => {
             return Err(invalid(format!(
-                "Invalid lossless marker: expected 0x{LOSSLESS_V1_MARKER:02X} or \
-                 0x{LOSSLESS_V0_MARKER:02X}, got 0x{other:02X}"
+                "Invalid lossless marker: expected 0x{LOSSLESS_V2_MARKER:02X}, \
+                 0x{LOSSLESS_V1_MARKER:02X} or 0x{LOSSLESS_V0_MARKER:02X}, got 0x{other:02X}"
             )))
         }
     };
@@ -558,18 +774,39 @@ pub fn compress_residual_xor_with(
         .flat_map(|(o, m)| (o.to_bits() ^ m.to_bits()).to_le_bytes())
         .collect();
     let payload = codec_compress(&bytes, codec, level)?;
-    pack_v1(XOR_MARKER, codec, &payload, &[])
+    pack_v1(XOR_V2_MARKER, codec, &payload, &with_semantics(&[]))
 }
 
-/// Inverse of [`compress_residual_xor`] — needs the same `model`
+/// [`decompress_residual_xor`], refusing a container written before the
+/// semantics identifier ([`ResidualIdError::Legacy`])
+///
+/// # Errors
+///
+/// As [`decompress_residual_xor`], and [`ResidualIdError::Legacy`] (inside the
+/// [`io::Error`])
+pub fn decompress_residual_xor_strict(data: &[u8], model: &[f32]) -> io::Result<Vec<f32>> {
+    strict(data)?;
+    decompress_residual_xor(data, model)
+}
+
+/// Inverse of [`compress_residual_xor`] — needs the same `model`, evaluated
+/// under an identifier this build reproduces (see the module documentation)
+///
+/// Accepts the current container and the `0xFE` one 0.8.0 to 0.10 wrote
+/// ([`ResidualStatus::Legacy`]).
 ///
 /// # Errors
 ///
 /// [`io::ErrorKind::InvalidData`] when the marker is wrong, the container is
 /// truncated, the payload is not a valid stream, or the sample count does not
-/// match `model`
+/// match `model`; [`ResidualIdError::Mismatch`] (inside the [`io::Error`])
+/// when the stored semantics identifier is not one this build reproduces,
+/// checked before the payload is decoded
 pub fn decompress_residual_xor(data: &[u8], model: &[f32]) -> io::Result<Vec<f32>> {
-    let (codec, _, payload) = unpack_v1(data, XOR_MARKER, 0)?;
+    let (codec, _, payload) = match data.first() {
+        Some(&XOR_V2_MARKER) => unpack_v2(data, XOR_V2_MARKER, 0)?,
+        _ => unpack_v1(data, XOR_MARKER, 0)?,
+    };
     let bytes = codec_decompress(payload, codec)?;
     if bytes.len() % 4 != 0 {
         return Err(invalid(format!(
@@ -668,12 +905,13 @@ mod tests {
                 .collect();
             for bits in [8u8, 16, 0, 255] {
                 let c = compress_residual_quantized(&residual, bits, 6).unwrap();
-                // v1 layout: marker, codec, then the normalised width. Any
-                // `bits` other than 16 means 8, and the container now says so
+                // layout: marker, codec, semantics, then the normalised width.
+                // Any `bits` other than 16 means 8, and the container says so
                 // instead of echoing whatever the caller passed.
-                assert_eq!(c[0], QUANTIZED_V1_MARKER);
+                assert_eq!(c[0], QUANTIZED_V2_MARKER);
                 assert_eq!(c[1], residual_codec_default().tag());
-                assert_eq!(c[2], if bits == 16 { 16 } else { 8 });
+                assert_eq!(c[2..34], crate::law::SEMANTICS_ID);
+                assert_eq!(c[34], if bits == 16 { 16 } else { 8 });
                 let out = decompress_residual_quantized(&c).unwrap();
                 assert_eq!(out.len(), residual.len());
                 let tol = if bits == 16 {
@@ -687,7 +925,7 @@ mod tests {
             }
             assert!(decompress_residual_quantized(&[16; 20]).is_err());
             let mut truncated = compress_residual_quantized(&residual, 8, 6).unwrap();
-            truncated.truncate(30);
+            truncated.truncate(60);
             assert!(decompress_residual_quantized(&truncated).is_err());
         }
 
@@ -695,7 +933,7 @@ mod tests {
         fn lossless_container_is_bit_exact() {
             let residual: Vec<f32> = vec![0.0, -0.0, 1.5e-30, f32::MAX, -7.25, 3.0e10];
             let c = compress_residual_lossless(&residual, 6).unwrap();
-            assert_eq!(c[0], LOSSLESS_V1_MARKER);
+            assert_eq!(c[0], LOSSLESS_V2_MARKER);
             let out = decompress_residual_lossless(&c).unwrap();
             assert_eq!(out.len(), residual.len());
             for (a, b) in out.iter().zip(&residual) {
