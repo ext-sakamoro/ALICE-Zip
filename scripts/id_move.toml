@@ -4,6 +4,9 @@
 package = "alice-zip"
 manifest = "Cargo.toml"
 tags = ["v{version}"]
+
+[exempt]
+DET_MATH_SEMANTICS_ID = "alice-det-math's own identifier, re-exported for reference: this crate stamps law::SEMANTICS_ID, which folds it (src/semantics.rs), so a move of it moves SEMANTICS_ID and is checked there; its own history is alice-det-math's G9"
 [[id]]
 path = "alice_zip::law::SEMANTICS_ID"
 previous = "alice_zip::semantics::PREVIOUS_SEMANTICS_IDS"

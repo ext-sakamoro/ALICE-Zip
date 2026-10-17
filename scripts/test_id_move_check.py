@@ -158,11 +158,15 @@ class EndToEnd(unittest.TestCase):
         (d / "Cargo.toml").write_text('[package]\nname = "forms"\nversion = "0.1.0"\nedition = "2021"\n\n'
                                       '[features]\nextra = []\n\n[workspace]\n')
         cfg = imc.Config("forms", "Cargo.toml", (), True, ("v{version}",), (imc.IdSpec("forms::ZZ_A", None),))
+        # a re-export of another crate's constant: here `core::f64::consts::PI` stands in for an upstream id
+        with open(d / "src" / "lib.rs", "a") as f:
+            f.write("pub use core::f64::consts::PI as UPSTREAM_ID;\nuse core::f64::consts::E;\n#[allow(dead_code)] const _E: f64 = E;\n")
         found = imc.id_constants(d, cfg)
-        self.assertEqual(sorted(found), sorted([f"ZZ_{c}" for c in "ABCDEFGHIJK"] + ["ZzH::ID", "ZzH::TID", "Stamp::TID"]))
+        self.assertEqual(sorted(found), sorted([f"ZZ_{c}" for c in "ABCDEFGHIJK"] + ["ZzH::ID", "ZzH::TID", "Stamp::TID", "UPSTREAM_ID"]))
+        self.assertIn("re-export of core::f64::consts::PI", found["UPSTREAM_ID"][0])
         self.assertEqual(found["ZZ_B"], ["src/lib.rs:2"])
         problems = imc.completeness(cfg, found)
-        self.assertEqual(len(problems), 13, problems)
+        self.assertEqual(len(problems), 14, problems)
         # an associated const is listed by Type::NAME
         listed = imc.Config("forms", "Cargo.toml", (), True, ("v{version}",),
                             (imc.IdSpec("forms::ZZ_A", None), imc.IdSpec("forms::ZzH::ID", None)))
@@ -223,6 +227,27 @@ class EndToEnd(unittest.TestCase):
         self.write(d, "0.3.1", "0x22", "")
         with self.assertRaisesRegex(imc.CheckError, "did not run"):
             imc.check(d, None, "tag")
+
+    def test_the_tag_tree_keeps_export_ignored_files_and_leaves_the_index_alone(self):
+        d = self.repo()
+        # a module the crate needs, marked export-ignore at the release: `git archive` would drop it
+        (d / "src" / "lib.rs").write_text("mod extra;\npub use extra::*;\n")
+        (d / "src" / "extra.rs").write_text(LIB.format(b="0x11", prev=""))
+        (d / ".gitattributes").write_text("src/extra.rs export-ignore\n")
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+                   GIT_COMMITTER_EMAIL="t@t")
+        for args in (["add", "-A"], ["commit", "-qm", "release with an export-ignored module"], ["tag", "-f", "v0.3.0"]):
+            subprocess.run(["git", "-C", str(d), *args], check=True, env=env, capture_output=True)
+        (d / "src" / "extra.rs").write_text(LIB.format(b="0x11", prev=""))
+        self.write(d, "0.3.1", "0x11", "")
+        before = subprocess.run(["git", "-C", str(d), "status", "--porcelain"], capture_output=True, text=True).stdout
+        problems, report = imc.check(d, None, "tag")
+        self.assertEqual(problems, [])
+        self.assertIn("unchanged (11111111)", report[1])
+        after = subprocess.run(["git", "-C", str(d), "status", "--porcelain"], capture_output=True, text=True).stdout
+        # the build of the working tree may write its Cargo.lock; nothing else of the repository moves
+        self.assertEqual(before, "".join(ln for ln in after.splitlines(True) if "Cargo.lock" not in ln))
+        self.assertEqual([p.name for p in d.parent.glob(f".{d.name}.id-move-base-*")], [])
 
     def test_no_release_tag_fails(self):
         d = self.repo()

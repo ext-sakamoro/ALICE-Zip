@@ -30,7 +30,8 @@ listed under [exempt] with a reason, so a second identifier (a format id next to
 SEMANTICS_ID) cannot be left out. The items come from rustdoc's JSON output (RUSTC_BOOTSTRAP=1,
 --document-private-items, format_version 60, as scripts/api_boundary.py reads it), where the
 compiler has resolved the types: a text scan misses a type on the next line or behind an
-alias. Associated consts count too (an inherent impl's, a trait's and a trait impl's), named
+alias. A public re-export of another crate's constant or static counts too (rustdoc does not
+give its type), so a crate that stamps an upstream identifier lists it. Associated consts count too (an inherent impl's, a trait's and a trait impl's), named
 `Type::NAME` / `Trait::NAME`. rustdoc runs with every feature (`--all-features`, or the
 config's `doc-features` when a feature cannot build here), so an identifier behind a feature
 is seen; the values are still read with the config's `features`. An [exempt] entry that names
@@ -54,6 +55,8 @@ config: scripts/id_move.toml
     default-features = true               # (optional)
     tags = ["v{version}"]                 # release tag patterns
     doc-features = ["std", "lzma"]        # rustdoc's features for completeness (default: all)
+    probe-dependencies = ["alice-det-math"]   # crates a path below names besides the package (the
+                                          # probe takes the version the package resolves)
     [exempt]                              # [u8; 32] constants that are not identifiers
     SOME_KEY = "why it is not an identifier"
     [[id]]
@@ -99,6 +102,7 @@ class Config:
     ids: tuple[IdSpec, ...]
     exempt: tuple[tuple[str, str], ...] = ()
     doc_features: tuple[str, ...] | None = None
+    probe_deps: tuple[str, ...] = ()
 
 
 MIN_REASON = 12
@@ -191,6 +195,19 @@ def id_constants_from_doc(doc: dict) -> dict[str, list[str]]:
         span = item.get("span") or {}
         where = f"{span.get('filename', '?')}:{(span.get('begin') or ['?'])[0]}"
         out.setdefault(name, []).append(where)
+    # a public re-export of another crate's constant or static (`pub use alice_core::law::SEMANTICS_ID`):
+    # the JSON carries the target's kind but not its type, so every such re-export counts
+    paths = doc.get("paths", {})
+    for item in index.values():
+        use = item.get("inner", {}).get("use")
+        if item.get("crate_id") != root_crate or not use or use.get("is_glob") or item.get("visibility") != "public":
+            continue
+        target = paths.get(str(use.get("id")), {})
+        if target.get("crate_id") == root_crate or target.get("kind") not in ("constant", "static"):
+            continue
+        span = item.get("span") or {}
+        where = f"{span.get('filename', '?')}:{(span.get('begin') or ['?'])[0]} (re-export of {'::'.join(target.get('path', []))})"
+        out.setdefault(use.get("name") or "?", []).append(where)
     return {k: sorted(v) for k, v in out.items()}
 
 
@@ -247,9 +264,12 @@ def load_config(root: Path) -> Config:
     doc_features = doc.get("doc-features")
     if doc_features is not None and not (isinstance(doc_features, list) and all(isinstance(f, str) for f in doc_features)):
         raise CheckError(f"{CONFIG}: doc-features must be a list of feature names")
+    probe_deps = doc.get("probe-dependencies", [])
+    if not (isinstance(probe_deps, list) and all(isinstance(d, str) and re.fullmatch(r"[A-Za-z0-9_-]+", d) for d in probe_deps)):
+        raise CheckError(f"{CONFIG}: probe-dependencies must be a list of crate names")
     return Config(doc["package"], doc["manifest"], tuple(doc.get("features", [])),
                   bool(doc.get("default-features", True)), tuple(tags), tuple(ids), tuple(sorted(exempt.items())),
-                  None if doc_features is None else tuple(doc_features))
+                  None if doc_features is None else tuple(doc_features), tuple(probe_deps))
 
 
 def parse_version(v: str) -> tuple[int, int, int]:
@@ -379,7 +399,10 @@ def read_ids(source: Path | str, cfg: Config, target_dir: Path, with_previous: b
             dep_toml = "{ " + ", ".join(f"{k} = {json.dumps(v)}" for k, v in dep.items()) + " }"
             (probe / "Cargo.toml").write_text(
                 f"[package]\nname = \"id-move-probe-{i}\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n"
-                f"[dependencies]\n{json.dumps(cfg.package)} = {dep_toml}\n\n[workspace]\n", encoding="utf-8")
+                f"[dependencies]\n{json.dumps(cfg.package)} = {dep_toml}\n"
+                # "*" unifies with the package's own requirement, so the probe reads the same version
+                + "".join(f"{json.dumps(d)} = {{ version = \"*\", default-features = false }}\n" for d in cfg.probe_deps)
+                + "\n[workspace]\n", encoding="utf-8")
             (probe / "src" / "main.rs").write_text(probe_source(cfg, spec, with_previous), encoding="utf-8")
             env = dict(os.environ, CARGO_TARGET_DIR=str(target_dir), RUSTFLAGS="")
             env.pop("RUSTC_WRAPPER", None)
@@ -490,11 +513,19 @@ def check_values(root: Path, base_ref: str | None, base_from: str = "auto") -> t
     # sibling repository (`../ALICE-SDF`) resolves from it as it does from the root
     wt = root.resolve().parent / f".{root.resolve().name}.id-move-base-{os.getpid()}"
     try:
-        git(root, "worktree", "add", "--detach", "--quiet", str(wt), base_ref)
+        # every file of the tag, written through a throwaway index: the repository's own index and
+        # checkout are not touched, nothing is registered, and unlike `git archive` no file marked
+        # export-ignore in .gitattributes is left out of the build
+        wt.mkdir()
+        env = dict(os.environ, GIT_INDEX_FILE=str(work / "base.index"))
+        for args in (["read-tree", base_ref], ["checkout-index", "--all", "--force", f"--prefix={wt}/"]):
+            r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, env=env)
+            if r.returncode != 0:
+                raise CheckError(f"git {args[0]} {base_ref}: {r.stderr.strip()}")
         base = read_ids(wt, cfg, target, with_previous=False)
         head = read_ids(root, cfg, target)
     finally:
-        subprocess.run(["git", "-C", str(root), "worktree", "remove", "--force", str(wt)], capture_output=True)
+        shutil.rmtree(wt, ignore_errors=True)
         shutil.rmtree(work, ignore_errors=True)
     problems, report = judge(base_version, head_version, base, head, changelog, cfg)
     report.insert(0, f"base {base_ref}: the tag's tree ({base_version}), working tree {head_version}")
