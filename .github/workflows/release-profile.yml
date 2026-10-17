@@ -45,6 +45,13 @@ jobs:
           cargo test --release
           --test analytic_law_id --test float_edge_golden --test determinism_golden
           --test float_environment
+      # every feature: the lzma containers, the fft analysis and the parallel generation in release
+      - name: Bit-exact goldens, every feature (cargo test --release)
+        run: >-
+          scripts/run_tests.sh analytic_law_id,float_edge_golden,determinism_golden,minmax_sign_golden,order_determinism,float_environment=2 --
+          cargo test --release --features std,fft,parallel,lzma
+          --test analytic_law_id --test float_edge_golden --test determinism_golden
+          --test minmax_sign_golden --test order_determinism --test float_environment
       # G14, dynamic half: the flags cargo really passes to rustc, read from `-v` in a
       # fresh target directory (a reused one prints Fresh without the command line),
       # for the default, all-features and no-default feature sets; fails on a
