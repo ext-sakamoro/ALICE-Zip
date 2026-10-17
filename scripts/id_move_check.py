@@ -23,6 +23,12 @@ For each identifier that exists at the base and has another value now:
 An identifier missing at the base is new and passes. Comparing no identifier fails, and
 so does a config naming a constant the working tree does not have.
 
+Completeness: every `pub const` / `pub static` of type `[u8; 32]` in the crate's src/ (the
+form every identifier of these crates takes) must be an [[id]] of the config or be listed
+under [exempt] with a reason, so a second identifier (a format id next to SEMANTICS_ID)
+cannot be left out; an [exempt] entry that names no such constant fails, and finding none
+fails as having compared nothing. A constant behind a type alias is not seen.
+
 The base's identifiers are read from the version as published (crates.io, `={version}`),
 which is what a stored value was stamped by; a version never published is read from the tag's
 tree instead (`--base-from tag` forces that, `--base-from registry` refuses the fallback).
@@ -38,6 +44,8 @@ config: scripts/id_move.toml
     features = ["std"]                    # features the probe builds it with (optional)
     default-features = true               # (optional)
     tags = ["v{version}"]                 # release tag patterns
+    [exempt]                              # [u8; 32] constants that are not identifiers
+    SOME_KEY = "why it is not an identifier"
     [[id]]
     path = "alice_zip::law::SEMANTICS_ID"
     previous = "alice_zip::semantics::PREVIOUS_SEMANTICS_IDS"   # optional
@@ -79,6 +87,43 @@ class Config:
     default_features: bool
     tags: tuple[str, ...]
     ids: tuple[IdSpec, ...]
+    exempt: tuple[tuple[str, str], ...] = ()
+
+
+MIN_REASON = 12
+ID_CONST_RE = re.compile(r"^\s*pub\s+(?:const|static)\s+([A-Za-z_]\w*)\s*:\s*\[\s*u8\s*;\s*32\s*\]")
+
+
+def id_constants(crate_dir: Path) -> dict[str, list[str]]:
+    """{name: [file:line, ...]} of every `pub const|static NAME: [u8; 32]` under src/"""
+    out: dict[str, list[str]] = {}
+    src = crate_dir / "src"
+    for f in sorted(src.rglob("*.rs")) if src.exists() else []:
+        for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            m = ID_CONST_RE.match(line)
+            if m:
+                out.setdefault(m[1], []).append(f"{f.relative_to(crate_dir).as_posix()}:{n}")
+    return out
+
+
+def completeness(cfg: Config, found: dict[str, list[str]]) -> list[str]:
+    problems = []
+    if not found:
+        return ["no `pub const NAME: [u8; 32]` found under src/ (compared nothing)"]
+    listed = {spec.path.rsplit("::", 1)[1] for spec in cfg.ids}
+    exempt = dict(cfg.exempt)
+    for name, where in sorted(found.items()):
+        if name not in listed and name not in exempt:
+            problems.append(f"{name} ({', '.join(where)}): a [u8; 32] constant that is neither an [[id]] of "
+                            f"{CONFIG} nor under [exempt] with a reason")
+    for name, reason in sorted(exempt.items()):
+        if name not in found:
+            problems.append(f"[exempt] {name}: names no `pub const {name}: [u8; 32]` under src/ (stale)")
+        if len(reason.strip()) < MIN_REASON:
+            problems.append(f"[exempt] {name}: reason shorter than {MIN_REASON} characters")
+        if name in listed:
+            problems.append(f"[exempt] {name}: also an [[id]]")
+    return problems
 
 
 def load_config(root: Path) -> Config:
@@ -103,8 +148,11 @@ def load_config(root: Path) -> Config:
     for key in ("package", "manifest"):
         if not isinstance(doc.get(key), str) or not doc[key]:
             raise CheckError(f"{CONFIG}: {key} is missing")
+    exempt = doc.get("exempt", {})
+    if not isinstance(exempt, dict) or not all(isinstance(v, str) for v in exempt.values()):
+        raise CheckError(f"{CONFIG}: [exempt] must map names to reasons")
     return Config(doc["package"], doc["manifest"], tuple(doc.get("features", [])),
-                  bool(doc.get("default-features", True)), tuple(tags), tuple(ids))
+                  bool(doc.get("default-features", True)), tuple(tags), tuple(ids), tuple(sorted(exempt.items())))
 
 
 def parse_version(v: str) -> tuple[int, int, int]:
@@ -301,6 +349,13 @@ def judge(base_version: str, head_version: str, base: dict[str, dict | None],
 
 
 def check(root: Path, base_ref: str | None, base_from: str = "auto") -> tuple[list[str], list[str]]:
+    cfg = load_config(root)
+    missing = completeness(cfg, id_constants((root / cfg.manifest).resolve().parent))
+    problems, report = check_values(root, base_ref, base_from)
+    return missing + problems, report
+
+
+def check_values(root: Path, base_ref: str | None, base_from: str = "auto") -> tuple[list[str], list[str]]:
     """`base_from`: "registry" reads the base version as published (what G9 is about: a path
     dependency of the tag's tree on a sibling repository would resolve against today's sibling,
     not the released one), "tag" builds the tag's tree, "auto" the registry and the tag when the

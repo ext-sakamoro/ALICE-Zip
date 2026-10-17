@@ -69,6 +69,26 @@ class Rules(unittest.TestCase):
         self.assertEqual(p({"GITHUB_REF": "refs/pull/3/merge", "GITHUB_EVENT_NAME": "pull_request"}), "warn")
         self.assertEqual(p({"GITHUB_REF": "refs/heads/main", "GITHUB_EVENT_NAME": "schedule"}), "fail")
 
+    def test_every_32_byte_constant_is_an_identifier_or_exempt(self):
+        found = {"SEMANTICS_ID": ["src/lib.rs:1"], "FORMAT_ID": ["src/container.rs:9"]}
+        cfg = imc.Config("p", "Cargo.toml", (), True, ("v{version}",), (imc.IdSpec("p::SEMANTICS_ID", None),))
+        problems = imc.completeness(cfg, found)
+        self.assertTrue(any(p.startswith("FORMAT_ID (src/container.rs:9)") for p in problems), problems)
+        ok = imc.Config("p", "Cargo.toml", (), True, ("v{version}",), cfg.ids,
+                        (("FORMAT_ID", "a key, not a stamp of what was computed"),))
+        self.assertEqual(imc.completeness(ok, found), [])
+        stale = imc.Config("p", "Cargo.toml", (), True, ("v{version}",), cfg.ids,
+                           (("FORMAT_ID", "a key, not a stamp of what was computed"), ("GONE", "removed long ago, stale")))
+        self.assertTrue(any("GONE" in p and "stale" in p for p in imc.completeness(stale, found)))
+        self.assertEqual(imc.completeness(cfg, {}), ["no `pub const NAME: [u8; 32]` found under src/ (compared nothing)"])
+
+    def test_the_scan_finds_const_and_static_identifiers(self):
+        d = Path(tempfile.mkdtemp())
+        (d / "src").mkdir()
+        (d / "src" / "lib.rs").write_text("pub const A_ID: [u8; 32] = [0; 32];\npub static B: [ u8 ; 32 ] = [1; 32];\n"
+                                          "const PRIVATE: [u8; 32] = [2; 32];\npub const SHORT: [u8; 16] = [3; 16];\n")
+        self.assertEqual(sorted(imc.id_constants(d)), ["A_ID", "B"])
+
     def test_breaking_steps(self):
         self.assertTrue(imc.is_breaking("0.10.0", "0.11.0"))
         self.assertTrue(imc.is_breaking("0.10.3", "1.0.0"))

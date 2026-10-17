@@ -7,3 +7,7 @@ tags = ["v{version}"]
 [[id]]
 path = "alice_zip::law::SEMANTICS_ID"
 previous = "alice_zip::semantics::PREVIOUS_SEMANTICS_IDS"
+
+[[id]]
+# the payload of the FMID section of a container (no previous list: another value is refused)
+path = "alice_zip::container::FORMAT_ID"
