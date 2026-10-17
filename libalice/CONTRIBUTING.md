@@ -37,4 +37,4 @@ cargo build --features codec
 - **Horner's method**: polynomial evaluation avoids explicit `pow()` calls.
 - **Rayon parallelism**: Perlin noise generation is data-parallel across rows.
 - **Reciprocal pre-computation**: divisions in hot loops replaced with multiplication by reciprocal.
-- **FFT via rustfft**: Fourier analysis/synthesis uses in-place FFT with thread-local planner cache.
+- **FFT**: Fourier analysis uses the core crate's in-crate f64 FFT (radix-2, Bluestein for other lengths), the same bits on every target.

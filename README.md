@@ -61,7 +61,7 @@ pip install alice-zip libalice
 
 # Rust
 cargo add alice-zip                       # std (default): + zlib wrappers
-cargo add alice-zip --features fft,parallel,lzma   # rustfft analysis, rayon textures, LZMA residual containers
+cargo add alice-zip --features fft,parallel,lzma   # FFT analysis, rayon textures, LZMA residual containers
 cargo add alice-zip --no-default-features     # no_std + alloc (sqrt / floor / round via libm)
 ```
 
@@ -88,7 +88,7 @@ let regenerated = generate_from_coefficients(32, &bins, dc);
 | Feature | Adds | Default |
 |---------|------|---------|
 | `std` | `compression` (zlib via flate2), `std::error::Error` for `ZipError` | ✓ |
-| `fft` | `generators::analyze_signal_fft` (rustfft, same contract as the naive DFT) | |
+| `fft` | `generators::analyze_signal_fft` (in-crate f64 FFT, same contract as the naive DFT, same bits on every target) | |
 | `parallel` | rayon row parallelism for `generate_perlin_2d` / `_advanced` | |
 | `lzma` | `compression::{lzma_compress, lzma_decompress}` + the `.alice` quantised / lossless residual containers (lzma-rs) | |
 | *(none)* | `no_std + alloc`; `sqrt` / `floor` / `round` via `libm` (the transcendentals go through `alice-det-math` in every build); CI builds the rlib for `thumbv7em-none-eabihf` | |

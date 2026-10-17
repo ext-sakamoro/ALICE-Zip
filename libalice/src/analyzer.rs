@@ -5,7 +5,7 @@
 //! to LZMA if no procedural method achieves a good enough compression ratio.
 //!
 //! Reuses existing Rust generators:
-//! - `crate::generators::analyze_signal` (rustfft, core `analyze_signal_fft`)
+//! - `crate::generators::analyze_signal` (core `analyze_signal_fft`, in-crate FFT)
 //! - `crate::generators::fit_polynomial` (core `fit_polynomial_unit`, `.alice` convention)
 //!
 //! License: Apache-2.0

@@ -1,5 +1,5 @@
 //! Parity fuzz (two evaluation paths of one law): the naive f64-accumulated DFT
-//! and the rustfft path must select the same bins and reconstruct the same
+//! and the FFT path must select the same bins and reconstruct the same
 //! signal; with every bin kept the reconstruction must equal the input
 #![no_main]
 use alice_zip::generators::{analyze_signal, analyze_signal_fft, generate_from_coefficients};

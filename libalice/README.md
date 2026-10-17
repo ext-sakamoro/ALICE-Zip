@@ -12,7 +12,7 @@ The generator laws (polynomial / Fourier / Perlin) and the compression codecs ar
 are re-exported from the core crate at the repository root
 ([`alice-zip` on crates.io](https://crates.io/crates/alice-zip)), see
 `src/generators/mod.rs` for the conventions this crate pins (`.alice` container:
-descending polynomial coefficients on `x ∈ [0, 1]`, rustfft analysis).
+descending polynomial coefficients on `x ∈ [0, 1]`, FFT analysis).
 
 ## Python
 

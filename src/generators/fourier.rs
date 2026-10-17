@@ -10,8 +10,8 @@
 //!   `k == 0` or `k == n/2` (self-conjugate bins) Versions ≤ 0.3 used
 //!   `w = 2` for the Nyquist bin, doubling it; `tests/analytic_oracle.rs`
 //!   pins the exact reconstruction of every bin including `k = n/2`
-//! - `analyze_signal_fft` (`fft` feature) computes the same bins with
-//!   rustfft in O(n log n); the coefficient selection is shared code and the
+//! - `analyze_signal_fft` (`fft` feature) computes the same bins in
+//!   O(n log n) with the in-crate `f64` transform (`fft.rs`); the coefficient selection is shared code and the
 //!   oracle test pins naive-vs-FFT parity
 //!
 //! Sinusoid helpers evaluate `A · sin(2π f i / n + φ) + dc`
@@ -80,9 +80,10 @@ pub fn analyze_signal(
     )
 }
 
-/// [`analyze_signal`] computed with rustfft (`fft` feature) Same output
-/// contract; magnitudes / phases agree with the naive DFT to floating-point
-/// round-off (see `tests/analytic_oracle.rs`)
+/// [`analyze_signal`] computed with an O(n log n) transform (`fft` feature) Same output
+/// contract; the transform runs in `f64` (radix-2, Bluestein for other lengths, twiddles
+/// from `alice_det_math`) and gives the same bits on every target; magnitudes / phases
+/// agree with the naive DFT to rounding (`tests/fft_oracle.rs` states the bound)
 #[cfg(feature = "fft")]
 #[must_use]
 pub fn analyze_signal_fft(
@@ -90,24 +91,24 @@ pub fn analyze_signal_fft(
     max_coefficients: usize,
     energy_threshold: f32,
 ) -> (Vec<(usize, f32, f32)>, f32) {
-    use rustfft::num_complex::Complex;
-    use rustfft::FftPlanner;
-
     if values.is_empty() || max_coefficients == 0 {
         return (Vec::new(), 0.0);
     }
     let n = values.len();
     let dc_offset = mean(values);
-    let mut buffer: Vec<Complex<f32>> = values
-        .iter()
-        .map(|&x| Complex::new(x - dc_offset, 0.0))
-        .collect();
-    FftPlanner::new().plan_fft_forward(n).process(&mut buffer);
+    let centered: Vec<f64> = values.iter().map(|&x| f64::from(x - dc_offset)).collect();
+    let transform = super::fft::dft_real(&centered);
 
-    let spectrum: Vec<(usize, f32, f32)> = buffer[1..=n / 2]
+    // the same per-bin formula as analyze_signal: the bin rounded to f32, then the
+    // f32 square root and alice_det_math::atan2
+    #[allow(clippy::cast_possible_truncation)]
+    let spectrum: Vec<(usize, f32, f32)> = transform[1..=n / 2]
         .iter()
         .enumerate()
-        .map(|(i, c)| (i + 1, c.norm(), c.arg()))
+        .map(|(i, &(re, im))| {
+            let (re, im) = (re as f32, im as f32);
+            (i + 1, sqrt_f32(re * re + im * im), atan2(im, re))
+        })
         .collect();
 
     (

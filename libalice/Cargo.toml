@@ -33,7 +33,7 @@ pyo3 = { version = "0.29", features = ["extension-module"], optional = true }
 numpy = { version = "0.29", optional = true }
 
 # Generator laws (polynomial / Fourier / Perlin) — single home, see
-# src/generators/mod.rs. `fft` = rustfft analysis, `parallel` = rayon rows.
+# src/generators/mod.rs. `fft` = FFT analysis, `parallel` = rayon rows.
 # Deterministic transcendentals, the same ones the core crate uses: the
 # platform libm is not required to be correctly rounded, so a signal fitted
 # here and regenerated elsewhere would not agree bit for bit

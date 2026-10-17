@@ -16,7 +16,7 @@
 //! # Hex form (with `alice-det-math` 0.5.1; other generations in [`ZIP_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 65ba78c17a0cab6d1717270ad7ceca8856c293425f92289de943767ecb1ae883
+//! 51ffeb079769ea34bd3cb3df756b6cb940b8d2d6a6a0f1e1115ab8139415935e
 //! ```
 //!
 //! # Fold
@@ -68,6 +68,10 @@ pub const ZIP_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
         hex32("f354146d062704960e408e1e5c8c54872a636d8deb42d8f1704caf6822e5ec4a"),
     ),
     (
+        "golden fft_spectrum_is_the_recorded_bits",
+        hex32("a83cfb9c62c3c79379fa1d0df8b5d7aa2b5d98ec978ed7a064cd95524cb5c0cc"),
+    ),
+    (
         "golden entropy_is_the_recorded_bits",
         hex32("202c3247f87652a8eff9ed9c7c1f9e4ff7d598dda7e3934960469f829cd0e99e"),
     ),
@@ -108,12 +112,12 @@ pub const ZIP_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // alice-det-math 0.5.0
     (
         hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
-        hex32("1b6781838b2ddd87528044de149d29280340526f6dc53b7c1cf32842c6ef975f"),
+        hex32("2f46abb0b360203cb630d7453d4065070759255231ee84e2d0d4f53cd566d925"),
     ),
     // alice-det-math 0.5.1 (adds max / min / max64 / min64)
     (
         hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
-        hex32("65ba78c17a0cab6d1717270ad7ceca8856c293425f92289de943767ecb1ae883"),
+        hex32("51ffeb079769ea34bd3cb3df756b6cb940b8d2d6a6a0f1e1115ab8139415935e"),
     ),
 ];
 
@@ -154,6 +158,7 @@ const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
 /// by those releases carries `85e08846…` (det-math 0.5.1) or `135c407d…` (0.5.0); the outputs
 /// they computed are the pinned ones, so they stay reproducible here.
 pub const PREVIOUS_SEMANTICS_IDS: &[[u8; 32]] = &[
+    hex32("65ba78c17a0cab6d1717270ad7ceca8856c293425f92289de943767ecb1ae883"),
     hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
     hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
 ];

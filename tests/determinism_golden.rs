@@ -116,7 +116,7 @@ fn integer_signal(n: usize) -> Vec<f32> {
 fn semantics_id_is_the_recorded_value() {
     assert_eq!(
         hex(&SEMANTICS_ID),
-        "65ba78c17a0cab6d1717270ad7ceca8856c293425f92289de943767ecb1ae883",
+        "51ffeb079769ea34bd3cb3df756b6cb940b8d2d6a6a0f1e1115ab8139415935e",
         "the semantics changed: every law identifier published under \
          the old value now describes something else"
     );
@@ -153,6 +153,33 @@ fn law_id_and_evaluation_are_the_recorded_bits() {
     }
     assert_golden(
         "law_id and evaluate",
+        bits,
+        32 + 41 * 8,
+        "330cc74e2fed5d92891e0db1ffed224772041fa425dc4e8aa3c471987aaf4344",
+    );
+}
+
+/// The digest recorded before the `fft` spectrum joined the pins (0.11.0, when the
+/// in-crate transform replaced rustfft): passing the identifier of that build
+/// (`65ba78c1…`, now in `PREVIOUS_SEMANTICS_IDS`) still gives it, so adding the pin
+/// changed the identifier input only
+#[test]
+fn law_id_digest_under_the_identifier_before_the_fft_pin_is_unchanged() {
+    let previous = alice_zip::law::PREVIOUS_SEMANTICS_IDS
+        .iter()
+        .find(|id| {
+            hex(&id[..]) == "65ba78c17a0cab6d1717270ad7ceca8856c293425f92289de943767ecb1ae883"
+        })
+        .expect("alice-zip keeps the identifier before the fft pin as a previous one");
+    let law = line_law();
+    let mut bits = Bits::default();
+    bits.raw(&law.law_id(previous));
+    for i in 0..=40_u32 {
+        let x = f64::from(i) / 10.0;
+        bits.f64(law.evaluate(x).expect("inside the domain"));
+    }
+    assert_golden(
+        "law_id and evaluate under the identifier before the fft pin",
         bits,
         32 + 41 * 8,
         "b8a5064b51c71bf4388082efe3ccfce7e73e1989accb4a0f07c4e38dbe11f022",
@@ -296,6 +323,34 @@ fn spectrum_and_reconstruction_are_the_recorded_bits() {
         bits,
         (8 + 31 + 64) * 4,
         "f354146d062704960e408e1e5c8c54872a636d8deb42d8f1704caf6822e5ec4a",
+    );
+}
+
+/// The `fft` feature's spectrum: the in-crate `f64` transform (radix-2 for 8, 64 and 1024,
+/// Bluestein for 31, 97 and 1000), each bin rounded to `f32` and turned into magnitude and
+/// phase. Recorded in 0.11.0, when the transform replaced rustfft, whose butterflies differ
+/// per target; this digest is the same on every target of the CI matrix.
+#[cfg(feature = "fft")]
+#[test]
+fn fft_spectrum_is_the_recorded_bits() {
+    use alice_zip::generators::analyze_signal_fft;
+    let mut bits = Bits::default();
+    let lengths = [8usize, 31, 64, 97, 1000, 1024];
+    for n in lengths {
+        let (coefficients, dc) = analyze_signal_fft(&integer_signal(n), n, 1.0);
+        bits.u64(coefficients.len() as u64);
+        for &(k, magnitude, phase) in &coefficients {
+            bits.u64(k as u64);
+            bits.f32(magnitude);
+            bits.f32(phase);
+        }
+        bits.f32(dc);
+    }
+    assert_golden(
+        "analyze_signal_fft",
+        bits,
+        lengths.iter().sum::<usize>() * 4,
+        "a83cfb9c62c3c79379fa1d0df8b5d7aa2b5d98ec978ed7a064cd95524cb5c0cc",
     );
 }
 

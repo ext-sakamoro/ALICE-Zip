@@ -2,7 +2,7 @@ name: Fuzz
 
 # 目的:
 # - lz77 roundtrip / decode, dictionary, bpe + entropy, zlib roundtrip, generators,
-#   fourier parity (naive DFT vs rustfft = 2 evaluation paths of one law) の 7 target を
+#   fourier parity (naive DFT vs the in-crate FFT = 2 evaluation paths of one law) の 7 target を
 #   time-boxed fuzz
 # - PR / push 毎に短時間 (60s/target)、毎日 03:00 UTC に safety net
 #

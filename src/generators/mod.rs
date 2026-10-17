@@ -28,11 +28,13 @@
 //!
 //! # Precision
 //!
-//! Naive DFT and Gaussian elimination over `f64`; the `fft` feature adds a
-//! rustfft path with the same output contract (`tests/analytic_oracle.rs`
-//! pins naive-vs-FFT parity) Under `no_std` transcendental functions go
+//! Naive DFT and Gaussian elimination over `f64`; the `fft` feature adds an
+//! in-crate `f64` FFT path with the same output contract (`tests/fft_oracle.rs`
+//! bounds it against a direct DFT, `tests/determinism_golden.rs` pins its bits) Under `no_std` transcendental functions go
 //! through `libm` and may differ from the `std` build in the last ulp
 
+#[cfg(feature = "fft")]
+mod fft;
 mod fourier;
 mod perlin;
 pub(crate) mod polynomial;

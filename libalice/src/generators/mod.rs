@@ -11,7 +11,7 @@
 //! | libalice name | core function | convention |
 //! |---------------|---------------|------------|
 //! | [`fit_polynomial`] / [`generate_polynomial`] | `fit_polynomial_unit` / `generate_polynomial_unit` | `x = i/(n-1)`, **descending** coefficients (`.alice` container, Python) |
-//! | [`analyze_signal`] | `analyze_signal_fft` | rustfft, bins `1..=n/2` |
+//! | [`analyze_signal`] | `analyze_signal_fft` | in-crate f64 FFT (same bits on every target), bins `1..=n/2` |
 //! | [`generate_from_coefficients`] / [`generate_sine_wave`] / [`generate_multi_sine`] | same | |
 //! | [`PerlinNoise`] / [`generate_perlin_2d`] / [`generate_perlin_advanced`] | same | 2D gradient Perlin, `Result` (invalid `scale` / `octaves` are errors) |
 //!
