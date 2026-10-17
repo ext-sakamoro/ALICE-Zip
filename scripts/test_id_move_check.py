@@ -160,13 +160,15 @@ class EndToEnd(unittest.TestCase):
         cfg = imc.Config("forms", "Cargo.toml", (), True, ("v{version}",), (imc.IdSpec("forms::ZZ_A", None),))
         # a re-export of another crate's constant: here `core::f64::consts::PI` stands in for an upstream id
         with open(d / "src" / "lib.rs", "a") as f:
-            f.write("pub use core::f64::consts::PI as UPSTREAM_ID;\nuse core::f64::consts::E;\n#[allow(dead_code)] const _E: f64 = E;\n")
+            f.write("pub use core::f64::consts::PI as UPSTREAM_ID;\nuse core::f64::consts::E;\n#[allow(dead_code)] const _E: f64 = E;\n"
+                    "pub mod zz_glob { pub use core::f64::consts::*; }\n")
         found = imc.id_constants(d, cfg)
-        self.assertEqual(sorted(found), sorted([f"ZZ_{c}" for c in "ABCDEFGHIJK"] + ["ZzH::ID", "ZzH::TID", "Stamp::TID", "UPSTREAM_ID"]))
+        self.assertEqual(sorted(found), sorted([f"ZZ_{c}" for c in "ABCDEFGHIJK"] + ["ZzH::ID", "ZzH::TID", "Stamp::TID", "UPSTREAM_ID",
+                                               "core::f64::consts::*"]))
         self.assertIn("re-export of core::f64::consts::PI", found["UPSTREAM_ID"][0])
         self.assertEqual(found["ZZ_B"], ["src/lib.rs:2"])
         problems = imc.completeness(cfg, found)
-        self.assertEqual(len(problems), 14, problems)
+        self.assertEqual(len(problems), 15, problems)
         # an associated const is listed by Type::NAME
         listed = imc.Config("forms", "Cargo.toml", (), True, ("v{version}",),
                             (imc.IdSpec("forms::ZZ_A", None), imc.IdSpec("forms::ZzH::ID", None)))

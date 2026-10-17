@@ -31,7 +31,8 @@ SEMANTICS_ID) cannot be left out. The items come from rustdoc's JSON output (RUS
 --document-private-items, format_version 60, as scripts/api_boundary.py reads it), where the
 compiler has resolved the types: a text scan misses a type on the next line or behind an
 alias. A public re-export of another crate's constant or static counts too (rustdoc does not
-give its type), so a crate that stamps an upstream identifier lists it. Associated consts count too (an inherent impl's, a trait's and a trait impl's), named
+give its type), so a crate that stamps an upstream identifier lists it; a public glob re-export of
+another crate (`pub use other::*`) is listed by its source (`other::*`) under [exempt] with a reason. Associated consts count too (an inherent impl's, a trait's and a trait impl's), named
 `Type::NAME` / `Trait::NAME`. rustdoc runs with every feature (`--all-features`, or the
 config's `doc-features` when a feature cannot build here), so an identifier behind a feature
 is seen; the values are still read with the config's `features`. An [exempt] entry that names
@@ -200,9 +201,17 @@ def id_constants_from_doc(doc: dict) -> dict[str, list[str]]:
     paths = doc.get("paths", {})
     for item in index.values():
         use = item.get("inner", {}).get("use")
-        if item.get("crate_id") != root_crate or not use or use.get("is_glob") or item.get("visibility") != "public":
+        if item.get("crate_id") != root_crate or not use or item.get("visibility") != "public":
             continue
         target = paths.get(str(use.get("id")), {})
+        if use.get("is_glob"):
+            # `pub use other_crate::*` (or a module of it): whatever [u8; 32] it holds becomes public
+            # here unseen, so the glob itself must be listed under [exempt] with a reason
+            if target.get("crate_id") != root_crate:
+                span = item.get("span") or {}
+                where = f"{span.get('filename', '?')}:{(span.get('begin') or ['?'])[0]} (glob re-export)"
+                out.setdefault(f"{use.get('source') or '?'}::*", []).append(where)
+            continue
         if target.get("crate_id") == root_crate or target.get("kind") not in ("constant", "static"):
             continue
         span = item.get("span") or {}
