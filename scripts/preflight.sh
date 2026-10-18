@@ -84,6 +84,9 @@ relint
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo clippy --all-targets --no-default-features -- -D warnings )
 
 step "ci.yml / clippy: Clippy canary data (generator tests)"
+# text files are LF in the index and the working tree (.github/workflows/eol.yml, shared by the ALICE crates)
+python3 scripts/test_check_eol.py
+python3 scripts/check_eol.py
 python3 scripts/test_gen_clippy_canary_calls.py
 
 step "ci.yml / clippy: Clippy canary data (generated from clippy.toml, no drift)"
