@@ -113,6 +113,14 @@ jobs:
         run: |
           PY=$(command -v python3 || command -v python)
           "$PY" scripts/test_changed_paths.py
+      # ALICE-Law G11 (c): the files shared with the other crates are the bytes ALICE-Law's
+      # table records (table and checker fetched at .github/shared-files-pin, both SHA-256
+      # pinned); a difference, an unlisted shared path or nothing compared fails
+      - name: Shared files equal ALICE-Law's table
+        run: |
+          PY=$(command -v python3 || command -v python)
+          "$PY" scripts/test_shared_files.py
+          scripts/shared_files.sh
       # G14, static half: no fast-math-style flag, target-cpu=native or flag value
       # the guard cannot resolve in any file a flag can come from (deliberate
       # occurrences in scripts/build_config_allowlist.toml); nothing read fails.

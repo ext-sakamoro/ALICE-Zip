@@ -1,5 +1,8 @@
 # ALICE-Law G11: this repository's own rows of conformance/g11.toml (the rows of the checkers the ALICE
-# crates share are generated from ALICE-Law). scripts/g11_table.sh --write writes the table from both.
+# crates share are generated from ALICE-Law). ALICE-Law's scripts/g11_table_gen.py writes conformance/g11.toml
+# from both (python3 scripts/g11_table_gen.py --repo <this repository> --name ALICE-Zip --write, run in an
+# ALICE-Law checkout); the table is committed with the regeneration of ALICE-Law's shared-files table that
+# lists this repository, not before.
 #
 # The golden suites are run by scripts/run_tests.sh, which fails a step when a named test binary ran no
 # test; its zero test is therefore the compared-nothing test of each leg, and each canary is a test of a

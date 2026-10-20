@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - CI (ALICE-Law G11): `scripts/changed_paths.py` (g3-ir.yml の path の絞り込み) の試験 `scripts/test_changed_paths.py` を test job と preflight で走らせる それまで CI のどこからも走っておらず、絞り込みの判定が壊れても red にならなかった
 - CI (ALICE-Law G11): test job の default と docs.rs feature set の `scripts/run_tests.sh` に `zip_semantics_id` / `container_format_id` / `residual_semantics_id` を足した 識別子の試験の binary が 1 件も走らない時に step が落ちる (G6 / G8 の canary がその binary にある)
+- CI (ALICE-Law G11 (c)): ほかの ALICE の crate と同じ bytes で持つ file を ALICE-Law の表と比べる `scripts/shared_files.sh` (試験 `scripts/test_shared_files.py`、ALICE-DetMath などと同じ中身) と `.github/shared-files-pin` を足し、test job (3 OS) と preflight で走らせる 表と検査器は pin の版で取得し SHA-256 を確かめる 差、表に無い共有の path、比較 0 件は失敗
 - `conformance/g11-own.toml`: ALICE-Law G11 の表のうち、この crate 固有の行 (G4 / G5 / G6 / G7 / G8 の golden と識別子の試験、比較 0 件は `scripts/run_tests.sh` の試験) 共有の検査器の行は ALICE-Law の `conformance/g11-shared-rows.toml` から生成する
 - CI: text の file の行末の検査 `scripts/check_eol.py` (試験 `scripts/test_check_eol.py`) と `.github/workflows/eol.yml` を足した `git ls-files --eol` で text の file が index か working tree で CRLF / 混在なら失敗 (`-text` と binary は除く、比べた数を出し 0 件は失敗)、workflow は ubuntu / macos / windows で走り、preflight にも同じ検査を足した (ALICE の crate で同じ中身の file)
 - CI (ALICE-Law G9): `scripts/id_move_check.py` の規則を G9 の文言に合わせた 公開版の値が以前の識別子の一覧に残る移動 (同じ bit の再現) は版を上げなくてよく、その代わり `previous-tests` に挙げた試験が、そのままでは通り、旧値を一覧から抜いた写しでは落ちることを検査器が実際に走らせて確かめる (値を書いただけの試験は通らない) 一覧に無い移動は意味の変更として破壊的な版を求める CHANGELOG に両方の値を書くことはどちらでも求める

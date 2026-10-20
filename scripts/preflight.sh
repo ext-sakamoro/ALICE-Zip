@@ -174,6 +174,9 @@ step "ci.yml / test: run_tests.sh (tests)"
 python3 scripts/test_run_tests.py
 step "ci.yml / test: changed_paths.py (tests)"
 python3 scripts/test_changed_paths.py
+step "ci.yml / test: Shared files equal ALICE-Law's table"
+python3 scripts/test_shared_files.py
+scripts/shared_files.sh
 
 step "ci.yml / test: Build configuration guard (test, then check)"
 python3 scripts/test_build_config_guard.py
