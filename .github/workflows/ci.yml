@@ -43,9 +43,9 @@ jobs:
       # golden file ran none (a feature or target mismatch would otherwise pass
       # as an empty run); the full suite still runs
       - name: Test (default features)
-        run: scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment=2,int2d_oracle=23 -- cargo test
+        run: scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment=2,int2d_oracle=23,zip_semantics_id,container_format_id,residual_semantics_id -- cargo test
       - name: Test (docs.rs feature set)
-        run: scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment=2,int2d_oracle=23,order_determinism -- cargo test --features "$ALL_FEATURES"
+        run: scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment=2,int2d_oracle=23,order_determinism,zip_semantics_id,container_format_id,residual_semantics_id -- cargo test --features "$ALL_FEATURES"
       - name: Test (no_std, lib unit tests)
         run: cargo test --lib --no-default-features
       # The golden records bit patterns, so it is the one suite whose result
@@ -108,6 +108,11 @@ jobs:
         run: |
           PY=$(command -v python3 || command -v python)
           "$PY" scripts/test_run_tests.py
+      # the path filter of g3-ir.yml (shared with the other ALICE crates): its own tests
+      - name: changed_paths.py (tests)
+        run: |
+          PY=$(command -v python3 || command -v python)
+          "$PY" scripts/test_changed_paths.py
       # G14, static half: no fast-math-style flag, target-cpu=native or flag value
       # the guard cannot resolve in any file a flag can come from (deliberate
       # occurrences in scripts/build_config_allowlist.toml); nothing read fails.
