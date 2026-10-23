@@ -17,7 +17,10 @@ use alice_zip::container::{
 use sha2::{Digest, Sha256};
 
 const UNKNOWN_NONCRITICAL: &[u8] = include_bytes!("data/container/unknown_noncritical.bin");
-const LEGACY_V1: &[u8] = include_bytes!("data/container/legacy_v1.alice");
+const ONE: &[u8] = include_bytes!("data/container/one.bin");
+const DUP_TAG: &[u8] = include_bytes!("data/container/dup_tag.bin");
+const ZERO_LEN: &[u8] = include_bytes!("data/container/zero_len.bin");
+const BUNDLE: &[u8] = include_bytes!("data/container/bundle.bin");
 
 const PRODUCT: Tag = Tag(*b"ZZZZ");
 const OTHER: Tag = Tag(*b"YYYY");
@@ -143,18 +146,80 @@ fn declaring_the_format_identifier_tag_does_not_relax_its_rules() {
 }
 
 #[test]
-fn an_empty_or_repeated_declaration_reads_like_the_plain_reader() {
+fn repeated_and_built_in_tags_in_the_declaration_change_nothing() {
     let v = product_file();
-    // repeated and built-in tags in the list change nothing
     let known = [PRODUCT, PRODUCT, Tag::RAW, Tag::FMID];
     let a = ContainerView::open_with_known(&v, &known).unwrap();
     let b = ContainerView::open_with_known(&v, &[PRODUCT]).unwrap();
     assert_eq!(a.id(), b.id());
-    // the empty list is the plain reader on every input
-    for input in [UNKNOWN_NONCRITICAL, LEGACY_V1, &v[..], &v[..10]] {
-        assert_eq!(
-            ContainerView::open_with_known(input, &[]).err(),
-            ContainerView::open(input).err()
-        );
+}
+
+/// The tags the format defines, written out from the layout in the module
+/// documentation (not read from the crate).
+const DEFINED: [&[u8; 4]; 13] = [
+    b"RAW_", b"RESD", b"LAW_", b"VRDT", b"SHAP", b"PHYS", b"ASET", b"SIMS", b"PROV", b"ORCL",
+    b"SREF", b"LIDS", b"FMID",
+];
+
+/// Reference for the refusal: read the section table from the bytes and
+/// return the tag of the first entry that is critical and neither defined nor
+/// declared.
+fn reference_refusal(bytes: &[u8], known: &[Tag]) -> Option<Tag> {
+    let count = usize::try_from(u64::from_le_bytes(bytes[48..56].try_into().unwrap())).unwrap();
+    (0..count).find_map(|i| {
+        let at = HEADER_LEN + i * ENTRY_LEN;
+        let tag = Tag(bytes[at..at + 4].try_into().unwrap());
+        let critical = u16::from_le_bytes(bytes[at + 4..at + 6].try_into().unwrap()) & 1 == 1;
+        let defined = DEFINED.iter().any(|d| **d == tag.0);
+        (critical && !defined && !known.contains(&tag)).then_some(tag)
+    })
+}
+
+/// Every reference fixture, and each of them with one more entry marked critical.
+fn corpus() -> Vec<Vec<u8>> {
+    let bases: Vec<Vec<u8>> = [ONE, DUP_TAG, ZERO_LEN, BUNDLE, UNKNOWN_NONCRITICAL]
+        .iter()
+        .map(|b| b.to_vec())
+        .collect();
+    let mut all = bases.clone();
+    for base in &bases {
+        let count = usize::try_from(u64::from_le_bytes(base[48..56].try_into().unwrap())).unwrap();
+        all.extend((0..count).map(|i| {
+            let mut v = base.clone();
+            v[HEADER_LEN + i * ENTRY_LEN + 4] |= 1;
+            retrail(v)
+        }));
     }
+    all
+}
+
+#[test]
+fn the_refusal_matches_a_reference_over_every_entry_and_declaration() {
+    let declarations: [&[Tag]; 5] = [&[], &[PRODUCT], &[OTHER], &[OTHER, PRODUCT], &[Tag::RAW]];
+    let mut refused = 0;
+    let mut read = 0;
+    for v in &corpus() {
+        for known in declarations {
+            let got = ContainerView::open_with_known(v, known).err();
+            match reference_refusal(v, known) {
+                Some(tag) => {
+                    refused += 1;
+                    assert_eq!(got, Some(ContainerError::UnknownCritical { tag }));
+                    assert_eq!(
+                        Container::from_bytes_with_known(v, known).err(),
+                        Some(ContainerError::UnknownCritical { tag })
+                    );
+                }
+                None => {
+                    read += 1;
+                    assert!(
+                        !matches!(got, Some(ContainerError::UnknownCritical { .. })),
+                        "refused although every critical tag is known: {got:?}"
+                    );
+                }
+            }
+        }
+    }
+    // both outcomes occur, so neither branch is vacuous
+    assert!(refused > 0 && read > 0, "refused {refused}, read {read}");
 }
