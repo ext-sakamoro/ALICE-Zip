@@ -500,9 +500,6 @@ pub enum FormatStatus {
     Legacy,
 }
 
-/// The [`FormatStatus`] of a container whose first section is `first` (tag,
-/// critical, payload) and which has `fmid_count` sections tagged
-/// [`Tag::FMID`].
 /// What the fixed-size header says (checked: magic, major version, reserved bytes, and a section
 /// count whose table fits in a file of `total_len` bytes)
 pub(crate) struct Head {
@@ -609,6 +606,9 @@ pub(crate) fn check_entries(
     classify(first, entries.iter().filter(|e| e.tag == Tag::FMID).count())
 }
 
+/// The [`FormatStatus`] of a container whose first section is `first` (tag,
+/// critical, payload) and which has `fmid_count` sections tagged
+/// [`Tag::FMID`].
 fn classify(
     first: Option<(Tag, bool, &[u8])>,
     fmid_count: usize,

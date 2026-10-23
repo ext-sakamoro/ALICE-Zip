@@ -8,8 +8,10 @@
 //! payloads while hashing each, writes the real table, then reads its own output
 //! back to compute the trailer (checking every payload against the table on the
 //! way, so a payload changed on disk in between is not sealed with a trailer).
-//! It needs `Read + Write + Seek` (a file). The bytes are the same as
-//! [`Container::to_bytes`] for the same sections.
+//! It needs `Read + Write + Seek` (a file) whose bytes end where the container
+//! ends (an empty file, or one written over in place): bytes left past the end
+//! are refused by [`StreamWriter::finish`] instead of being sealed. The bytes are
+//! the same as [`Container::to_bytes`] for the same sections.
 //!
 //! [`StreamReader`] makes the same checks, in the same order, as
 //! [`ContainerView::open_with_known`]: it hashes the whole file once for the
@@ -50,6 +52,13 @@ pub enum StreamError {
     },
     /// A section writer was dropped before its `finish`
     Unfinished,
+    /// The target already held bytes past the end of the container (they would
+    /// stay after the trailer and the file would not open); nothing was sealed.
+    /// Write into an empty target, or truncate it first.
+    TrailingBytes {
+        /// Bytes past the end of the container
+        extra: u64,
+    },
 }
 
 impl core::fmt::Display for StreamError {
@@ -60,6 +69,10 @@ impl core::fmt::Display for StreamError {
             Self::SectionCount { declared, written } => write!(
                 f,
                 "container stream: {written} sections written, {declared} declared"
+            ),
+            Self::TrailingBytes { extra } => write!(
+                f,
+                "the target holds {extra} bytes past the end of the container"
             ),
             Self::Unfinished => write!(f, "container stream: a section was not finished"),
         }
@@ -175,8 +188,10 @@ impl<W: Read + Write + Seek> StreamWriter<W> {
     ///
     /// [`StreamError::SectionCount`] when fewer sections were written than
     /// declared, [`StreamError::Unfinished`], [`StreamError::Container`] with
-    /// [`ContainerError::SectionHash`] when a payload changed on disk, and
-    /// [`StreamError::Io`]. On an error no trailer is written.
+    /// [`ContainerError::SectionHash`] when a payload changed on disk,
+    /// [`StreamError::TrailingBytes`] when the target already held bytes past
+    /// the end of the container, and [`StreamError::Io`]. On an error no trailer
+    /// is written.
     pub fn finish(mut self) -> Result<W> {
         if self.poisoned {
             return Err(StreamError::Unfinished);
@@ -227,6 +242,14 @@ impl<W: Read + Write + Seek> StreamWriter<W> {
         if end != offset + self.start {
             return Err(ContainerError::Layout.into());
         }
+        let container_end = end + TRAILER_LEN as u64;
+        let target_end = self.inner.seek(SeekFrom::End(0))?;
+        if target_end > container_end {
+            return Err(StreamError::TrailingBytes {
+                extra: target_end - container_end,
+            });
+        }
+        self.inner.seek(SeekFrom::Start(end))?;
         self.inner.write_all(&trailer.finalize())?;
         self.inner.flush()?;
         Ok(self.inner)
@@ -455,7 +478,7 @@ impl<R: Read + Seek> StreamReader<R> {
             left: e.len as u64,
             expected: e.sha,
             hasher: Sha256::new(),
-            checked: false,
+            verdict: None,
         })
     }
 }
@@ -477,26 +500,35 @@ fn copy_hashing(inner: &mut impl Read, len: u64, mut f: impl FnMut(&[u8])) -> Re
 ///
 /// ⚠️ The bytes are **unverified** until the end of the section: the SHA-256
 /// recorded in the table is compared when the last byte has been read, and a
-/// mismatch is returned as an error from that read (and from [`Self::finish`]).
+/// mismatch is returned as an error from that read, from every later read and
+/// from [`Self::finish`].
 pub struct UnverifiedSection<'a, R: Read + Seek> {
     inner: &'a mut R,
     index: usize,
     left: u64,
     expected: [u8; 32],
     hasher: Sha256,
-    checked: bool,
+    /// Whether the SHA-256 matched, once the section has been read to its end
+    /// (a failure is kept: every later read and `finish` return it again)
+    verdict: Option<bool>,
 }
 
 impl<R: Read + Seek> UnverifiedSection<'_, R> {
     fn check(&mut self) -> core::result::Result<(), ContainerError> {
-        if !self.checked {
-            self.checked = true;
-            let got: [u8; 32] = core::mem::take(&mut self.hasher).finalize().into();
-            if got != self.expected {
-                return Err(ContainerError::SectionHash { index: self.index });
+        let matched = match self.verdict {
+            Some(matched) => matched,
+            None => {
+                let got: [u8; 32] = core::mem::take(&mut self.hasher).finalize().into();
+                let matched = got == self.expected;
+                self.verdict = Some(matched);
+                matched
             }
+        };
+        if matched {
+            Ok(())
+        } else {
+            Err(ContainerError::SectionHash { index: self.index })
         }
-        Ok(())
     }
 
     /// Reads the rest of the section and checks its SHA-256.

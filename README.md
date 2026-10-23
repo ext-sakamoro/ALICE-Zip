@@ -357,7 +357,7 @@ header, the section table and the integrity of the file.
   memory (peak memory is about twice the accepted size); procedural payloads store generator parameters and are decoded by
   the Python package only. <!-- claim-test: python_lzma_fallback_files_decode_to_the_original_bytes -->
 - **Streaming** (`container::stream`, `std` feature): `StreamWriter` writes the
-  sections through `Write + Seek` without holding them in memory and produces
+  sections through `Read + Write + Seek` without holding them in memory and produces
   the same bytes as `Container::to_bytes` for the same sections. `finish` reads
   the written sections back and checks each one's SHA-256 before it writes the
   trailer; more or fewer sections than declared are refused, and a writer or a

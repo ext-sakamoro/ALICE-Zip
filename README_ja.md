@@ -289,7 +289,7 @@ SHA-256 で識別する section は既存の形式の bytes をそのまま運�
   小さな payload がメモリ上で膨らむことはない (最大のメモリは受け入れた大きさのおよそ 2 倍) procedural の payload は生成器の
   parameter なので Python package だけが復元する <!-- claim-test: python_lzma_fallback_files_decode_to_the_original_bytes -->
 - **stream** (`container::stream`、`std` feature): `StreamWriter` は section を
-  メモリに持たずに `Write + Seek` へ書き、同じ section に対して `Container::to_bytes`
+  メモリに持たずに `Read + Write + Seek` へ書き、同じ section に対して `Container::to_bytes`
   と同じ bytes を出す `finish` は書いた section を読み直して各 SHA-256 を確かめてから
   trailer を書く 宣言より多い / 少ない section は拒否し、`finish` の前に捨てた writer や
   section は、どの reader も開かない file を残す `StreamReader` は `Read + Seek` から読み、

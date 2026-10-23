@@ -361,4 +361,16 @@ fn a_target_with_bytes_past_the_container_is_refused_by_finish() {
     .unwrap();
     w.write_section(b"short").unwrap();
     assert_eq!(w.finish().unwrap().into_inner(), c.to_bytes());
+    // one byte more than the container is already refused, with the count
+    let mut w = StreamWriter::new(
+        Cursor::new(vec![0xEE_u8; len + 1]),
+        [0; 32],
+        &[(Tag::RAW, false)],
+    )
+    .unwrap();
+    w.write_section(b"short").unwrap();
+    assert!(
+        matches!(w.finish(), Err(StreamError::TrailingBytes { extra: 1 })),
+        "one stale byte was not refused"
+    );
 }
