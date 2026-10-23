@@ -293,3 +293,72 @@ fn a_payload_changed_on_disk_before_finish_is_not_trailered() {
         r.err()
     );
 }
+
+/// A section whose hash does not match stays failed: a read after the failing
+/// read and `finish` return the same error (never the end of the section or `Ok`)
+#[test]
+fn a_failed_section_check_is_returned_again_by_every_later_read_and_by_finish() {
+    let mut v = ONE.to_vec();
+    let last_payload_byte = v.len() - 32 - 1;
+    v[last_payload_byte] ^= 0x01;
+    let body = v.len() - 32;
+    let t: [u8; 32] = Sha256::digest(&v[..body]).into();
+    v[body..].copy_from_slice(&t);
+    let mut r = StreamReader::open_with_known(Cursor::new(v), &[]).unwrap();
+    let last = r.len() - 1;
+    let mut s = r.section(last).unwrap();
+    let mut sink = Vec::new();
+    assert!(
+        s.read_to_end(&mut sink).is_err(),
+        "the changed payload read without an error"
+    );
+    let mut more = [0u8; 16];
+    let again = s.read(&mut more);
+    assert!(
+        again.is_err(),
+        "a read after the failure returned {again:?}"
+    );
+    let again = s.read(&mut more);
+    assert!(
+        again.is_err(),
+        "a second read after the failure returned {again:?}"
+    );
+    let fin = s.finish();
+    assert!(
+        matches!(
+            fin,
+            Err(StreamError::Container(
+                alice_zip::container::ContainerError::SectionHash { .. }
+            ))
+        ),
+        "finish after the failure returned {fin:?}"
+    );
+}
+
+/// A target that already holds bytes past the end of the container: `finish`
+/// refuses (the stale tail would stay and the file would not open) instead of
+/// reporting success
+#[test]
+fn a_target_with_bytes_past_the_container_is_refused_by_finish() {
+    let old = vec![0xEE_u8; 10_000];
+    let mut w = StreamWriter::new(Cursor::new(old), [0; 32], &[(Tag::RAW, false)]).unwrap();
+    w.write_section(b"short").unwrap();
+    let r = w.finish();
+    assert!(
+        matches!(r, Err(StreamError::TrailingBytes { .. })),
+        "{:?}",
+        r.map(|c| c.into_inner().len())
+    );
+    // a target exactly as long as the container (written over in place) is fine
+    let mut c = Container::new([0; 32]);
+    c.push(Tag::RAW, false, b"short".to_vec());
+    let len = c.to_bytes().len();
+    let mut w = StreamWriter::new(
+        Cursor::new(vec![0xEE_u8; len]),
+        [0; 32],
+        &[(Tag::RAW, false)],
+    )
+    .unwrap();
+    w.write_section(b"short").unwrap();
+    assert_eq!(w.finish().unwrap().into_inner(), c.to_bytes());
+}
