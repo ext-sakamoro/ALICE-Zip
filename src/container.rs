@@ -503,6 +503,112 @@ pub enum FormatStatus {
 /// The [`FormatStatus`] of a container whose first section is `first` (tag,
 /// critical, payload) and which has `fmid_count` sections tagged
 /// [`Tag::FMID`].
+/// What the fixed-size header says (checked: magic, major version, reserved bytes, and a section
+/// count whose table fits in a file of `total_len` bytes)
+pub(crate) struct Head {
+    pub(crate) minor: u16,
+    pub(crate) semantics_id: [u8; 32],
+    pub(crate) count: usize,
+}
+
+/// Checks the header (`HEADER_LEN` bytes) of a container of `total_len` bytes. The caller has
+/// already checked `total_len >= HEADER_LEN + TRAILER_LEN`.
+pub(crate) fn parse_header(header: &[u8], total_len: usize) -> Result<Head, ContainerError> {
+    if header[..MAGIC.len()] != MAGIC {
+        return Err(ContainerError::BadMagic);
+    }
+    let major = u16_at(header, 8);
+    if major != MAJOR {
+        return Err(ContainerError::UnsupportedMajor { major });
+    }
+    if u32_at(header, 12) != 0 {
+        return Err(ContainerError::Reserved);
+    }
+    let body_end = total_len - TRAILER_LEN;
+    // checked before anything is allocated for the table
+    let count = usize::try_from(u64_at(header, 48))
+        .ok()
+        .filter(|&c| {
+            c.checked_mul(ENTRY_LEN)
+                .is_some_and(|t| t <= body_end - HEADER_LEN)
+        })
+        .ok_or(ContainerError::Layout)?;
+    Ok(Head {
+        minor: u16_at(header, 10),
+        semantics_id: array32(header, 16),
+        count,
+    })
+}
+
+/// Checks the section table (`count * ENTRY_LEN` bytes) of a container of `total_len` bytes:
+/// reserved bits, and payloads that follow the table without gaps and end at the trailer
+pub(crate) fn parse_table(
+    table: &[u8],
+    count: usize,
+    total_len: usize,
+) -> Result<Vec<Entry>, ContainerError> {
+    let body_end = total_len - TRAILER_LEN;
+    let mut cursor = HEADER_LEN + count * ENTRY_LEN;
+    let mut entries = Vec::with_capacity(count);
+    for i in 0..count {
+        let at = i * ENTRY_LEN;
+        let flags = u16_at(table, at + 4);
+        if flags & !1 != 0 || u16_at(table, at + 6) != 0 {
+            return Err(ContainerError::Reserved);
+        }
+        let offset = u64_at(table, at + 8);
+        let len = u64_at(table, at + 16);
+        if offset != cursor as u64 {
+            return Err(ContainerError::Layout);
+        }
+        let len = usize::try_from(len)
+            .ok()
+            .filter(|&l| cursor.checked_add(l).is_some_and(|end| end <= body_end))
+            .ok_or(ContainerError::Layout)?;
+        let mut tag = [0u8; 4];
+        tag.copy_from_slice(&table[at..at + 4]);
+        entries.push(Entry {
+            tag: Tag(tag),
+            critical: flags & 1 == 1,
+            offset: cursor,
+            len,
+            sha: array32(table, at + 24),
+        });
+        cursor += len;
+    }
+    if cursor != body_end {
+        return Err(ContainerError::Layout);
+    }
+    Ok(entries)
+}
+
+/// The checks after the trailer: unknown critical sections (besides `known`) and the format
+/// identifier. `first` is, for section 0, whether its payload matches the SHA-256 in the table
+/// and its payload (a stream reader passes the payload only for an identifier section of the
+/// identifier's length and an empty slice otherwise: no other payload is looked at here).
+pub(crate) fn check_entries(
+    entries: &[Entry],
+    known: &[Tag],
+    first: Option<(bool, &[u8])>,
+) -> Result<FormatStatus, ContainerError> {
+    if let Some(e) = entries
+        .iter()
+        .find(|e| e.critical && !e.tag.is_known() && !known.contains(&e.tag))
+    {
+        return Err(ContainerError::UnknownCritical { tag: e.tag });
+    }
+    let first = match (entries.first(), first) {
+        (Some(e), Some((sha_matches, payload))) => {
+            if e.tag == Tag::FMID && !sha_matches {
+                return Err(ContainerError::SectionHash { index: 0 });
+            }
+            Some((e.tag, e.critical, payload))
+        }
+        _ => None,
+    };
+    classify(first, entries.iter().filter(|e| e.tag == Tag::FMID).count())
+}
+
 fn classify(
     first: Option<(Tag, bool, &[u8])>,
     fmid_count: usize,
@@ -527,7 +633,7 @@ fn classify(
 
 /// A section entry as read from the table.
 #[derive(Debug, Clone, Copy)]
-struct Entry {
+pub(crate) struct Entry {
     tag: Tag,
     critical: bool,
     offset: usize,
@@ -754,82 +860,22 @@ impl<'a> ContainerView<'a> {
         if bytes.len() < HEADER_LEN + TRAILER_LEN {
             return Err(ContainerError::TooShort);
         }
-        if bytes[..MAGIC.len()] != MAGIC {
-            return Err(ContainerError::BadMagic);
-        }
-        let major = u16_at(bytes, 8);
-        if major != MAJOR {
-            return Err(ContainerError::UnsupportedMajor { major });
-        }
-        if u32_at(bytes, 12) != 0 {
-            return Err(ContainerError::Reserved);
-        }
-        let minor = u16_at(bytes, 10);
-        let semantics_id = array32(bytes, 16);
+        let head = parse_header(&bytes[..HEADER_LEN], bytes.len())?;
+        let table_end = HEADER_LEN + head.count * ENTRY_LEN;
+        let entries = parse_table(&bytes[HEADER_LEN..table_end], head.count, bytes.len())?;
         let body_end = bytes.len() - TRAILER_LEN;
-        // checked before anything is allocated for the table
-        let count = usize::try_from(u64_at(bytes, 48))
-            .ok()
-            .filter(|&c| {
-                c.checked_mul(ENTRY_LEN)
-                    .is_some_and(|t| t <= body_end - HEADER_LEN)
-            })
-            .ok_or(ContainerError::Layout)?;
-        let mut cursor = HEADER_LEN + count * ENTRY_LEN;
-        let mut entries = Vec::with_capacity(count);
-        for i in 0..count {
-            let at = HEADER_LEN + i * ENTRY_LEN;
-            let flags = u16_at(bytes, at + 4);
-            if flags & !1 != 0 || u16_at(bytes, at + 6) != 0 {
-                return Err(ContainerError::Reserved);
-            }
-            let offset = u64_at(bytes, at + 8);
-            let len = u64_at(bytes, at + 16);
-            if offset != cursor as u64 {
-                return Err(ContainerError::Layout);
-            }
-            let len = usize::try_from(len)
-                .ok()
-                .filter(|&l| cursor.checked_add(l).is_some_and(|end| end <= body_end))
-                .ok_or(ContainerError::Layout)?;
-            let mut tag = [0u8; 4];
-            tag.copy_from_slice(&bytes[at..at + 4]);
-            entries.push(Entry {
-                tag: Tag(tag),
-                critical: flags & 1 == 1,
-                offset: cursor,
-                len,
-                sha: array32(bytes, at + 24),
-            });
-            cursor += len;
-        }
-        if cursor != body_end {
-            return Err(ContainerError::Layout);
-        }
         if sha256(&bytes[..body_end]) != bytes[body_end..] {
             return Err(ContainerError::Trailer);
         }
-        if let Some(e) = entries
-            .iter()
-            .find(|e| e.critical && !e.tag.is_known() && !known.contains(&e.tag))
-        {
-            return Err(ContainerError::UnknownCritical { tag: e.tag });
-        }
-        let first = match entries.first() {
-            Some(e) => {
-                let payload = &bytes[e.offset..e.offset + e.len];
-                if e.tag == Tag::FMID && sha256(payload) != e.sha {
-                    return Err(ContainerError::SectionHash { index: 0 });
-                }
-                Some((e.tag, e.critical, payload))
-            }
-            None => None,
-        };
-        let format = classify(first, entries.iter().filter(|e| e.tag == Tag::FMID).count())?;
+        let first = entries.first().map(|e| {
+            let payload = &bytes[e.offset..e.offset + e.len];
+            (sha256(payload) == e.sha, payload)
+        });
+        let format = check_entries(&entries, known, first)?;
         Ok(Self {
             bytes,
-            minor,
-            semantics_id,
+            minor: head.minor,
+            semantics_id: head.semantics_id,
             format,
             entries,
         })

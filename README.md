@@ -356,6 +356,16 @@ header, the section table and the integrity of the file.
   `original_size` before decoding, so a small payload cannot expand in
   memory (peak memory is about twice the accepted size); procedural payloads store generator parameters and are decoded by
   the Python package only. <!-- claim-test: python_lzma_fallback_files_decode_to_the_original_bytes -->
+- **Streaming** (`container::stream`, `std` feature): `StreamWriter` writes the
+  sections through `Write + Seek` without holding them in memory and produces
+  the same bytes as `Container::to_bytes` for the same sections. `finish` reads
+  the written sections back and checks each one's SHA-256 before it writes the
+  trailer; more or fewer sections than declared are refused, and a writer or a
+  section dropped before `finish` leaves a file that no reader opens.
+  `StreamReader` reads through `Read + Seek` and accepts and refuses exactly
+  what `ContainerView` does (compared on every fixture and on every single-byte
+  change); the bytes of a section are unverified until its `finish` has checked
+  the section's hash. <!-- claim-test: a_streamed_write_is_byte_identical_to_to_bytes --> <!-- claim-test: the_streamed_reader_agrees_with_the_view_on_every_changed_byte -->
 
 <!-- claim-test: every_single_bit_flip_is_refused_by_the_expected_check -->
 Changing any single bit of a container is refused (checked for every bit of a

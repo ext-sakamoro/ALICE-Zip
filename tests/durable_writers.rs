@@ -32,8 +32,9 @@ enum Decision {
 use Decision::{FormatAndSemanticsId, IntegerOnly, NoLaw, SemanticsId};
 
 /// (source file under src/, function, decision)
-const WRITERS: [(&str, &str, Decision); 13] = [
+const WRITERS: [(&str, &str, Decision); 14] = [
     ("container.rs", "to_bytes", FormatAndSemanticsId),
+    ("container/stream.rs", "write_section", FormatAndSemanticsId),
     ("compression.rs", "compress_residual_quantized", SemanticsId),
     (
         "compression.rs",
@@ -123,7 +124,7 @@ fn the_writer_list_is_every_writer_in_the_source() {
         unlisted.is_empty() && gone.is_empty(),
         "writers without an identifier decision: {unlisted:?}; listed but not in the source: {gone:?}"
     );
-    assert_eq!(found.len(), 13);
+    assert_eq!(found.len(), 14);
 }
 
 #[test]
@@ -136,6 +137,19 @@ fn the_container_writer_carries_the_format_and_semantics_identifiers() {
     assert_eq!(&bytes[HEADER_LEN..HEADER_LEN + 4], b"FMID");
     let at = HEADER_LEN + 2 * alice_zip::container::ENTRY_LEN;
     assert_eq!(bytes[at..at + 32], FORMAT_ID);
+    // the streamed writer writes the same identifiers (the same bytes)
+    let mut w = alice_zip::container::stream::StreamWriter::new(
+        std::io::Cursor::new(Vec::new()),
+        alice_zip::law::SEMANTICS_ID,
+        &[(alice_zip::container::Tag::RAW, true)],
+    )
+    .unwrap();
+    w.write_section(b"r").unwrap();
+    let streamed = w.finish().unwrap().into_inner();
+    assert_eq!(streamed[16..48], alice_zip::law::SEMANTICS_ID);
+    assert_eq!(&streamed[HEADER_LEN..HEADER_LEN + 4], b"FMID");
+    assert_eq!(streamed[at..at + 32], FORMAT_ID);
+    assert_eq!(streamed, bytes);
 }
 
 #[test]

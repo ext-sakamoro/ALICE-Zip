@@ -6,6 +6,7 @@
 //! what `ContainerView` accepts and refuses: both are compared on the reference
 //! fixtures (written by `tests/data/container/container_ref.py`) and on every
 //! single-byte change of two of them.
+#![cfg(feature = "std")]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::cell::RefCell;
@@ -43,7 +44,10 @@ fn current() -> Vec<(&'static str, &'static [u8])> {
 /// Writes the sections of `c` (after its format identifier) with the streamed writer
 fn stream_write(c: &Container) -> Vec<u8> {
     assert_eq!(c.sections[0].tag, Tag::FMID);
-    let declared: Vec<(Tag, bool)> = c.sections[1..].iter().map(|s| (s.tag, s.critical)).collect();
+    let declared: Vec<(Tag, bool)> = c.sections[1..]
+        .iter()
+        .map(|s| (s.tag, s.critical))
+        .collect();
     let mut w = StreamWriter::new(Cursor::new(Vec::new()), c.semantics_id, &declared).unwrap();
     for s in &c.sections[1..] {
         // through the Write side, in uneven pieces
@@ -64,32 +68,46 @@ fn a_streamed_write_is_byte_identical_to_to_bytes() {
         let c = Container::from_bytes_with_known(bytes, &[PRODUCT]).unwrap();
         let streamed = stream_write(&c);
         assert_eq!(streamed, c.to_bytes(), "{name}: differs from to_bytes");
-        assert_eq!(streamed, bytes, "{name}: differs from the reference fixture");
+        assert_eq!(
+            streamed, bytes,
+            "{name}: differs from the reference fixture"
+        );
         compared += 1;
     }
     // a large payload too (more than any internal buffer)
     let mut c = Container::new([0x11; 32]);
-    c.push(Tag::RAW, false, (0..1_048_576u32).map(|i| (i % 251) as u8).collect());
+    c.push(
+        Tag::RAW,
+        false,
+        (0..1_048_576u32).map(|i| (i % 251) as u8).collect(),
+    );
     c.push(PRODUCT, true, b"tail".to_vec());
     assert_eq!(stream_write(&c), c.to_bytes(), "large payload");
     assert_eq!(compared, 6);
 }
 
 /// The verdict of a reader on some bytes: the identifier and sections, or the error text
-fn view_verdict(bytes: &[u8], known: &[Tag]) -> Result<(Vec<(Tag, bool, Vec<u8>)>, [u8; 32]), String> {
+type Verdict = Result<(Vec<(Tag, bool, Vec<u8>)>, [u8; 32]), String>;
+
+fn view_verdict(bytes: &[u8], known: &[Tag]) -> Verdict {
     let v = ContainerView::open_with_known(bytes, known).map_err(|e| format!("{e:?}"))?;
     let mut sections = Vec::new();
     for i in 0..v.len() {
-        sections.push((v.tag(i), v.critical(i), v.section(i).map_err(|e| format!("{e:?}"))?.to_vec()));
+        sections.push((
+            v.tag(i),
+            v.critical(i),
+            v.section(i).map_err(|e| format!("{e:?}"))?.to_vec(),
+        ));
     }
     Ok((sections, v.id()))
 }
 
-fn stream_verdict(bytes: &[u8], known: &[Tag]) -> Result<(Vec<(Tag, bool, Vec<u8>)>, [u8; 32]), String> {
-    let mut r = StreamReader::open_with_known(Cursor::new(bytes.to_vec()), known).map_err(|e| match e {
-        StreamError::Container(e) => format!("{e:?}"),
-        other => format!("{other:?}"),
-    })?;
+fn stream_verdict(bytes: &[u8], known: &[Tag]) -> Verdict {
+    let mut r =
+        StreamReader::open_with_known(Cursor::new(bytes.to_vec()), known).map_err(|e| match e {
+            StreamError::Container(e) => format!("{e:?}"),
+            other => format!("{other:?}"),
+        })?;
     let mut sections = Vec::new();
     for i in 0..r.len() {
         let (tag, critical) = (r.tag(i), r.critical(i));
@@ -102,7 +120,11 @@ fn stream_verdict(bytes: &[u8], known: &[Tag]) -> Result<(Vec<(Tag, bool, Vec<u8
             StreamError::Container(e) => format!("{e:?}"),
             StreamError::Io(e) => e
                 .into_inner()
-                .and_then(|inner| inner.downcast::<alice_zip::container::ContainerError>().ok())
+                .and_then(|inner| {
+                    inner
+                        .downcast::<alice_zip::container::ContainerError>()
+                        .ok()
+                })
                 .map_or_else(|| "io".to_string(), |e| format!("{e:?}")),
             other => format!("{other:?}"),
         })?;
@@ -113,7 +135,10 @@ fn stream_verdict(bytes: &[u8], known: &[Tag]) -> Result<(Vec<(Tag, bool, Vec<u8
 
 #[test]
 fn the_streamed_reader_agrees_with_the_view_on_every_fixture() {
-    let mut inputs: Vec<(&str, Vec<u8>)> = current().into_iter().map(|(n, b)| (n, b.to_vec())).collect();
+    let mut inputs: Vec<(&str, Vec<u8>)> = current()
+        .into_iter()
+        .map(|(n, b)| (n, b.to_vec()))
+        .collect();
     inputs.extend([
         ("legacy_v1 (not a container)", LEGACY_V1.to_vec()),
         ("v1_one", V1_ONE.to_vec()),
@@ -123,7 +148,11 @@ fn the_streamed_reader_agrees_with_the_view_on_every_fixture() {
     ]);
     for (name, bytes) in &inputs {
         for known in [&[][..], &[PRODUCT][..]] {
-            assert_eq!(stream_verdict(bytes, known), view_verdict(bytes, known), "{name} {known:?}");
+            assert_eq!(
+                stream_verdict(bytes, known),
+                view_verdict(bytes, known),
+                "{name} {known:?}"
+            );
         }
     }
 }
@@ -137,6 +166,16 @@ fn the_streamed_reader_agrees_with_the_view_on_every_changed_byte() {
             let mut v = base.to_vec();
             v[at] ^= 0x01;
             assert_eq!(stream_verdict(&v, &[]), view_verdict(&v, &[]), "byte {at}");
+            // the same change with the trailer rewritten: the checks after the trailer
+            // (unknown critical sections, the identifier's hash and form) decide
+            let body = v.len() - 32;
+            let t: [u8; 32] = Sha256::digest(&v[..body]).into();
+            v[body..].copy_from_slice(&t);
+            assert_eq!(
+                stream_verdict(&v, &[]),
+                view_verdict(&v, &[]),
+                "byte {at}, trailer rewritten"
+            );
             compared += 1;
         }
     }
@@ -157,7 +196,10 @@ fn a_changed_payload_with_a_rewritten_trailer_is_caught_when_the_section_is_read
     let mut s = r.section(last).unwrap();
     let mut sink = Vec::new();
     let read = s.read_to_end(&mut sink);
-    assert!(read.is_err(), "the changed payload was read without an error");
+    assert!(
+        read.is_err(),
+        "the changed payload was read without an error"
+    );
     assert!(view_verdict(&v, &[]).is_err());
 }
 
@@ -167,12 +209,24 @@ fn writing_more_or_fewer_sections_than_declared_is_refused() {
     // fewer
     let mut w = StreamWriter::new(Cursor::new(Vec::new()), [0; 32], &declared).unwrap();
     w.write_section(b"one").unwrap();
-    assert!(matches!(w.finish(), Err(StreamError::SectionCount { declared: 3, written: 2 })));
+    assert!(matches!(
+        w.finish(),
+        Err(StreamError::SectionCount {
+            declared: 3,
+            written: 2
+        })
+    ));
     // more
     let mut w = StreamWriter::new(Cursor::new(Vec::new()), [0; 32], &declared).unwrap();
     w.write_section(b"one").unwrap();
     w.write_section(b"two").unwrap();
-    assert!(matches!(w.begin_section(), Err(StreamError::SectionCount { declared: 3, written: 3 })));
+    assert!(matches!(
+        w.begin_section(),
+        Err(StreamError::SectionCount {
+            declared: 3,
+            written: 3
+        })
+    ));
 }
 
 #[test]
@@ -229,7 +283,12 @@ fn a_payload_changed_on_disk_before_finish_is_not_trailered() {
     }
     let r = w.finish();
     assert!(
-        matches!(r, Err(StreamError::Container(alice_zip::container::ContainerError::SectionHash { index: 1 }))),
+        matches!(
+            r,
+            Err(StreamError::Container(
+                alice_zip::container::ContainerError::SectionHash { index: 1 }
+            ))
+        ),
         "{:?}",
         r.err()
     );
