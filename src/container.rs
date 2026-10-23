@@ -653,7 +653,18 @@ impl Container {
     ///
     /// The first problem found, as a [`ContainerError`].
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ContainerError> {
-        let view = ContainerView::open(bytes)?;
+        Self::from_bytes_with_known(bytes, &[])
+    }
+
+    /// [`Self::from_bytes`] for a format that adds its own required sections:
+    /// a critical section whose tag is in `known` is read instead of refused
+    /// (see [`ContainerView::open_with_known`]).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::from_bytes`].
+    pub fn from_bytes_with_known(bytes: &[u8], known: &[Tag]) -> Result<Self, ContainerError> {
+        let view = ContainerView::open_with_known(bytes, known)?;
         let mut sections = Vec::with_capacity(view.len());
         for i in 0..view.len() {
             sections.push(Section {
@@ -678,7 +689,20 @@ impl Container {
     ///
     /// As [`Self::from_bytes`], and [`ContainerError::LegacyFormat`].
     pub fn from_bytes_strict(bytes: &[u8]) -> Result<Self, ContainerError> {
-        let c = Self::from_bytes(bytes)?;
+        Self::from_bytes_strict_with_known(bytes, &[])
+    }
+
+    /// [`Self::from_bytes_with_known`], refusing a container without the
+    /// format identifier ([`FormatStatus::Legacy`]).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::from_bytes`], and [`ContainerError::LegacyFormat`].
+    pub fn from_bytes_strict_with_known(
+        bytes: &[u8],
+        known: &[Tag],
+    ) -> Result<Self, ContainerError> {
+        let c = Self::from_bytes_with_known(bytes, known)?;
         if c.format_status()? == FormatStatus::Legacy {
             return Err(ContainerError::LegacyFormat);
         }
@@ -704,6 +728,26 @@ impl<'a> ContainerView<'a> {
     /// (of the [`Tag::FMID`] section), [`ContainerError::Malformed`] or
     /// [`ContainerError::UnknownFormat`].
     pub fn open(bytes: &'a [u8]) -> Result<Self, ContainerError> {
+        Self::open_with_known(bytes, &[])
+    }
+
+    /// [`Self::open`] for a format built on the container that defines tags
+    /// of its own: the tags in `known` count as known besides [`Tag::KNOWN`].
+    ///
+    /// A critical section whose tag is neither in [`Tag::KNOWN`] nor in
+    /// `known` is refused ([`ContainerError::UnknownCritical`]), so a format
+    /// can mark the sections it requires critical and a reader that does not
+    /// declare them refuses the file instead of skipping them. A non-critical
+    /// section is kept whatever `known` holds. `known` changes nothing else:
+    /// the on-disk format, [`FORMAT_ID`], the identifier, the rules for
+    /// [`Tag::FMID`], [`Tag::SREF`] and [`Tag::LIDS`] and every other check
+    /// are those of [`Self::open`], which is this function with an empty
+    /// `known`. A format's own tag must not be one of [`Tag::KNOWN`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::open`].
+    pub fn open_with_known(bytes: &'a [u8], known: &[Tag]) -> Result<Self, ContainerError> {
         if bytes.len() < HEADER_LEN + TRAILER_LEN {
             return Err(ContainerError::TooShort);
         }
@@ -762,7 +806,10 @@ impl<'a> ContainerView<'a> {
         if sha256(&bytes[..body_end]) != bytes[body_end..] {
             return Err(ContainerError::Trailer);
         }
-        if let Some(e) = entries.iter().find(|e| e.critical && !e.tag.is_known()) {
+        if let Some(e) = entries
+            .iter()
+            .find(|e| e.critical && !e.tag.is_known() && !known.contains(&e.tag))
+        {
             return Err(ContainerError::UnknownCritical { tag: e.tag });
         }
         let first = match entries.first() {
@@ -792,7 +839,17 @@ impl<'a> ContainerView<'a> {
     ///
     /// As [`Self::open`], and [`ContainerError::LegacyFormat`].
     pub fn open_strict(bytes: &'a [u8]) -> Result<Self, ContainerError> {
-        let view = Self::open(bytes)?;
+        Self::open_strict_with_known(bytes, &[])
+    }
+
+    /// [`Self::open_with_known`], refusing a container without the format
+    /// identifier ([`FormatStatus::Legacy`]).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::open`], and [`ContainerError::LegacyFormat`].
+    pub fn open_strict_with_known(bytes: &'a [u8], known: &[Tag]) -> Result<Self, ContainerError> {
+        let view = Self::open_with_known(bytes, known)?;
         if view.format == FormatStatus::Legacy {
             return Err(ContainerError::LegacyFormat);
         }

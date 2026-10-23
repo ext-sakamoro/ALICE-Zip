@@ -49,7 +49,10 @@ fn a_reader_that_does_not_declare_the_tag_refuses_the_required_section() {
     assert_eq!(ContainerView::open(&v).err(), refused);
     assert_eq!(ContainerView::open_with_known(&v, &[]).err(), refused);
     assert_eq!(ContainerView::open_with_known(&v, &[OTHER]).err(), refused);
-    assert_eq!(Container::from_bytes_with_known(&v, &[OTHER]).err(), refused);
+    assert_eq!(
+        Container::from_bytes_with_known(&v, &[OTHER]).err(),
+        refused
+    );
     assert_eq!(
         ContainerView::open_strict_with_known(&v, &[OTHER]).err(),
         refused
@@ -94,17 +97,30 @@ fn declaring_tags_does_not_change_how_a_non_critical_section_is_read() {
     }
 }
 
+/// A container without the [`Tag::FMID`] section (as written by alice-zip
+/// 0.10 and earlier) that holds a critical section of the product's own tag.
+fn legacy_product_file() -> Vec<u8> {
+    let mut c = Container::from_bytes(UNKNOWN_NONCRITICAL).unwrap();
+    assert_eq!(c.sections[0].tag, Tag::FMID);
+    c.sections.remove(0);
+    c.sections[PRODUCT_INDEX - 1].critical = true;
+    c.to_bytes()
+}
+
 #[test]
 fn declaring_tags_does_not_accept_a_file_without_the_format_identifier() {
     // the strict readers still refuse a container written before the
     // identifier existed, whatever tags the reader declares
+    let v = legacy_product_file();
+    let view = ContainerView::open_with_known(&v, &[PRODUCT]).unwrap();
+    assert_eq!(view.format_status(), FormatStatus::Legacy);
     assert_eq!(
-        ContainerView::open_strict_with_known(LEGACY_V1, &[PRODUCT]).err(),
-        ContainerView::open_strict(LEGACY_V1).err()
+        ContainerView::open_strict_with_known(&v, &[PRODUCT]).err(),
+        Some(ContainerError::LegacyFormat)
     );
     assert_eq!(
-        Container::from_bytes_strict_with_known(LEGACY_V1, &[PRODUCT]).err(),
-        Container::from_bytes_strict(LEGACY_V1).err()
+        Container::from_bytes_strict_with_known(&v, &[PRODUCT]).err(),
+        Some(ContainerError::LegacyFormat)
     );
 }
 
@@ -120,7 +136,10 @@ fn declaring_the_format_identifier_tag_does_not_relax_its_rules() {
         matches!(plain, Some(ContainerError::Malformed { tag }) if tag == Tag::FMID),
         "{plain:?}"
     );
-    assert_eq!(ContainerView::open_with_known(&v, &[Tag::FMID]).err(), plain);
+    assert_eq!(
+        ContainerView::open_with_known(&v, &[Tag::FMID]).err(),
+        plain
+    );
 }
 
 #[test]
