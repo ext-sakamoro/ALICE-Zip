@@ -584,6 +584,9 @@ step "ci.yml / test: Determinism golden (no_std build, same digests as the std b
 step "ci.yml / test: Container (no_std build, same bytes and identifiers)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh container_oracle -- cargo test --test container_oracle --no-default-features )
 
+step "ci.yml / test: Container read by a format that declares its own required tags (no_std build)"
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh container_known_tags -- cargo test --test container_known_tags --no-default-features )
+
 step "ci.yml / test: Container example (reads back, resolves references, refuses a changed byte)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo run --example container_roundtrip )
 
@@ -591,12 +594,12 @@ step "ci.yml / test: Released 0.10 formats against the current ones (refused one
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh refuses_the_current_format=2,residual_containers_across_versions=2 -- cargo test --manifest-path compat/v0_10_reader/Cargo.toml --locked )
 
 step "ci.yml / test: Feature-gated suites run on this OS"
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; set -o pipefail; for t in residual_container_oracle container_oracle; do cargo test --features "$ALL_FEATURES" --test "$t" 2>&1 | tee "${CARGO_TARGET_DIR:-target}/gated-$t.log"; sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "${CARGO_TARGET_DIR:-target}/gated-$t.log" | grep -E 'test result: ok\. [1-9][0-9]* passed'; done )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; set -o pipefail; for t in residual_container_oracle container_oracle container_known_tags; do cargo test --features "$ALL_FEATURES" --test "$t" 2>&1 | tee "${CARGO_TARGET_DIR:-target}/gated-$t.log"; sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "${CARGO_TARGET_DIR:-target}/gated-$t.log" | grep -E 'test result: ok\. [1-9][0-9]* passed'; done )
 
 step "ci.yml / wasm: Container oracles under wasmtime"
 rustup target list --installed | grep -q '^wasm32-wasip1$' || rustup target add wasm32-wasip1
 command -v wasmtime >/dev/null || { echo "wasmtime is required for the wasm32-wasip1 step"; exit 1; }
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma" CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime; set -o pipefail; cargo test --target wasm32-wasip1 --test container_oracle 2>&1 | tee "${CARGO_TARGET_DIR:-target}/wasm-test.log"; sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "${CARGO_TARGET_DIR:-target}/wasm-test.log" | grep -E 'test result: ok\. [1-9][0-9]* passed' )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma" CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime; set -o pipefail; for t in container_oracle container_known_tags; do cargo test --target wasm32-wasip1 --test "$t" 2>&1 | tee "${CARGO_TARGET_DIR:-target}/wasm-$t.log"; sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "${CARGO_TARGET_DIR:-target}/wasm-$t.log" | grep -E 'test result: ok\. [1-9][0-9]* passed'; done )
 
 step "ci.yml / libalice: Test (default)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo test --manifest-path libalice/Cargo.toml )
