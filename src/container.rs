@@ -94,6 +94,9 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+#[cfg(feature = "std")]
+pub mod stream;
+
 use sha2::{Digest, Sha256};
 
 /// First 8 bytes of every container.
