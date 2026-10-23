@@ -292,9 +292,11 @@ SHA-256 で識別する section は既存の形式の bytes をそのまま運�
   メモリに持たずに `Read + Write + Seek` へ書き、同じ section に対して `Container::to_bytes`
   と同じ bytes を出す `finish` は書いた section を読み直して各 SHA-256 を確かめてから
   trailer を書く 宣言より多い / 少ない section は拒否し、`finish` の前に捨てた writer や
-  section は、どの reader も開かない file を残す `StreamReader` は `Read + Seek` から読み、
+  section は、どの reader も開かない file を残す 書き先は容器の終わりで終わること (空の file か、
+  先に切り詰めた file) 容器の先に bytes が残る書き先は封じずに `StreamError::TrailingBytes` で拒否する `StreamReader` は `Read + Seek` から読み、
   `ContainerView` と同じものを受け入れて同じものを拒否する (全 fixture と 1 byte の全変更で
   比べる) section の bytes は、その section の `finish` が hash を確かめるまで未検証
+  hash の合わない section は、後の読みと `finish` でも同じ error を返す
   <!-- claim-test: a_streamed_write_is_byte_identical_to_to_bytes --> <!-- claim-test: the_streamed_reader_agrees_with_the_view_on_every_changed_byte -->
 
 <!-- claim-test: every_single_bit_flip_is_refused_by_the_expected_check -->

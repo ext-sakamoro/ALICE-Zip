@@ -361,11 +361,15 @@ header, the section table and the integrity of the file.
   the same bytes as `Container::to_bytes` for the same sections. `finish` reads
   the written sections back and checks each one's SHA-256 before it writes the
   trailer; more or fewer sections than declared are refused, and a writer or a
-  section dropped before `finish` leaves a file that no reader opens.
+  section dropped before `finish` leaves a file that no reader opens. The
+  target must end where the container ends (an empty file, or one truncated
+  first): bytes left past the end are refused (`StreamError::TrailingBytes`)
+  instead of being sealed.
   `StreamReader` reads through `Read + Seek` and accepts and refuses exactly
   what `ContainerView` does (compared on every fixture and on every single-byte
   change); the bytes of a section are unverified until its `finish` has checked
-  the section's hash. <!-- claim-test: a_streamed_write_is_byte_identical_to_to_bytes --> <!-- claim-test: the_streamed_reader_agrees_with_the_view_on_every_changed_byte -->
+  the section's hash, and a section that fails the check fails again on every
+  later read and on `finish`. <!-- claim-test: a_streamed_write_is_byte_identical_to_to_bytes --> <!-- claim-test: the_streamed_reader_agrees_with_the_view_on_every_changed_byte -->
 
 <!-- claim-test: every_single_bit_flip_is_refused_by_the_expected_check -->
 Changing any single bit of a container is refused (checked for every bit of a

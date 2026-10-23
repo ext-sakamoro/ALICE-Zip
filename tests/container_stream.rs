@@ -374,3 +374,36 @@ fn a_target_with_bytes_past_the_container_is_refused_by_finish() {
         "one stale byte was not refused"
     );
 }
+
+/// The read that consumes the last byte of a changed section is the one that
+/// fails (not only a later read): `read_exact` of exactly the section's length
+/// returns the hash error
+#[test]
+fn the_read_that_consumes_the_last_byte_of_a_changed_section_fails() {
+    let mut v = ONE.to_vec();
+    let last_payload_byte = v.len() - 32 - 1;
+    v[last_payload_byte] ^= 0x01;
+    let body = v.len() - 32;
+    let t: [u8; 32] = Sha256::digest(&v[..body]).into();
+    v[body..].copy_from_slice(&t);
+    let mut r = StreamReader::open_with_known(Cursor::new(v), &[]).unwrap();
+    let last = r.len() - 1;
+    let len = usize::try_from(r.section_len(last)).unwrap();
+    let mut s = r.section(last).unwrap();
+    let mut buf = vec![0u8; len];
+    let e = s
+        .read_exact(&mut buf)
+        .expect_err("the read that consumed the changed section succeeded");
+    assert_eq!(e.kind(), std::io::ErrorKind::InvalidData, "{e:?}");
+    let inner = e
+        .into_inner()
+        .and_then(|i| i.downcast::<alice_zip::container::ContainerError>().ok())
+        .map(|b| *b);
+    assert!(
+        matches!(
+            inner,
+            Some(alice_zip::container::ContainerError::SectionHash { .. })
+        ),
+        "{inner:?}"
+    );
+}
