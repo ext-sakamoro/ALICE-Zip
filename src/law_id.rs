@@ -14,29 +14,36 @@
 //!                       semantics_id              32 bytes
 //! then each value, a one-byte type tag first:
 //!   0x01 bytes  len data      0x02 u32  4 bytes BE      0x03 u64  8 bytes BE
-//!   0x05 str    len UTF-8     0x06 id   32 bytes
+//!   0x04 f64    bits 8 BE     0x05 str  len UTF-8       0x06 id   32 bytes
+//!   0x07 f32    bits 4 BE
 //! ```
 //!
 //! The tag keeps `u32 5` apart from `u64 5`; the length prefixes keep `("ab", "c")` apart from
-//! `("a", "bc")`; the explicit byte order keeps the value independent of the host.
+//! `("a", "bc")`; the explicit byte order keeps the value independent of the host. A float enters
+//! by its bits ([`alice_det_math::law_bits`]): `-0.0` and `+0.0` are different values, an `f32` is
+//! never widened to `f64`, and a NaN other than the canonical one is refused, because a
+//! platform's default NaN differs by target.
 //! `scripts/law_id_v2_reference.py` is an independent implementation (standard-library Python)
 //! and `tests/law_id_v2.rs` checks that both give the identifiers in
 //! `tests/data/law_id/v2_probes.txt`.
 //!
 //! Author: Moroya Sakamoto
 
+use alice_det_math::law_bits::{f32_bits, f64_bits, NonCanonicalNan};
 use sha2::{Digest, Sha256};
 
 /// The domain of the v2 law identifier, hashed first (it names the encoding's version)
 pub const LAW_ID_DOMAIN_V2: &[u8] = b"alice-law-id/v2";
 
 /// The type tags of the values (one byte before each value)
-mod tag {
-    pub const BYTES: u8 = 0x01;
-    pub const U32: u8 = 0x02;
-    pub const U64: u8 = 0x03;
-    pub const STR: u8 = 0x05;
-    pub const ID: u8 = 0x06;
+pub(crate) mod tag {
+    pub(crate) const BYTES: u8 = 0x01;
+    pub(crate) const U32: u8 = 0x02;
+    pub(crate) const U64: u8 = 0x03;
+    pub(crate) const F64: u8 = 0x04;
+    pub(crate) const STR: u8 = 0x05;
+    pub(crate) const ID: u8 = 0x06;
+    pub(crate) const F32: u8 = 0x07;
 }
 
 /// Builds a law identifier: [`Self::new`] with the kind and the semantics, a value method per
@@ -90,6 +97,28 @@ impl LawIdHasher {
         self.0.update([tag::U64]);
         self.0.update(v.to_be_bytes());
         self
+    }
+
+    /// A 64-bit float, by its bits
+    ///
+    /// # Errors
+    /// [`NonCanonicalNan`] for a NaN other than the canonical one (no identifier names it).
+    pub fn f64(mut self, v: f64) -> Result<Self, NonCanonicalNan> {
+        let bits = f64_bits(v)?;
+        self.0.update([tag::F64]);
+        self.0.update(bits.to_be_bytes());
+        Ok(self)
+    }
+
+    /// A 32-bit float, by its bits (not widened to `f64`)
+    ///
+    /// # Errors
+    /// [`NonCanonicalNan`] for a NaN other than the canonical one (no identifier names it).
+    pub fn f32(mut self, v: f32) -> Result<Self, NonCanonicalNan> {
+        let bits = f32_bits(v)?;
+        self.0.update([tag::F32]);
+        self.0.update(bits.to_be_bytes());
+        Ok(self)
     }
 
     /// A string (its UTF-8 bytes, under another tag than [`Self::bytes`])
