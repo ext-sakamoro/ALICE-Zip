@@ -68,7 +68,6 @@ need cargo-audit "cargo install cargo-audit --locked"
 need cargo-deny "cargo install cargo-deny --locked"
 need cargo-hack "cargo install cargo-hack --locked"
 need cargo-machete "cargo install cargo-machete --locked"
-need cargo-semver-checks "cargo install cargo-semver-checks --version 0.50.0 --locked"
 has_toolchain 1.87 || { echo "missing toolchain 1.87 (rustup toolchain install 1.87)" >&2; exit 1; }
 
 step "ci.yml / clippy: clippy (default, all targets)"
@@ -248,33 +247,8 @@ step "security-audit.yml / deny: cargo deny (libalice-enterprise)"
 step "security-audit.yml / unused-deps: cargo machete"
 cargo machete
 
-step "security-audit.yml / package-integrity: cargo package (.crate を作る)"
-( export CARGO_TERM_COLOR="always" CARGO_NET_RETRY="5" CARGO_HTTP_MULTIPLEXING="false"; cargo package --no-verify --allow-dirty )
-
-step "security-audit.yml / package-integrity: 展開して隔離 build"
-(
-  export CARGO_TERM_COLOR="always" CARGO_NET_RETRY="5" CARGO_HTTP_MULTIPLEXING="false"
-  set -euo pipefail
-  crate=$(find "${CARGO_TARGET_DIR:-target}/package" -maxdepth 1 -name '*.crate' | head -1)
-  [ -n "$crate" ] || { echo "::error::.crate が生成されていない"; exit 1; }
-  echo "packaged: $(basename "$crate") ($(du -h "$crate" | cut -f1))"
-  tmp=$(mktemp -d)
-  tar xzf "$crate" -C "$tmp"
-  cd "$tmp"/*/
-  # 親 workspace を継承すると member 扱いになり、境界を越えた file が
-  # 再び見えてしまう (検査の意味が消える) ので単独 package として build
-  printf '\n[workspace]\n' >> Cargo.toml
-  cargo check --all-features
-)
-
-step "semver-checks.yml / semver-checks: semver gate (tests)"
-python3 scripts/test_semver_gate.py
-
-step "semver-checks.yml / semver-checks: semver gate (latest crates.io release, every consumer feature set)"
-python3 scripts/semver_gate.py --config .github/semver-gate.toml --target-dir "${CARGO_TARGET_DIR:-target}/semver"
-
-step "semver-checks.yml / semver-checks: semver gate (alice-zip-cli, latest crates.io release, every consumer feature set)"
-python3 scripts/semver_gate.py --manifest libalice/Cargo.toml --config .github/semver-gate-cli.toml --target-dir "${CARGO_TARGET_DIR:-target}/semver-cli"
+# dormant in CI (dispatch only: the crate is not published to crates.io): package integrity and the semver gate
+echo 'PREFLIGHT-SKIP: security-audit.yml / package-integrity and semver-checks.yml: dormant, dispatch only' >&2
 
 step "security-audit.yml / stub-guard: Detect todo! / unimplemented! / panic!(STUB)"
 (
