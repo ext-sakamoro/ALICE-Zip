@@ -74,6 +74,8 @@ fn probes() -> Vec<Probe> {
                     "bytes" => Value::Bytes(unhex(v)),
                     "u32" => Value::U32(v.parse().unwrap()),
                     "u64" => Value::U64(v.parse().unwrap()),
+                    "f64" => Value::F64(f64::from_bits(u64::from_str_radix(v, 16).unwrap())),
+                    "f32" => Value::F32(f32::from_bits(u32::from_str_radix(v, 16).unwrap())),
                     "str" => Value::Str(utf8(v)),
                     "id" => Value::Id(unhex(v).try_into().unwrap()),
                     other => panic!("unknown value type {other}"),
@@ -108,6 +110,7 @@ fn reason(e: &LawRefError) -> &'static str {
         LawRefError::TrailingBytes => "TrailingBytes",
         LawRefError::LawIdMismatch { .. } => "LawIdMismatch",
         LawRefError::UnsortedRows => "UnsortedRows",
+        LawRefError::NonCanonicalNan(_) => "NonCanonicalNan",
         _ => "another reason",
     }
 }
@@ -116,7 +119,7 @@ fn reason(e: &LawRefError) -> &'static str {
 fn every_reference_encodes_to_the_bytes_the_independent_implementation_gives() {
     let probes = probes();
     let refs: Vec<&Probe> = probes.iter().filter(|p| !p.reject).collect();
-    assert_eq!(refs.len(), 11, "the ref probes changed in number");
+    assert_eq!(refs.len(), 16, "the ref probes changed in number");
     for p in refs {
         let r = LawRef::new(&p.kind, p.semantics, p.rows.clone()).unwrap();
         assert_eq!(hex(&r.to_bytes()), p.expect_bytes, "{}", p.name);
@@ -135,7 +138,7 @@ fn every_reference_encodes_to_the_bytes_the_independent_implementation_gives() {
 fn every_rejected_byte_string_is_refused_for_its_reason() {
     let probes = probes();
     let rejects: Vec<&Probe> = probes.iter().filter(|p| p.reject).collect();
-    assert_eq!(rejects.len(), 19, "the reject probes changed in number");
+    assert_eq!(rejects.len(), 22, "the reject probes changed in number");
     for p in rejects {
         let e = LawRef::from_bytes(&p.bytes).expect_err(&p.name);
         assert_eq!(reason(&e), p.expect_error, "{}: {e:?}", p.name);
@@ -254,4 +257,39 @@ fn reordered_or_repeated_rows_are_refused_by_the_reader() {
         LawRef::from_bytes(&repeated),
         Err(LawRefError::DuplicateName("a".into()))
     );
+}
+
+#[test]
+fn float_rows_are_their_bits() {
+    let probes = probes();
+    let id = |name: &str| &probes.iter().find(|p| p.name == name).unwrap().expect_id;
+    // -0.0 and +0.0 are different bits, so different laws; an f32 is not an f64 of the same number
+    assert_ne!(id("f64 plus zero row"), id("f64 minus zero row"));
+    assert_ne!(id("f32 one and a half row"), id("f64 one and a half row"));
+    // the writer refuses a NaN other than the canonical one, naming its bits
+    let payload = f64::from_bits(0x7ff8_0000_0000_0001);
+    assert_eq!(
+        LawRef::new(b"k", [0; 32], vec![("v".into(), Value::F64(payload))]).unwrap_err(),
+        LawRefError::NonCanonicalNan(alice_det_math::law_bits::NonCanonicalNan::F64(
+            0x7ff8_0000_0000_0001
+        ))
+    );
+    let negative = f32::from_bits(0xffc0_0000);
+    assert!(matches!(
+        LawRef::new(b"k", [0; 32], vec![("v".into(), Value::F32(negative))]),
+        Err(LawRefError::NonCanonicalNan(_))
+    ));
+    // the canonical NaN is a value like any other, equal to itself by its bits
+    let r = LawRef::new(
+        b"k",
+        [0; 32],
+        vec![(
+            "v".into(),
+            Value::F64(f64::from_bits(
+                alice_det_math::law_bits::CANONICAL_NAN_F64_BITS,
+            )),
+        )],
+    )
+    .unwrap();
+    assert_eq!(LawRef::from_bytes(&r.to_bytes()).unwrap(), r);
 }
