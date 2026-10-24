@@ -9,7 +9,7 @@ Usage:
     python run_benchmarks.py [--output results.json] [--quick]
 
 Author: Moroya Sakamoto
-License: Apache-2.0
+License: LicenseRef-Proprietary
 """
 
 import argparse

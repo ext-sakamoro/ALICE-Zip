@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ALICE-Zip Media Generators (Apache-2.0)
+ALICE-Zip Media Generators
 =========================================
 
 Generation logic for media decompression.
@@ -8,7 +8,7 @@ This module contains the code that regenerates media from parameters.
 Required for decompression.
 
 Author: Moroya Sakamoto
-License: Apache-2.0
+License: LicenseRef-Proprietary
 
 Copyright (c) 2026 Moroya Sakamoto
 
@@ -255,11 +255,11 @@ class VideoParams:
 
 
 # ============================================================================
-# Image Generator (Apache-2.0)
+# Image Generator
 # ============================================================================
 
 class ImageGenerator:
-    """Generate images from procedural parameters (Apache-2.0)"""
+    """Generate images from procedural parameters"""
 
     def __init__(self):
         if not HAS_PIL:
@@ -446,11 +446,11 @@ class ImageGenerator:
 
 
 # ============================================================================
-# Audio Generator (Apache-2.0)
+# Audio Generator
 # ============================================================================
 
 class AudioGenerator:
-    """Generate audio from procedural parameters (Apache-2.0)"""
+    """Generate audio from procedural parameters"""
 
     # Default chunk size: 1 second of audio at 44.1kHz = ~88KB per channel
     DEFAULT_CHUNK_SAMPLES = 44100
@@ -660,11 +660,11 @@ class AudioGenerator:
 
 
 # ============================================================================
-# Video Generator (Apache-2.0)
+# Video Generator
 # ============================================================================
 
 class VideoGenerator:
-    """Generate video from procedural parameters (Apache-2.0)"""
+    """Generate video from procedural parameters"""
 
     def __init__(self):
         if not HAS_CV2:
@@ -812,11 +812,11 @@ class VideoGenerator:
 
 
 # ============================================================================
-# Unified Media Decompressor (Apache-2.0)
+# Unified Media Decompressor
 # ============================================================================
 
 class MediaDecompressor:
-    """Unified interface for decompressing images, audio, and video (Apache-2.0)"""
+    """Unified interface for decompressing images, audio, and video"""
 
     def __init__(self):
         self._image_generator = None

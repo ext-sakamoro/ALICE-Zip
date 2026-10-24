@@ -2,7 +2,7 @@
 """Which PyPI project a publishing tag names, and whether its version is
 the one the package declares.
 
-Publishing tags (`.github/workflows/pypi.yml`):
+Build tags (`.github/workflows/pypi.yml`; nothing is published):
 
 - `py-alice-zip-v<version>`: the Python package `alice-zip`; `<version>`
   must equal `version` in pyproject.toml

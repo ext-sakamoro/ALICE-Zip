@@ -6,9 +6,10 @@ edition = "2021"
 # dependency whose own `rust-version` exceeds ours, so the lockfile cannot
 # silently drift away from the declared MSRV.
 resolver = "3"
-authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
+authors = ["Moroya Sakamoto"]
 description = "Compression primitives (LZ77, dictionary coding, BPE, entropy, quantisation) + procedural signal generators (polynomial / Fourier / Perlin) + zlib / LZMA residual containers, no_std + alloc"
-license = "Apache-2.0"
+license = "LicenseRef-Proprietary"
+publish = false
 repository = "https://github.com/ext-sakamoro/ALICE-Zip"
 homepage = "https://github.com/ext-sakamoro/ALICE-Zip"
 documentation = "https://docs.rs/alice-zip"

@@ -1,4 +1,4 @@
-// Copyright (c) 2024-2026 Moroya Sakamoto. Apache-2.0.
+// Copyright (c) 2024-2026 Moroya Sakamoto. LicenseRef-Proprietary.
 
 #include "AliceZipLibrary.h"
 #include "Engine/Texture2D.h"
