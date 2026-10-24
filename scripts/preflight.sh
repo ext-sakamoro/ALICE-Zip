@@ -174,6 +174,9 @@ step "ci.yml / test: run_tests.sh (tests)"
 python3 scripts/test_run_tests.py
 step "ci.yml / test: changed_paths.py (tests)"
 python3 scripts/test_changed_paths.py
+step "ci.yml / test: Law identifier and law reference v2 (independent implementation)"
+python3 scripts/law_id_v2_reference.py --check
+python3 scripts/law_ref_v2_reference.py --check
 step "ci.yml / test: Shared files equal ALICE-Law's table"
 python3 scripts/test_shared_files.py
 scripts/shared_files.sh
@@ -570,10 +573,10 @@ python3 scripts/build_flags_check.py -- cargo check --release --lib --all-featur
 python3 scripts/build_flags_check.py -- cargo check --release --lib --no-default-features
 
 step "ci.yml / test: Test (default features)"
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment=2,int2d_oracle=23,zip_semantics_id,container_format_id,residual_semantics_id,container_stream=10,container_count_bound=1 -- cargo test )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment=2,int2d_oracle=23,zip_semantics_id,container_format_id,residual_semantics_id,container_stream=10,container_count_bound=1,law_id_v2=3,law_ref_v2=7 -- cargo test )
 
 step "ci.yml / test: Test (docs.rs feature set)"
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment=2,int2d_oracle=23,order_determinism,zip_semantics_id,container_format_id,residual_semantics_id,container_stream=10,container_count_bound=1 -- cargo test --features "$ALL_FEATURES" )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh determinism_golden,float_edge_golden,analytic_law_id,minmax_sign_golden,float_environment=2,int2d_oracle=23,order_determinism,zip_semantics_id,container_format_id,residual_semantics_id,container_stream=10,container_count_bound=1,law_id_v2=3,law_ref_v2=7 -- cargo test --features "$ALL_FEATURES" )
 
 step "ci.yml / test: Test (no_std, lib unit tests)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo test --lib --no-default-features )
