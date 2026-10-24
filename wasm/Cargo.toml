@@ -7,7 +7,7 @@ rust-version = "1.88"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "The browser entry of ALICE-Zip: open a container and check an Ed25519 signature from JavaScript"
 repository = "https://github.com/ext-sakamoro/ALICE-Zip"
-license = "Apache-2.0"
+license = "LicenseRef-Proprietary"
 publish = false
 
 [lib]

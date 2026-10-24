@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-ALICE-Zip: Residual Compression (Commercial License)
-=====================================================
+ALICE-Zip: Residual Compression
+===============================
 
 Implements residual (difference) compression for lossless reconstruction.
 
@@ -12,7 +12,7 @@ Formula:
     Data_original = Gen(Params) + Decompress(Residual_compressed)
 
 Author: Moroya Sakamoto
-License: ALICE-Zip Commercial License
+License: LicenseRef-Proprietary
 """
 
 import json

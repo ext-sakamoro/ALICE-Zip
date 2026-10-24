@@ -3,7 +3,7 @@
 //! Rust port of the Python `ImageGenerator` in `media_generators.py`.
 //! Generates procedural images from parametric descriptions.
 //!
-//! License: Apache-2.0
+//! License: LicenseRef-Proprietary
 //! Author: Moroya Sakamoto
 
 use std::f32::consts::PI;

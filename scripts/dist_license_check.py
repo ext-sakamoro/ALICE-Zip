@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Each built wheel and sdist carries LICENSE-APACHE and NOTICE and declares
-`License-Expression: Apache-2.0`.
+"""Each built wheel and sdist carries LICENSE-Proprietary, none of the
+previous licence files, and declares `License-Expression: LicenseRef-Proprietary`.
 
-A wheel must hold both files under `*.dist-info/licenses/`, an sdist at its
-top level; the metadata (`METADATA` / `PKG-INFO`) must name both as
-`License-File` and carry the expression. No file given, or a pattern that
-matches nothing, fails.
+A wheel must hold the file under `*.dist-info/licenses/`, an sdist at its
+top level; the metadata (`METADATA` / `PKG-INFO`) must name it as
+`License-File` and carry the expression. A previous licence file
+(LICENSE-APACHE, LICENSE-MIT, NOTICE) in the archive or named as
+`License-File` fails. No file given, or a pattern that matches nothing, fails.
 
     python3 scripts/dist_license_check.py target/wheels/*.whl dist/*.tar.gz
 """
@@ -14,8 +15,9 @@ import sys
 import tarfile
 import zipfile
 
-FILES = ("LICENSE-APACHE", "NOTICE")
-EXPRESSION = "License-Expression: Apache-2.0"
+FILES = ("LICENSE-Proprietary",)
+OLD_FILES = ("LICENSE-APACHE", "LICENSE-MIT", "NOTICE")
+EXPRESSION = "License-Expression: LicenseRef-Proprietary"
 
 
 def problems_in(path: str) -> list:
@@ -43,6 +45,11 @@ def problems_in(path: str) -> list:
             problems.append(f"{path}: {f} is not in the archive")
         if f"License-File: {f}" not in metadata.splitlines():
             problems.append(f"{path}: metadata lacks 'License-File: {f}'")
+    for f in OLD_FILES:
+        if f in present:
+            problems.append(f"{path}: {f} is still in the archive")
+        if f"License-File: {f}" in metadata.splitlines():
+            problems.append(f"{path}: metadata still names 'License-File: {f}'")
     return problems
 
 
