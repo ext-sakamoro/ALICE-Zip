@@ -1,7 +1,6 @@
-# Publishes the wheel `libalice` (libalice/pyproject.toml, built by maturin
-# from libalice/Cargo.toml) to PyPI by trusted publishing: no token or secret
-# is stored anywhere; PyPI trusts this workflow file in this repository with
-# the environment `pypi`.
+# Builds and checks the wheel `libalice` (libalice/pyproject.toml, built by
+# maturin from libalice/Cargo.toml). Nothing is published: the package is
+# LicenseRef-Proprietary, and versions already on PyPI stay as they are.
 #
 # Trigger: a tag `py-libalice-v<version>` whose <version> equals `version` in
 # libalice/Cargo.toml (scripts/pypi_tag_check.py; the wheel takes its version
@@ -10,8 +9,7 @@
 # `alice-zip` has its own workflow (pypi.yml, tag `py-alice-zip-v<version>`).
 #
 # libalice is not abi3, so a wheel is built for every interpreter maturin
-# finds on each platform. The workflow never commits. Only the publish job
-# holds `id-token: write`.
+# finds on each platform. The workflow never commits and holds no `id-token`.
 name: PyPI (libalice)
 
 on:
@@ -102,7 +100,7 @@ jobs:
           if-no-files-found: error
 
   check:
-    name: Every archive carries the tag's version and Apache-2.0
+    name: Every archive carries the tag's version and LicenseRef-Proprietary
     needs: [wheels, sdist]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -138,19 +136,3 @@ jobs:
           python3 scripts/dist_license_check.py 'dist/*.whl' 'dist/*.tar.gz'
           twine check --strict dist/*
           ls -l dist
-
-  publish:
-    name: Publish to PyPI
-    needs: check
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: libalice-*
-          path: dist/
-          merge-multiple: true
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

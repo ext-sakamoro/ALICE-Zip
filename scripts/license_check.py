@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 """The licence is stated the same way everywhere it is stated.
 
-From 0.9.0 (libalice 3.0.0, Python package 2.0.0) ALICE-Zip is Apache-2.0
-only. This checks that:
+ALICE-Zip is LicenseRef-Proprietary (versions published before keep the
+licence they were published under). This checks that:
 
-- the Cargo manifests of the core crate and libalice say `Apache-2.0`;
-- both pyproject files say `license = "Apache-2.0"` and carry no
-  `License ::` classifier (PEP 639 replaces them); the root one lists
-  `LICENSE-APACHE` and `NOTICE` in `license-files`, libalice's lists nothing
-  (maturin finds both, and a list makes `maturin sdist` add them twice);
-- `alice_zip.__license__` is `Apache-2.0`;
-- `LICENSE-APACHE` and `NOTICE` exist at the root, libalice carries
-  identical copies (a package cannot reach files outside its directory), and
-  no `LICENSE-MIT` is left;
-- `NOTICE` carries the attribution sentence;
-- the READMEs show the Apache-2.0 badge and link no `LICENSE-MIT`;
-- no comment in `deny.toml` describes this repository's crates as MIT.
+- the Cargo manifests of the core crate and libalice say
+  `LicenseRef-Proprietary` and `publish = false`;
+- both pyproject files say `license = "LicenseRef-Proprietary"` and carry no
+  `License ::` classifier (PEP 639 replaces them); the root one lists exactly
+  `LICENSE-Proprietary` in `license-files`, libalice's lists nothing
+  (maturin finds it, and a list makes `maturin sdist` add it twice);
+- `alice_zip.__license__` is `LicenseRef-Proprietary`;
+- `LICENSE-Proprietary` exists at the root and libalice carries an identical
+  copy (a package cannot reach files outside its directory);
+- no previous licence file (`LICENSE-APACHE`, `LICENSE-MIT`, `NOTICE`) is
+  left at the root or in libalice;
+- the READMEs show the LicenseRef-Proprietary badge, every `License:` line
+  says LicenseRef-Proprietary, and none links a previous licence file;
+- no comment in `deny.toml` describes this repository's crates as MIT,
+  Apache or AGPL.
 
 A run that compares nothing fails.
 
@@ -26,9 +29,12 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SPDX = "Apache-2.0"
-ATTRIBUTION = "This product includes ALICE-Zip, Copyright 2025-2026 Moroya Sakamoto"
-BADGE = "img.shields.io/badge/license-Apache--2.0-green.svg"
+SPDX = "LicenseRef-Proprietary"
+TEXT = "LICENSE-Proprietary"
+OLD_FILES = ("LICENSE-APACHE", "LICENSE-MIT", "NOTICE")
+BADGE = "img.shields.io/badge/license-LicenseRef--Proprietary-lightgrey.svg"
+# a line stating the licence, e.g. `License: LicenseRef-Proprietary`
+LICENSE_LINE = re.compile(r"^\s*(?:\*\*)?(?:License|Licence)(?:\*\*)?\s*:")
 READMES = ["README.md", "README_ja.md", "libalice/README.md"]
 
 
@@ -54,9 +60,19 @@ def check(root: Path) -> list:
         if not ok:
             problems.append(message)
 
-    for rel in ["Cargo.toml", "libalice/Cargo.toml"]:
+    # every package manifest except the build tools and the fuzz crate (a list of
+    # names drifted: wasm/ was added with the old licence)
+    manifests = sorted(
+        str(m.relative_to(root)) for m in root.rglob("Cargo.toml")
+        if not ({"target", "tools", "fuzz"} & set(m.relative_to(root).parts[:-1]))
+        and "[package]" in m.read_text(encoding="utf-8"))
+    expect(bool(manifests), "no package manifest read")
+    for rel in manifests:
         lic = string_field(table((root / rel).read_text(encoding="utf-8"), "package"), "license")
         expect(lic == SPDX, f"{rel}: license is {lic!r}, not {SPDX!r}")
+        package = table((root / rel).read_text(encoding="utf-8"), "package")
+        expect(re.search(r"^\s*publish\s*=\s*false\s*$", package, re.M) is not None,
+               f"{rel}: publish = false is missing")
 
     for rel in ["pyproject.toml", "libalice/pyproject.toml"]:
         project = table((root / rel).read_text(encoding="utf-8"), "project")
@@ -65,8 +81,8 @@ def check(root: Path) -> list:
         files = re.search(r"^\s*license-files\s*=\s*\[([^\]]*)\]", project, re.M)
         listed = set(re.findall(r'"([^"]+)"', files.group(1))) if files else set()
         if rel == "pyproject.toml":
-            expect({"LICENSE-APACHE", "NOTICE"} <= listed,
-                   f"{rel}: license-files {sorted(listed)} lacks LICENSE-APACHE or NOTICE")
+            expect(listed == {TEXT},
+                   f"{rel}: license-files is {sorted(listed)}, not [{TEXT!r}]")
         else:
             # maturin finds both itself; a list makes `maturin sdist` add the
             # root copies twice and fail
@@ -77,28 +93,30 @@ def check(root: Path) -> list:
     m = re.search(r"^__license__\s*=\s*['\"]([^'\"]+)['\"]", init, re.M)
     expect(bool(m) and m.group(1) == SPDX, f"alice_zip.__license__ is {m and m.group(1)!r}")
 
-    for name in ["LICENSE-APACHE", "NOTICE"]:
-        top, copy = root / name, root / "libalice" / name
-        expect(top.is_file(), f"{name} is missing at the root")
-        expect(copy.is_file() and top.is_file() and copy.read_bytes() == top.read_bytes(),
-               f"libalice/{name} is missing or differs from the root copy")
-    for rel in ["LICENSE-MIT", "libalice/LICENSE-MIT"]:
-        expect(not (root / rel).exists(), f"{rel} is still present")
-
-    notice = root / "NOTICE"
-    expect(notice.is_file() and ATTRIBUTION in notice.read_text(encoding="utf-8"),
-           "NOTICE lacks the attribution sentence")
+    top, copy = root / TEXT, root / "libalice" / TEXT
+    expect(top.is_file(), f"{TEXT} is missing at the root")
+    expect(copy.is_file() and top.is_file() and copy.read_bytes() == top.read_bytes(),
+           f"libalice/{TEXT} is missing or differs from the root copy")
+    for name in OLD_FILES:
+        for rel in [name, f"libalice/{name}"]:
+            expect(not (root / rel).exists(), f"{rel} is still present")
 
     deny = (root / "deny.toml").read_text(encoding="utf-8")
     comments = "\n".join(l for l in deny.splitlines() if l.lstrip().startswith("#"))
-    expect(not re.search(r"(alice-zip|libalice)[^\n]*\bMIT\b", comments),
-           "deny.toml: a comment still describes this repository's crates as MIT")
+    expect(not re.search(r"(alice-zip|libalice|本 repository|this repository)[^\n]*\b(MIT|Apache|AGPL)\b", comments),
+           "deny.toml: a comment still describes this repository's crates as an open licence")
 
     for rel in READMES:
         text = (root / rel).read_text(encoding="utf-8")
-        expect("LICENSE-MIT" not in text, f"{rel}: links LICENSE-MIT")
+        for name in OLD_FILES:
+            expect(f"]({name})" not in text, f"{rel}: links {name}")
+        expect(f"]({TEXT})" in text, f"{rel}: does not link {TEXT}")
+        for n, line in enumerate(text.splitlines(), 1):
+            if LICENSE_LINE.match(line):
+                expect(line.strip().startswith(f"License: {SPDX}"),
+                       f"{rel}:{n}: the licence line does not say `License: {SPDX}`: {line.strip()!r}")
         if rel != "libalice/README.md":
-            expect(BADGE in text, f"{rel}: the Apache-2.0 badge is missing")
+            expect(BADGE in text, f"{rel}: the {SPDX} badge is missing")
     return problems + [compared]
 
 
