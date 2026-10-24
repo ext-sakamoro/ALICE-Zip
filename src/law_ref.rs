@@ -7,6 +7,11 @@
 //! identifier and refuses bytes whose stated identifier differs, naming both. Evaluating the law
 //! is left to the owner of its kind.
 //!
+//! The identifier names the law, not this encoding of it: it does not commit to "a law
+//! reference", so any crate that hashes the same kind, semantics and (name, value) sequence with
+//! [`LawIdHasher`] names the same law, which is what lets a reference be checked against the law
+//! its owner computes. The kind is the namespace that keeps two families of laws apart.
+//!
 //! One law has exactly one byte string, so a signature or a digest over the bytes names the law:
 //! the rows are kept in strictly ascending bytewise order of their names. [`LawRef::new`] sorts
 //! them; [`LawRef::from_bytes`] refuses rows out of that order or with a repeated name.
@@ -388,7 +393,8 @@ impl<'a> Reader<'a> {
         Ok(a)
     }
 
-    /// A u64 length, refused when it is past the bytes left (so it never sizes anything)
+    /// A u64 length, refused when it is past the bytes left (so it never sizes anything; the
+    /// `take` that follows compares again, this check keeps the conversion from `u64` honest)
     fn len64(&mut self) -> Result<usize, LawRefError> {
         let n = u64::from_be_bytes(self.array()?);
         usize::try_from(n)

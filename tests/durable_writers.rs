@@ -27,12 +27,16 @@ enum Decision {
     /// A byte compressor of the caller's bytes: nothing in the output depends
     /// on an arithmetic, so there is no meaning beyond the bytes to identify
     NoLaw,
+    /// A law reference: the bytes carry the law's kind, the semantics
+    /// identifier it is evaluated under and its law identifier, which the
+    /// reader recomputes from the kind, the semantics and the rows
+    LawReference,
 }
 
-use Decision::{FormatAndSemanticsId, IntegerOnly, NoLaw, SemanticsId};
+use Decision::{FormatAndSemanticsId, IntegerOnly, LawReference, NoLaw, SemanticsId};
 
 /// (source file under src/, function, decision)
-const WRITERS: [(&str, &str, Decision); 14] = [
+const WRITERS: [(&str, &str, Decision); 15] = [
     ("container.rs", "to_bytes", FormatAndSemanticsId),
     ("container/stream.rs", "write_section", FormatAndSemanticsId),
     ("compression.rs", "compress_residual_quantized", SemanticsId),
@@ -55,6 +59,7 @@ const WRITERS: [(&str, &str, Decision); 14] = [
     ("compression.rs", "zlib_compress", NoLaw),
     ("compression.rs", "lzma_compress", NoLaw),
     ("lz77.rs", "lz77_encode", NoLaw),
+    ("law_ref.rs", "to_bytes", LawReference),
 ];
 
 const WRITE_WORDS: [&str; 10] = [
@@ -124,7 +129,7 @@ fn the_writer_list_is_every_writer_in_the_source() {
         unlisted.is_empty() && gone.is_empty(),
         "writers without an identifier decision: {unlisted:?}; listed but not in the source: {gone:?}"
     );
-    assert_eq!(found.len(), 14);
+    assert_eq!(found.len(), 15);
 }
 
 #[test]
@@ -259,4 +264,23 @@ fn the_byte_compressors_take_and_return_only_bytes() {
         checked += 1;
     }
     assert_eq!(checked, 3);
+}
+
+#[test]
+fn the_law_reference_writer_carries_the_semantics_and_law_identifiers() {
+    use alice_zip::law_ref::{LawRef, LawRefError, Value};
+    assert_eq!(WRITERS.iter().filter(|w| w.2 == LawReference).count(), 1);
+    let semantics = alice_zip::law::SEMANTICS_ID;
+    let r = LawRef::new(b"probe/law", semantics, vec![("x".into(), Value::U32(5))]).unwrap();
+    let bytes = r.to_bytes();
+    // magic 4, version 2, kind length 1, kind 9, then the semantics and law identifiers
+    assert_eq!(bytes[16..48], semantics);
+    assert_eq!(bytes[48..80], *r.law_id());
+    // a reader given another semantics under the same law identifier refuses it
+    let mut changed = bytes.clone();
+    changed[16] ^= 1;
+    assert!(matches!(
+        LawRef::from_bytes(&changed),
+        Err(LawRefError::LawIdMismatch { .. })
+    ));
 }
