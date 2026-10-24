@@ -36,4 +36,4 @@ by the library are freed with `alice_free_buffer` / `alice_free_float_buffer`
 
 ## Versioning / license
 
-`3.0.0` — see [CHANGELOG.md](CHANGELOG.md). Apache-2.0 ([LICENSE-APACHE](LICENSE-APACHE), [NOTICE](NOTICE)).
+`3.0.0` — see [CHANGELOG.md](CHANGELOG.md). `LicenseRef-Proprietary` ([LICENSE-Proprietary](LICENSE-Proprietary)).

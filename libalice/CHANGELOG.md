@@ -6,6 +6,7 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
 ### Changed
 
+- ライセンス: `Apache-2.0` → `LicenseRef-Proprietary` (`publish = false`) crate と wheel には `LICENSE-APACHE` と `NOTICE` に代えて `LICENSE-Proprietary` (repository の root と同じ内容の写し) を入れる
 - `generators::analyze_signal` (core の `analyze_signal_fft`) が rustfft から core の crate 内 f64 FFT に変わった Fourier 係数 (`try_fourier_fit` が `.alice` に書く値と Python binding の解析結果) の bit が変わり、x86_64 と aarch64 で同じ bit になる
 - **Breaking** ALICE-Law G8: `ResidualData::to_bytes` は生成した値の算術の識別子 (`metadata.semantics`、`compress_residual_delta` / `choose_compression` / `compress_original` は `alice_zip::law::SEMANTICS_ID` を入れる) を `"semantics"` に書き、版を 5 から 7 (layout 2 から 4) にする `from_bytes` は記録された識別子を `check_semantics` で比べ、再現できないものは `ResidualError::SemanticsMismatch` (両方を示す) で拒否する 版 1 から 4 は `semantics: None` で読め、`from_bytes_strict` は `ResidualError::LegacySemantics` で拒否する Python 拡張に `semantics_id()` を足した 3.x 以前の読み手は版 5 から 7 を読まない
 - **Breaking** 版を 4.0.0 に上げた core crate を `alice-zip` 0.11 に上げ、CLI が書く残差容器 (`compression` の quantised / lossless / xor) は model の semantics 識別子を持つ新しい形式 (0xFB / 0xFA / 0xF9) になった 3.x 以前の CLI はこの容器を読めない 3.x 以前が書いた容器は読める (識別子が無いので `Legacy` として扱う) container (`alice_zip::container`) は先頭に形式の識別子の section を持つ

@@ -26,14 +26,15 @@ ignore = [
 
 # ---------------------------------------------------------------------------
 # Licenses (allow-list 方式、記載外 = deny)
-# 本 repository の crate は Apache-2.0 (0.9.0 / libalice 3.0.0 から)、下の allow は依存側の
-# ライセンス
+# 本 repository の crate は LicenseRef-Proprietary で publish = false、下の allow は
+# 依存側のライセンス
 # ---------------------------------------------------------------------------
 [licenses]
 version = 2
 confidence-threshold = 0.8
-# libalice-enterprise is `license = "Proprietary"` (not SPDX) and never published:
-# skip the license check for unpublished workspace members
+# the crates of this repository are publish = false (LicenseRef-Proprietary;
+# libalice-enterprise is `license = "Proprietary"`, not SPDX): skip the
+# license check for unpublished workspace members
 private = { ignore = true }
 allow = [
     "MIT",

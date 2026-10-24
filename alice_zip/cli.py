@@ -14,7 +14,7 @@ Usage:
     alice-zip benchmark <input>
 
 Author: Moroya Sakamoto
-License: Apache-2.0
+License: LicenseRef-Proprietary
 """
 
 import argparse
