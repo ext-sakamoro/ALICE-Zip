@@ -15,12 +15,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2857e06dcc3838a2138f4c8ed7b30cf8515a223eeb6d5fbd068dd13d45cb4ff4"
 
 [[package]]
+name = "alice-det-math"
+version = "0.5.2"
+source = "git+https://github.com/ext-sakamoro/ALICE-DetMath?rev=6384856c8b00f1615e1cd6b5c74d88036c1a8706#6384856c8b00f1615e1cd6b5c74d88036c1a8706"
+
+[[package]]
 name = "alice-zip"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c74382778e10a48c4f3269a1b904dec6cc8a424690daadf51b655b49554a3e4"
 dependencies = [
- "alice-det-math",
+ "alice-det-math 0.5.1",
  "flate2",
  "libm",
  "rand",
@@ -32,7 +37,7 @@ dependencies = [
 name = "alice-zip"
 version = "0.11.0"
 dependencies = [
- "alice-det-math",
+ "alice-det-math 0.5.2",
  "flate2",
  "libm",
  "rand",
