@@ -13,7 +13,7 @@ name: Security & Hygiene
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'ci/**']
     paths:
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -107,8 +107,7 @@ jobs:
 
   package-integrity:
     name: Package integrity (publish される .crate が build できるか)
-    # dormant: the crate is not published to crates.io, so this is not a required check; it runs
-    # only when the workflow is dispatched
+    # dormant: runs only when the workflow is dispatched
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
