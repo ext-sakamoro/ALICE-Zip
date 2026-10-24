@@ -13,15 +13,16 @@ The bytes, every integer big-endian:
                                             ascending bytewise order of their names
               u8 tag | value                tags as the v2 law identifier:
                 0x01 bytes  u64 len | data      0x02 u32 (4)    0x03 u64 (8)
-                0x05 str    u64 len | UTF-8     0x06 id (32)
+                0x04 f64    bits (8)            0x05 str    u64 len | UTF-8
+                0x06 id (32)                    0x07 f32    bits (4)
     nothing after the last row
 
 One law has one byte string: the rows are sorted by name (a writer sorts them, a reader refuses
 rows out of order or with a repeated name). The law id must equal the v2 law identifier
 (scripts/law_id_v2_reference.py) of (kind, semantics id) with, for each row in that sorted
 order, the row's name as a str value and then the row's value. A reader recomputes it and refuses a reference whose id differs, so the bytes alone
-say which law they name. Tag 0x04 (an f64 value) is reserved: it is refused until the
-canonical-NaN rule of the f64 bits is in place.
+say which law they name. A float row holds the value's bits; a NaN other than the canonical one
+is refused, by the writer and by the reader (law_id_v2_reference.float_bits).
 
 The probes are in tests/data/law_ref/v2_probes.txt; tests/law_ref_v2.rs reads the same file.
 
@@ -43,7 +44,7 @@ PROBES = ROOT / "tests" / "data" / "law_ref" / "v2_probes.txt"
 MAGIC = b"LOLR"
 VERSION = 2
 MAX_ROWS = 64
-TAGS = {"bytes": 0x01, "u32": 0x02, "u64": 0x03, "str": 0x05, "id": 0x06}
+TAGS = {"bytes": 0x01, "u32": 0x02, "u64": 0x03, "f64": 0x04, "str": 0x05, "id": 0x06, "f32": 0x07}
 
 
 def _law_id_module():
@@ -73,6 +74,10 @@ def encode_value(t: str, v: object) -> bytes:
         return bytes([TAGS[t]]) + struct.pack(">I", v)
     if t == "u64":
         return bytes([TAGS[t]]) + struct.pack(">Q", v)
+    if t == "f64":
+        return bytes([TAGS[t]]) + struct.pack(">Q", LAW_ID.float_bits(t, v))
+    if t == "f32":
+        return bytes([TAGS[t]]) + struct.pack(">I", LAW_ID.float_bits(t, v))
     if t == "str":
         b = v.encode("utf-8")
         return bytes([TAGS[t]]) + struct.pack(">Q", len(b)) + b
@@ -157,6 +162,14 @@ def decode(b: bytes) -> tuple[bytes, bytes, bytes, list[tuple[str, str, object]]
             v, t = struct.unpack(">I", take(4))[0], "u32"
         elif tag == 0x03:
             v, t = struct.unpack(">Q", take(8))[0], "u64"
+        elif tag in (0x04, 0x07):
+            t = "f64" if tag == 0x04 else "f32"
+            raw = take(8 if tag == 0x04 else 4)
+            v = int.from_bytes(raw, "big")
+            try:
+                LAW_ID.float_bits(t, v)
+            except LAW_ID.NonCanonicalNan:
+                raise Refused("NonCanonicalNan") from None
         elif tag == 0x05:
             v, t = utf8(take(struct.unpack(">Q", take(8))[0])), "str"
         elif tag == 0x06:
@@ -195,6 +208,8 @@ def parse(text: str) -> list[dict]:
                 cur["rows"].append((name, t, bytes.fromhex(v)))
             elif t in ("u32", "u64"):
                 cur["rows"].append((name, t, int(v)))
+            elif t in ("f64", "f32"):
+                cur["rows"].append((name, t, int(v, 16)))
             elif t == "str":
                 cur["rows"].append((name, t, bytes.fromhex(v).decode("utf-8")))
             else:
