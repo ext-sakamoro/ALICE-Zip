@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - Licence: from `Apache-2.0` to `LicenseRef-Proprietary` from this version (the source stays published for reading; using it needs a written agreement); published versions keep their licence
+- `.github/dependabot.yml` を削除した (pull request と外部からの貢献を受けないため、依存の勧告は audit / deny の job が見る)
 - `wasm/Cargo.toml` (alice-zip-wasm) is `LicenseRef-Proprietary` too, and `scripts/license_check.py` reads every package manifest instead of a fixed list (build tools and the fuzz crate excepted)
 - The PyPI workflows build and check the `alice-zip` and `libalice` packages but no longer publish them; versions already on PyPI stay as they are
 - `libalice-enterprise/LICENSE` の先頭に `SPDX-License-Identifier: LicenseRef-Proprietary` を追加 (条文の内容は不変、`libalice-enterprise/Cargo.toml` の `license` と同じ識別子を条文 file 側にも明示する)
