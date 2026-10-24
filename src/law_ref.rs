@@ -21,12 +21,13 @@
 //! each row: u8 len(name) | name             1..=255 bytes of UTF-8, strictly ascending
 //!           u8 tag | value                  the tags of the law identifier:
 //!   0x01 bytes  u64 len | data      0x02 u32 (4)    0x03 u64 (8)
-//!   0x05 str    u64 len | UTF-8     0x06 id (32)
+//!   0x04 f64    bits (8)            0x05 str    u64 len | UTF-8
+//!   0x06 id (32)                    0x07 f32    bits (4)
 //! nothing after the last row
 //! ```
 //!
-//! Tag `0x04` (an `f64` value) is reserved and refused until the canonical-NaN rule of the
-//! value's bits is in place. Every length is checked against the bytes left before anything is
+//! A float row holds the value's bits; a NaN other than the canonical one is refused by
+//! [`LawRef::new`] and by [`LawRef::from_bytes`] ([`alice_det_math::law_bits`]). Every length is checked against the bytes left before anything is
 //! read, and nothing is sized from a stated count (the row count is at most [`MAX_ROWS`]).
 //! `scripts/law_ref_v2_reference.py` is an independent implementation (standard-library Python)
 //! and `tests/law_ref_v2.rs` checks that both agree on `tests/data/law_ref/v2_probes.txt`.
@@ -36,7 +37,9 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::law_id::LawIdHasher;
+use alice_det_math::law_bits::{f32_bits, f64_bits, NonCanonicalNan};
+
+use crate::law_id::{tag, LawIdHasher};
 
 /// The first four bytes of a law reference
 pub const LAW_REF_MAGIC: [u8; 4] = *b"LOLR";
@@ -50,16 +53,11 @@ pub const MAX_ROWS: usize = 64;
 /// The longest kind and the longest row name, in bytes
 pub const MAX_NAME_LEN: usize = 255;
 
-mod tag {
-    pub const BYTES: u8 = 0x01;
-    pub const U32: u8 = 0x02;
-    pub const U64: u8 = 0x03;
-    pub const STR: u8 = 0x05;
-    pub const ID: u8 = 0x06;
-}
-
 /// One value a law reads
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Two values are equal when they have the same type and the same bits (a float is compared by
+/// its bits, so `-0.0` is not `+0.0` and the canonical NaN equals itself).
+#[derive(Debug, Clone)]
 pub enum Value {
     /// A byte string
     Bytes(Vec<u8>),
@@ -67,11 +65,32 @@ pub enum Value {
     U32(u32),
     /// A 64-bit unsigned integer
     U64(u64),
+    /// A 64-bit float
+    F64(f64),
+    /// A 32-bit float (not widened to `f64`)
+    F32(f32),
     /// A string
     Str(String),
     /// A 32-byte identifier (another law's, a semantics identifier, a digest)
     Id([u8; 32]),
 }
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Bytes(a), Self::Bytes(b)) => a == b,
+            (Self::U32(a), Self::U32(b)) => a == b,
+            (Self::U64(a), Self::U64(b)) => a == b,
+            (Self::F64(a), Self::F64(b)) => a.to_bits() == b.to_bits(),
+            (Self::F32(a), Self::F32(b)) => a.to_bits() == b.to_bits(),
+            (Self::Str(a), Self::Str(b)) => a == b,
+            (Self::Id(a), Self::Id(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Value {}
 
 /// Why a law reference is refused
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +120,8 @@ pub enum LawRefError {
     UnsortedRows,
     /// A value tag this version does not define (or reserves)
     UnknownTag(u8),
+    /// A float row holds a NaN other than the canonical one
+    NonCanonicalNan(NonCanonicalNan),
     /// Bytes remain after the last row
     TrailingBytes,
     /// The stated law identifier is not the one the kind, semantics and rows give
@@ -127,6 +148,7 @@ impl core::fmt::Display for LawRefError {
             Self::DuplicateName(n) => write!(f, "two rows are named {n:?}"),
             Self::UnsortedRows => f.write_str("the rows are not in ascending name order"),
             Self::UnknownTag(t) => write!(f, "value tag {t:#04x} is not defined"),
+            Self::NonCanonicalNan(e) => write!(f, "a float row holds a {e}"),
             Self::TrailingBytes => f.write_str("bytes remain after the last row"),
             Self::LawIdMismatch { stated, computed } => {
                 f.write_str("the stated law id ")?;
@@ -180,7 +202,11 @@ fn check_name(name: &str, prev: Option<&str>) -> Result<(), LawRefError> {
     }
 }
 
-fn compute_law_id(kind: &[u8], semantics_id: &[u8; 32], rows: &[(String, Value)]) -> [u8; 32] {
+fn compute_law_id(
+    kind: &[u8],
+    semantics_id: &[u8; 32],
+    rows: &[(String, Value)],
+) -> Result<[u8; 32], LawRefError> {
     let mut h = LawIdHasher::new(kind, semantics_id);
     for (name, value) in rows {
         h = h.str(name);
@@ -188,11 +214,13 @@ fn compute_law_id(kind: &[u8], semantics_id: &[u8; 32], rows: &[(String, Value)]
             Value::Bytes(b) => h.bytes(b),
             Value::U32(v) => h.u32(*v),
             Value::U64(v) => h.u64(*v),
+            Value::F64(v) => h.f64(*v).map_err(LawRefError::NonCanonicalNan)?,
+            Value::F32(v) => h.f32(*v).map_err(LawRefError::NonCanonicalNan)?,
             Value::Str(s) => h.str(s),
             Value::Id(id) => h.id(id),
         };
     }
-    h.finish()
+    Ok(h.finish())
 }
 
 impl LawRef {
@@ -201,7 +229,8 @@ impl LawRef {
     ///
     /// # Errors
     /// What [`Self::from_bytes`] would refuse in the same reference: an empty, too long or
-    /// non-UTF-8 kind, more than [`MAX_ROWS`] rows, an empty, too long or repeated row name.
+    /// non-UTF-8 kind, more than [`MAX_ROWS`] rows, an empty, too long or repeated row name, a
+    /// float row holding a NaN other than the canonical one.
     pub fn new(
         kind: &[u8],
         semantics_id: [u8; 32],
@@ -215,7 +244,7 @@ impl LawRef {
         for (i, (name, _)) in rows.iter().enumerate() {
             check_name(name, i.checked_sub(1).map(|j| rows[j].0.as_str()))?;
         }
-        let law_id = compute_law_id(kind, &semantics_id, &rows);
+        let law_id = compute_law_id(kind, &semantics_id, &rows)?;
         Ok(Self {
             kind: kind.to_vec(),
             semantics_id,
@@ -286,6 +315,15 @@ impl LawRef {
                     out.push(tag::U64);
                     out.extend_from_slice(&v.to_be_bytes());
                 }
+                // the bits were checked by `new` / `from_bytes` (a canonical NaN or a number)
+                Value::F64(v) => {
+                    out.push(tag::F64);
+                    out.extend_from_slice(&v.to_bits().to_be_bytes());
+                }
+                Value::F32(v) => {
+                    out.push(tag::F32);
+                    out.extend_from_slice(&v.to_bits().to_be_bytes());
+                }
                 Value::Str(s) => {
                     out.push(tag::STR);
                     out.extend_from_slice(&(s.len() as u64).to_be_bytes());
@@ -338,6 +376,16 @@ impl LawRef {
                 }
                 tag::U32 => Value::U32(u32::from_be_bytes(r.array()?)),
                 tag::U64 => Value::U64(u64::from_be_bytes(r.array()?)),
+                tag::F64 => {
+                    let v = f64::from_bits(u64::from_be_bytes(r.array()?));
+                    f64_bits(v).map_err(LawRefError::NonCanonicalNan)?;
+                    Value::F64(v)
+                }
+                tag::F32 => {
+                    let v = f32::from_bits(u32::from_be_bytes(r.array()?));
+                    f32_bits(v).map_err(LawRefError::NonCanonicalNan)?;
+                    Value::F32(v)
+                }
                 tag::STR => {
                     let n = r.len64()?;
                     Value::Str(r.utf8(n)?)
@@ -350,7 +398,7 @@ impl LawRef {
         if r.at != bytes.len() {
             return Err(LawRefError::TrailingBytes);
         }
-        let computed = compute_law_id(kind, &semantics_id, &rows);
+        let computed = compute_law_id(kind, &semantics_id, &rows)?;
         if computed != stated {
             return Err(LawRefError::LawIdMismatch { stated, computed });
         }

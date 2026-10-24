@@ -64,7 +64,9 @@ required-features = ["lzma"]
 # required to be correctly rounded, so two targets may disagree in the last
 # place. This crate computes them in Rust, identically on every target, and
 # publishes `SEMANTICS_ID` so a stored result can name the arithmetic it used.
-alice-det-math = { version = "0.5.1", default-features = false }
+# Pinned at a main commit: `law_bits` (the bits of a float a law identifier takes, refusing
+# non-canonical NaN) is not on crates.io yet; move back to a version requirement once it is
+alice-det-math = { git = "https://github.com/ext-sakamoro/ALICE-DetMath", rev = "6384856c8b00f1615e1cd6b5c74d88036c1a8706", version = "0.5.2", default-features = false }
 flate2 = { version = "1.0", optional = true }
 # `sqrt` / `floor` / `round` for the `no_std` build (the `FloatExt` shim in
 # `src/math.rs`). IEEE 754 specifies all three exactly, so these agree with the
