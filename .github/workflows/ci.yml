@@ -177,6 +177,67 @@ jobs:
             sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "wasm-$t.log" | grep -E 'test result: ok\. [1-9][0-9]* passed'
           done
 
+  wasm-entry:
+    name: Browser entry (wasm/, the same results on the host and in Node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: wasm
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: wasm
+      - name: The wasm-bindgen version the lock names
+        id: wbg
+        shell: bash
+        run: |
+          set -euo pipefail
+          v=$(awk '/^name = "wasm-bindgen"$/{getline; gsub(/"/, "", $3); print $3; exit}' Cargo.lock)
+          test -n "${v}"
+          echo "version=${v}" >> "${GITHUB_OUTPUT}"
+      # a prebuilt binary (building wasm-bindgen-cli takes minutes of the shared runners)
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wbg.outputs.version }}
+      - name: The runner is the lock's version
+        shell: bash
+        run: |
+          set -euo pipefail
+          wasm-bindgen-test-runner --version | tee runner.txt
+          grep -q " ${{ steps.wbg.outputs.version }}$" runner.txt
+          node --version
+      - name: Clippy (host and wasm32-unknown-unknown)
+        run: |
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --all-targets --target wasm32-unknown-unknown -- -D warnings
+      # The same tests on the host and in Node: both must pass, with equal passed counts and at least 5
+      - name: Tests on the host and in Node
+        shell: bash
+        env:
+          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+        run: |
+          set -o pipefail
+          count() { sed 's/\x1b\[[0-9;]*m//g' "$1" | grep -E '^test result: ' | awk '{s += $4} END {print s + 0}'; }
+          cargo test --locked 2>&1 | tee host.log
+          cargo test --locked --target wasm32-unknown-unknown 2>&1 | tee node.log
+          if cat host.log node.log | grep -E '^test result: ' | grep -vE '^test result: ok\. ' >/dev/null; then
+            echo "::error::a test failed"
+            exit 1
+          fi
+          host=$(count host.log); node=$(count node.log)
+          echo "host ${host} passed, Node ${node} passed"
+          if [ "${node}" -lt 5 ] || [ "${node}" -ne "${host}" ]; then
+            echo "::error::Node passed ${node}, the host ${host} (at least 5 expected)"
+            exit 1
+          fi
+      - name: Release build for the page
+        run: |
+          cargo build --locked --release --target wasm32-unknown-unknown
+          ls -l target/wasm32-unknown-unknown/release/alice_zip_wasm.wasm
+
   example:
     name: compression_ratio example (runs; the xor rows are bit-exact)
     runs-on: ubuntu-latest

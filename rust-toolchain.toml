@@ -2,11 +2,12 @@
 # toolchain turns `-D warnings` into a gate that changes under the project
 # without any change to the project.
 # `targets`: the bare-metal target the CI `no_std` job builds the rlib for and the
-# wasm32-wasip1 target the `wasm` job runs the container tests on; listed
+# wasm32-wasip1 target the `wasm` job runs the container tests on, and the browser target the
+# `wasm-entry` job builds and tests the entry crate (wasm/) for; listed
 # here (not in the workflow) so rustup installs it for the pinned toolchain that
 # cargo actually uses (dtolnay/rust-toolchain@stable would add it to stable only)
 [toolchain]
 channel = "1.98.1"
 components = ["rustfmt", "clippy"]
-targets = ["thumbv7em-none-eabihf", "wasm32-wasip1"]
+targets = ["thumbv7em-none-eabihf", "wasm32-wasip1", "wasm32-unknown-unknown"]
 profile = "minimal"

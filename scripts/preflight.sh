@@ -601,6 +601,30 @@ rustup target list --installed | grep -q '^wasm32-wasip1$' || rustup target add 
 command -v wasmtime >/dev/null || { echo "wasmtime is required for the wasm32-wasip1 step"; exit 1; }
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma" CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime; set -o pipefail; for t in container_oracle container_known_tags; do cargo test --target wasm32-wasip1 --test "$t" 2>&1 | tee "${CARGO_TARGET_DIR:-target}/wasm-$t.log"; sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "${CARGO_TARGET_DIR:-target}/wasm-$t.log" | grep -E 'test result: ok\. [1-9][0-9]* passed'; done )
 
+step "ci.yml / wasm-entry: Browser entry (clippy, tests on the host and in Node, release build)"
+# (a here-string, not a pipe into grep -q: under pipefail grep's early exit can fail the pipe on a match)
+grep -q '^wasm32-unknown-unknown$' <<<"$(rustup target list --installed)" || rustup target add wasm32-unknown-unknown
+if command -v wasm-bindgen-test-runner >/dev/null && command -v node >/dev/null; then
+  ( cd wasm
+    export CARGO_TERM_COLOR="always" CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner
+    set -o pipefail
+    cargo clippy --locked --all-targets -- -D warnings
+    cargo clippy --locked --all-targets --target wasm32-unknown-unknown -- -D warnings
+    count() { sed 's/\x1b\[[0-9;]*m//g' "$1" | grep -E '^test result: ' | awk '{s += $4} END {print s + 0}'; }
+    d="$(mktemp -d)"
+    cargo test --locked > "${d}/host.log" 2>&1
+    cargo test --locked --target wasm32-unknown-unknown > "${d}/node.log" 2>&1
+    if cat "${d}/host.log" "${d}/node.log" | grep -E '^test result: ' | grep -vE '^test result: ok\. ' >/dev/null; then
+      echo "a test failed"; exit 1
+    fi
+    host=$(count "${d}/host.log"); node=$(count "${d}/node.log")
+    echo "host ${host} passed, Node ${node} passed"
+    [ "${node}" -ge 5 ] && [ "${node}" -eq "${host}" ] || { echo "Node passed ${node}, the host ${host}"; exit 1; }
+    cargo build --locked --release --target wasm32-unknown-unknown )
+else
+  echo 'PREFLIGHT-SKIP: ci.yml / wasm-entry: wasm-bindgen-test-runner / node not installed' >&2
+fi
+
 step "ci.yml / libalice: Test (default)"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo test --manifest-path libalice/Cargo.toml )
 

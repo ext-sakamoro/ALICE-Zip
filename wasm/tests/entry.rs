@@ -58,9 +58,7 @@ fn the_entry_reads_the_fields_the_core_reads() {
 #[cfg_attr(not(target_arch = "wasm32"), test)]
 fn a_critical_tag_of_its_own_is_read_only_when_declared() {
     let bytes = sample(true);
-    let refused = Opened::open(bytes.clone(), Vec::new())
-        .err()
-        .expect("an undeclared critical tag");
+    let refused = Opened::open(bytes.clone(), Vec::new()).expect_err("an undeclared critical tag");
     assert_eq!(
         refused,
         ContainerView::open(&bytes).err().unwrap().to_string()
@@ -90,9 +88,7 @@ fn damaged_bytes_are_refused_as_the_core_refuses_them() {
     body[mid] ^= 1;
     cases.push(body);
     for bytes in cases {
-        let core = ContainerView::open(&bytes)
-            .err()
-            .expect("the core refuses it");
+        let core = ContainerView::open(&bytes).expect_err("the core refuses it");
         assert_eq!(
             Opened::open(bytes, Vec::new()).err(),
             Some(core.to_string())
