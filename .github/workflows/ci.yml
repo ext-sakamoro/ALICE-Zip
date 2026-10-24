@@ -97,7 +97,7 @@ jobs:
           for m in Cargo.toml libalice/Cargo.toml; do
             list=$(cargo package --list --allow-dirty --manifest-path "$m")
             for f in LICENSE-APACHE NOTICE; do
-              printf '%s\n' "$list" | grep -qx "$f" || { echo "::error::$m: the package lacks $f"; exit 1; }
+              grep -qx "$f" <<<"$list" || { echo "::error::$m: the package lacks $f"; exit 1; }
             done
             echo "$m: LICENSE-APACHE and NOTICE packaged"
           done

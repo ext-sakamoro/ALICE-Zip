@@ -200,7 +200,7 @@ step "ci.yml / test: Licence agrees and its files are packaged"
   for m in Cargo.toml libalice/Cargo.toml; do
     list=$(cargo package --list --allow-dirty --manifest-path "$m")
     for f in LICENSE-APACHE NOTICE; do
-      printf '%s\n' "$list" | grep -qx "$f" || { echo "$m: the package lacks $f"; exit 1; }
+      grep -qx "$f" <<<"$list" || { echo "$m: the package lacks $f"; exit 1; }
     done
     echo "$m: LICENSE-APACHE and NOTICE packaged"
   done
