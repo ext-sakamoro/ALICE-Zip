@@ -46,13 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `tests/durable_writers.rs`: crate の永続形式の writer 13 個を source と件数で照合し (一覧に無い writer は fail)、それぞれが意味の識別子をどう持つかを検査する `compat/v0_10_reader`: crates.io の 0.10.0 と今の crate の間で、今の形式が 0.10 に拒否され、0.10 の形式が今の crate で `Legacy` として読めることを確かめる (CI の test job と preflight)
 
 ### Fixed
+- CI: preflight の `rustup … | grep -q` 3 箇所 (toolchain と target の有無) を here-string で渡す形にした pipefail の下では grep が最初の一致で終わると rustup が SIGPIPE (exit 141) で落ち、偽の「無い」で step を飛ばしうる 再発は `scripts/check_pipe_grep_q.py` (試験 `scripts/test_check_pipe_grep_q.py`、追跡している .sh と workflow で `| grep -q` を拒否、読んだ file 0 件で失敗、path は OS によらず `/` 区切りで出す) が CI と preflight で止める この 2 file はこの crate が owner の共有 file で、shared-files の pin をこの bytes を計画した ALICE-Law の rev に移した
+- CI: `security-audit.yml` を `ci/**` の branch でも実行し、休止中の package integrity の job を dispatch 専用の `package-integrity.yml` に移した (Security & Hygiene の run に休止中の job が入らない)
 
 - `README_ja.md`: 英語版との差を直した 「仕組み」の式が減算 (`+`) とパラメータ「〜100バイト」のままだったのを英語版の xor と記述に合わせた code block は英語版と同じ内容にした `zlib alone` 列の名前・dtype の数・2 つの形のうちどちらが正確かの記述を英語版に揃え、冒頭の claim-test marker の段落の区切りを英語版と同じにした
 - 符号の異なるゼロが混ざる入力で、`SignalLaw::fit_polynomial` の定義域の端 (lo / hi) と `quantize_8bit` / `quantize_16bit` の `min` が arm64 と x86_64 で違っていた 等しいゼロ同士の `f64::min` / `f32::min` (と max) は結果が規定されておらず、arm64 は -0 < +0 として扱い x86_64 は第 2 引数を返す 4 箇所を alice-det-math 0.5.1 の符号を決めた `min` / `max` / `min64` / `max64` に替え、`tests/minmax_sign_golden.rs` で両方の並びを固定した 68 の法則と 21 の量子化の入力で測ると、修正後は arm64 と x86_64 (debug / release) の出力が一致し、変わるのは x86_64 の混在ゼロの入力 (法則 10 件の定義域の端と law_id、係数が 0 の時の evaluate(-0.0)、量子化 3 件の min) だけで、他の入力の bit は変わらない これらの law_id は元から arch ごとに違い 1 つの値として再現できなかったので、旧い識別子を受理する表は追加しない
 - 試験 (`tests/minmax_sign_golden.rs`): 入力を `std::hint::black_box` に通すようにした 入力が literal なので release build で最小値・最大値の比較が定数畳み込みされると、x86_64 の `minsd`/`maxsd` (ゼロ同士では第 2 引数を返す) を実行しないまま試験が通りうる 定義域の lo / hi と量子化の min の 3 箇所は、変更の前後とも `f64::min`/`max`/`f32::min` に戻すと x86_64 の debug と release の両方で red (aarch64 は green) 量子化の max は `max - min` の scale にしか入らず、混在ゼロでは符号が出力に届かないので戻しても全構成で green 期待値は変えていない
 
 ### Changed
-- CI: semver gate (`semver-checks.yml`) と package integrity (`security-audit.yml` の job) を休止にした (dispatch の時だけ走る、必須の検査でない) ALICE の crate はこの project 自身の service のためのもので crates.io に公開しない preflight も同じ 2 つを `PREFLIGHT-SKIP` にし、`cargo-semver-checks` を要求しない
+- CI: semver gate (`semver-checks.yml`) と package integrity (`security-audit.yml` の job) を休止にした (dispatch の時だけ走る、必須の検査でない) preflight も同じ 2 つを `PREFLIGHT-SKIP` にし、`cargo-semver-checks` を要求しない
 - Licence: `Apache-2.0` → `LicenseRef-Proprietary`
 - `wasm/Cargo.toml` (alice-zip-wasm) is `LicenseRef-Proprietary` too, and `scripts/license_check.py` reads every package manifest instead of a fixed list (build tools and the fuzz crate excepted)
 - The PyPI workflows build and check the `alice-zip` and `libalice` packages but no longer publish them; versions already on PyPI stay as they are

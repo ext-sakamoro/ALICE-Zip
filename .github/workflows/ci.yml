@@ -103,6 +103,13 @@ jobs:
             done
             echo "$m: LICENSE-Proprietary packaged, no previous licence file"
           done
+      # No pipeline in the scripts or workflows ends in `grep -q` (under pipefail the writer can
+      # die of SIGPIPE when grep exits early, so the gate fails at random); reading no file fails
+      - name: No pipeline ends in grep -q (tests, then check)
+        run: |
+          PY=$(command -v python3 || command -v python)
+          "$PY" scripts/test_check_pipe_grep_q.py
+          "$PY" scripts/check_pipe_grep_q.py
       # A suite gated on a feature compiles to an empty test binary when the
       # feature is missing, which passes with 0 tests. Each of these must
       # report at least one passed test on every OS.
