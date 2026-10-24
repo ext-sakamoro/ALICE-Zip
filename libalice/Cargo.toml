@@ -6,11 +6,12 @@ edition = "2021"
 # Declared so clippy's MSRV-aware lints do not suggest newer std APIs.
 rust-version = "1.87"
 resolver = "3"
-authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
+authors = ["Moroya Sakamoto"]
 description = "A next-generation procedural compression engine utilizing Kolmogorov complexity approximation."
 readme = "README.md"
 repository = "https://github.com/ext-sakamoro/ALICE-Zip"
-license = "Apache-2.0"
+license = "LicenseRef-Proprietary"
+publish = false
 keywords = ["compression", "lossless", "procedural", "cli"]
 categories = ["compression", "command-line-utilities", "science"]
 exclude = [
