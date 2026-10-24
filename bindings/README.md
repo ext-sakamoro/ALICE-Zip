@@ -2,15 +2,6 @@
 
 This directory contains language bindings for ALICE-Zip, enabling use in various game engines and programming languages.
 
-## Game Industry Exception
-
-**Free with attribution for game development!** See [LICENSE](../LICENSE) for details.
-
-Add this to your credits:
-```
-Powered by ALICE-Zip (https://github.com/ext-sakamoro/ALICE-Zip)
-```
-
 ## Available Bindings
 
 ### C# / Unity
@@ -155,10 +146,9 @@ cargo build --release --target aarch64-linux-android
 
 ## License
 
-- **Core Library**: Apache-2.0
-- **Game Development**: Free with attribution (Game Industry Exception)
-- **Other Commercial Use**: Contact for licensing
+`LicenseRef-Proprietary`. The text is [LICENSE-Proprietary](../LICENSE-Proprietary).
+
+Enquiries: https://extoria.co.jp/
 
 ---
-
 **Powered by ALICE-Zip** | [GitHub](https://github.com/ext-sakamoro/ALICE-Zip)

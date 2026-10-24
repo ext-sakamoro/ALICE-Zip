@@ -7,10 +7,10 @@ name = "alice-zip"
 version = "3.0.0"
 description = "ALICE Procedural Generation Compression - Store algorithms, not data"
 readme = "README.md"
-license = "Apache-2.0"
-license-files = ["LICENSE-APACHE", "NOTICE"]
+license = "LicenseRef-Proprietary"
+license-files = ["LICENSE-Proprietary"]
 authors = [
-    {name = "Moroya Sakamoto", email = "sakamoro@alicelaw.net"}
+    { name = "Moroya Sakamoto" }
 ]
 keywords = [
     "compression",
