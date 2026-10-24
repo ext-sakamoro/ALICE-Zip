@@ -16,7 +16,9 @@ step() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
 # touching the crate roots invalidates only this repo's fingerprints.
 relint() { git ls-files | grep -E '(^|/)src/(lib|main)\.rs$' | xargs -r touch; }
 need() { command -v "$1" >/dev/null 2>&1 || { echo "missing tool: $1 ($2)" >&2; exit 1; }; }
-has_toolchain() { rustup toolchain list | grep -q "^$1"; }
+# `cmd | grep -q` under pipefail fails when grep exits on its first match and cmd then dies of
+# SIGPIPE (exit 141); the output is read in full first, so the test sees only grep's answer
+has_toolchain() { grep -q "^$1" <<<"$(rustup toolchain list)"; }
 
 # Steps CI runs that this file cannot reproduce locally (they can only fail remotely):
 #   - ci.yml:libalice-python:Build + install libalice (maturin) (no cargo / grep)
@@ -107,12 +109,12 @@ python3 scripts/test_id_move_check.py
 python3 scripts/id_move_check.py
 
 step "ci.yml / no_std: Build rlib for a target without std"
-rustup target list --installed | grep -q '^thumbv7em-none-eabihf$' || rustup target add thumbv7em-none-eabihf
+grep -q '^thumbv7em-none-eabihf$' <<<"$(rustup target list --installed)" || rustup target add thumbv7em-none-eabihf
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo rustc --lib --no-default-features --crate-type rlib --target thumbv7em-none-eabihf )
 
 step "ci.yml / no_std: Clippy on the no_std build (-D warnings)"
 relint
-rustup target list --installed | grep -q '^thumbv7em-none-eabihf$' || rustup target add thumbv7em-none-eabihf
+grep -q '^thumbv7em-none-eabihf$' <<<"$(rustup target list --installed)" || rustup target add thumbv7em-none-eabihf
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; RUSTC_WORKSPACE_WRAPPER="$(rustup which clippy-driver)" cargo rustc --lib --no-default-features --crate-type rlib --target thumbv7em-none-eabihf -- -D warnings )
 
 step "ci.yml / no_std: Host lib build without std (-D warnings)"
@@ -200,11 +202,15 @@ step "ci.yml / test: Licence agrees and its files are packaged"
   for m in Cargo.toml libalice/Cargo.toml; do
     list=$(cargo package --list --allow-dirty --manifest-path "$m")
     for f in LICENSE-APACHE NOTICE; do
-      printf '%s\n' "$list" | grep -qx "$f" || { echo "$m: the package lacks $f"; exit 1; }
+      grep -qx "$f" <<<"$list" || { echo "$m: the package lacks $f"; exit 1; }
     done
     echo "$m: LICENSE-APACHE and NOTICE packaged"
   done
 )
+
+step "ci.yml / test: No pipeline ends in grep -q (tests, then check)"
+python3 scripts/test_check_pipe_grep_q.py
+python3 scripts/check_pipe_grep_q.py
 
 step "ci.yml / libalice: Clippy (-D warnings, all targets, codec)"
 relint
@@ -574,7 +580,7 @@ step "ci.yml / test: Feature-gated suites run on this OS"
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; set -o pipefail; for t in residual_container_oracle container_oracle container_known_tags; do cargo test --features "$ALL_FEATURES" --test "$t" 2>&1 | tee "${CARGO_TARGET_DIR:-target}/gated-$t.log"; sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "${CARGO_TARGET_DIR:-target}/gated-$t.log" | grep -E 'test result: ok\. [1-9][0-9]* passed'; done )
 
 step "ci.yml / wasm: Container oracles under wasmtime"
-rustup target list --installed | grep -q '^wasm32-wasip1$' || rustup target add wasm32-wasip1
+grep -q '^wasm32-wasip1$' <<<"$(rustup target list --installed)" || rustup target add wasm32-wasip1
 command -v wasmtime >/dev/null || { echo "wasmtime is required for the wasm32-wasip1 step"; exit 1; }
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma" CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime; set -o pipefail; for t in container_oracle container_known_tags; do cargo test --target wasm32-wasip1 --test "$t" 2>&1 | tee "${CARGO_TARGET_DIR:-target}/wasm-$t.log"; sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "${CARGO_TARGET_DIR:-target}/wasm-$t.log" | grep -E 'test result: ok\. [1-9][0-9]* passed'; done )
 
