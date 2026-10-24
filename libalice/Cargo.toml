@@ -37,7 +37,7 @@ numpy = { version = "0.29", optional = true }
 # Deterministic transcendentals, the same ones the core crate uses: the
 # platform libm is not required to be correctly rounded, so a signal fitted
 # here and regenerated elsewhere would not agree bit for bit
-alice-det-math = "0.5"
+alice-det-math = { git = "https://github.com/ext-sakamoro/ALICE-DetMath", rev = "6384856c8b00f1615e1cd6b5c74d88036c1a8706", version = "0.5.2" }
 alice_zip = { package = "alice-zip", path = "..", version = "0.11", features = ["std", "fft", "parallel", "lzma"] }
 # xz streams for residuals (the format the Python writer emits); same version as the core crate
 lzma-rs = "0.3"
