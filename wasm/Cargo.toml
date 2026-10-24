@@ -1,0 +1,23 @@
+[package]
+name = "alice-zip-wasm"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
+description = "The browser entry of ALICE-Zip: open a container and check an Ed25519 signature from JavaScript"
+repository = "https://github.com/ext-sakamoro/ALICE-Zip"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# the core without std: the container reader needs only alloc, and the browser target has no OS entropy to give
+# the generators' rand (nothing here draws randomness)
+alice-zip = { path = "..", default-features = false }
+alice-sign = { version = "0.1.0", git = "https://github.com/ext-sakamoro/ALICE-Sign", rev = "8a1b00d800082187a8693732a9ffb806c98814e7" }
+wasm-bindgen = "0.2"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
