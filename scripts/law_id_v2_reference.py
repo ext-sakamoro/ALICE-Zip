@@ -10,8 +10,16 @@ The identifier of a law is SHA-256 over, in order (every length a big-endian u64
       0x01 bytes   len  data
       0x02 u32     4 bytes big-endian
       0x03 u64     8 bytes big-endian
+      0x04 f64     8 bytes big-endian of the bits
       0x05 str     len  UTF-8 bytes
       0x06 id      32 bytes
+      0x07 f32     4 bytes big-endian of the bits
+
+A float enters by its bits, so -0.0 and +0.0 are different values and an f32 is never widened
+to f64 (f32 1.5 and f64 1.5 give different identifiers). The only NaN accepted is the canonical
+one, positive and quiet with an empty payload (f64 0x7ff8000000000000, f32 0x7fc00000); any
+other NaN is refused (`alice_det_math::law_bits`), since a platform's default NaN differs by
+target. The probe file writes floats as their bits in hex.
 
 The tag keeps `u32 5` apart from `u64 5`, and the length prefixes keep ("ab", "c") apart from
 ("a", "bc"). This file uses only the standard library, so it shares no code with the Rust one.
@@ -34,6 +42,24 @@ import sys
 
 DOMAIN = b"alice-law-id/v2"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+CANONICAL_NAN_F64 = 0x7FF8_0000_0000_0000
+CANONICAL_NAN_F32 = 0x7FC0_0000
+
+
+class NonCanonicalNan(Exception):
+    """A NaN other than the canonical one"""
+
+
+def float_bits(t: str, bits: int) -> int:
+    if t == "f64":
+        is_nan = bits & 0x7FFF_FFFF_FFFF_FFFF > 0x7FF0_0000_0000_0000
+        canonical = CANONICAL_NAN_F64
+    else:
+        is_nan = bits & 0x7FFF_FFFF > 0x7F80_0000
+        canonical = CANONICAL_NAN_F32
+    if is_nan and bits != canonical:
+        raise NonCanonicalNan(hex(bits))
+    return bits
 PROBES = ROOT / "tests" / "data" / "law_id" / "v2_probes.txt"
 
 
@@ -55,6 +81,10 @@ def law_id(kind: bytes, semantics: bytes, values: list[tuple[str, object]]) -> b
             h.update(b"\x02" + struct.pack(">I", v))
         elif t == "u64":
             h.update(b"\x03" + struct.pack(">Q", v))
+        elif t == "f64":
+            h.update(b"\x04" + struct.pack(">Q", float_bits(t, v)))
+        elif t == "f32":
+            h.update(b"\x07" + struct.pack(">I", float_bits(t, v)))
         elif t == "str":
             b = v.encode("utf-8")
             h.update(b"\x05" + be64(len(b)) + b)
@@ -89,6 +119,8 @@ def parse(text: str) -> list[dict]:
                 cur["values"].append((t, bytes.fromhex(v)))
             elif t in ("u32", "u64"):
                 cur["values"].append((t, int(v)))
+            elif t in ("f64", "f32"):
+                cur["values"].append((t, int(v, 16)))
             elif t == "str":
                 cur["values"].append((t, bytes.fromhex(v).decode("utf-8")))
             else:
@@ -114,7 +146,10 @@ def main(argv: list[str]) -> int:
         return 1
     bad = []
     for p in probes:
-        got = law_id(p["kind"], p["semantics"], p["values"]).hex()
+        try:
+            got = law_id(p["kind"], p["semantics"], p["values"]).hex()
+        except NonCanonicalNan:
+            got = "refused NonCanonicalNan"
         if mode == "--write":
             p["got"] = got
         elif p.get("expect") != got:
