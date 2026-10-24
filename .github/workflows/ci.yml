@@ -97,10 +97,19 @@ jobs:
           for m in Cargo.toml libalice/Cargo.toml; do
             list=$(cargo package --list --allow-dirty --manifest-path "$m")
             for f in LICENSE-APACHE NOTICE; do
-              printf '%s\n' "$list" | grep -qx "$f" || { echo "::error::$m: the package lacks $f"; exit 1; }
+              # a here-string, not `printf | grep -q`: under pipefail grep's early exit can kill
+              # printf with SIGPIPE (exit 141) and report a packaged file as missing
+              grep -qx "$f" <<<"$list" || { echo "::error::$m: the package lacks $f"; exit 1; }
             done
             echo "$m: LICENSE-APACHE and NOTICE packaged"
           done
+      # No pipeline in the scripts or workflows ends in `grep -q` (under pipefail the writer can
+      # die of SIGPIPE when grep exits early, so the gate fails at random); reading no file fails
+      - name: No pipeline ends in grep -q (tests, then check)
+        run: |
+          PY=$(command -v python3 || command -v python)
+          "$PY" scripts/test_check_pipe_grep_q.py
+          "$PY" scripts/check_pipe_grep_q.py
       # A suite gated on a feature compiles to an empty test binary when the
       # feature is missing, which passes with 0 tests. Each of these must
       # report at least one passed test on every OS.
