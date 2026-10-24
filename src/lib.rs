@@ -70,6 +70,7 @@ pub mod error;
 pub mod generators;
 pub mod int2d;
 pub mod law;
+pub mod law_id;
 pub mod lz77;
 pub(crate) mod math;
 pub mod prelude;
