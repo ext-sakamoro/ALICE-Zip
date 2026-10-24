@@ -17,8 +17,7 @@ name: Semver checks
 # scripts/preflight.sh (full run) runs the same command.
 
 on:
-  # dormant: ALICE crates serve this project's own services and are not published to crates.io,
-  # so the semver gate is not a required check; it runs only when dispatched
+  # dormant: not a required check; it runs only when dispatched
   workflow_dispatch:
 
 # on main each commit has a group of its own and a run there is never
