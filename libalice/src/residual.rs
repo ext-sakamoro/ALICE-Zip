@@ -20,7 +20,7 @@
 //! # Author
 //! Moroya Sakamoto
 //! # License
-//! ALICE-Zip Commercial License
+//! LicenseRef-Proprietary
 
 use std::collections::BTreeMap;
 

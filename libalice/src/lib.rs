@@ -25,7 +25,7 @@
 //! - C FFI with panic isolation (`ffi::AliceError::InternalPanic`)
 //!
 //! # License
-//! Apache-2.0
+//! LicenseRef-Proprietary (see LICENSE-Proprietary)
 //!
 //! # Author
 //! Moroya Sakamoto

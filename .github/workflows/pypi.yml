@@ -1,6 +1,6 @@
-# Publishes the Python package `alice-zip` (pyproject.toml, pure Python) to
-# PyPI by trusted publishing: no token or secret is stored anywhere; PyPI
-# trusts this workflow file in this repository with the environment `pypi`.
+# Builds and checks the Python package `alice-zip` (pyproject.toml, pure
+# Python). Nothing is published: the package is LicenseRef-Proprietary, and
+# versions already on PyPI stay as they are.
 #
 # Trigger: a tag `py-alice-zip-v<version>` whose <version> equals `version`
 # in pyproject.toml (scripts/pypi_tag_check.py). The tags `v<version>` and
@@ -8,7 +8,7 @@
 # nothing here; the wheel `libalice` has its own workflow
 # (pypi-libalice.yml, tag `py-libalice-v<version>`).
 #
-# The workflow never commits. Only the publish job holds `id-token: write`.
+# The workflow never commits and holds no `id-token`.
 name: PyPI (alice-zip)
 
 on:
@@ -47,7 +47,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip build twine
           python -m build --outdir dist .
-      - name: One sdist and one wheel, Apache-2.0 with LICENSE-APACHE and NOTICE inside
+      - name: One sdist and one wheel, LicenseRef-Proprietary with LICENSE-Proprietary inside
         run: |
           n_whl=$(find dist -maxdepth 1 -name 'alice_zip-*.whl' | wc -l)
           n_sdist=$(find dist -maxdepth 1 -name 'alice_zip-*.tar.gz' | wc -l)
@@ -64,18 +64,3 @@ jobs:
           name: alice-zip-dist
           path: dist/
           if-no-files-found: error
-
-  publish:
-    name: Publish to PyPI
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: alice-zip-dist
-          path: dist/
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
