@@ -248,8 +248,14 @@ step "security-audit.yml / deny: cargo deny (libalice-enterprise)"
 step "security-audit.yml / unused-deps: cargo machete"
 cargo machete
 
+step "security-audit.yml / package-integrity: pin した git 依存の patch"
+python3 scripts/test_package_git_patches.py
+git_patches_args="$(mktemp)"
+python3 scripts/package_git_patches.py args > "$git_patches_args"
+echo "patch arguments: $(grep -c '^--config$' "$git_patches_args" || true)"
+
 step "security-audit.yml / package-integrity: cargo package (.crate を作る)"
-( export CARGO_TERM_COLOR="always" CARGO_NET_RETRY="5" CARGO_HTTP_MULTIPLEXING="false"; cargo package --no-verify --allow-dirty )
+( export CARGO_TERM_COLOR="always" CARGO_NET_RETRY="5" CARGO_HTTP_MULTIPLEXING="false"; patches=(); while IFS= read -r a; do patches+=("$a"); done < "$git_patches_args"; cargo package --no-verify --allow-dirty ${patches[@]+"${patches[@]}"} )
 
 step "security-audit.yml / package-integrity: 展開して隔離 build"
 (
@@ -264,7 +270,9 @@ step "security-audit.yml / package-integrity: 展開して隔離 build"
   # 親 workspace を継承すると member 扱いになり、境界を越えた file が
   # 再び見えてしまう (検査の意味が消える) ので単独 package として build
   printf '\n[workspace]\n' >> Cargo.toml
-  cargo check --all-features
+  patches=(); while IFS= read -r a; do patches+=("$a"); done < "$git_patches_args"
+  cargo check --all-features ${patches[@]+"${patches[@]}"}
+  python3 "$OLDPWD/scripts/package_git_patches.py" verify Cargo.lock
 )
 
 step "semver-checks.yml / semver-checks: semver gate (tests)"
