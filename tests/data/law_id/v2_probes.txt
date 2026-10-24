@@ -1,0 +1,80 @@
+# Probes of the v2 law identifier: the same file is read by scripts/law_id_v2_reference.py (an
+# independent implementation in standard-library Python) and by tests/law_id_v2.rs (the crate's
+# LawIdHasher); both must compute every expect line. Strings are written as UTF-8 hex.
+
+probe no values
+kind 70726f62652f7632
+semantics 1111111111111111111111111111111111111111111111111111111111111111
+expect a2d4e20cae009bc7657cbdd5ce6442b3e0efc391fe1fd449af2ad1295ec8b30f
+end
+
+probe empty kind
+kind
+semantics 1111111111111111111111111111111111111111111111111111111111111111
+expect 6a34afd85aba57b2b57431f466b94c642a1360c4eb093c36e8dcdc658f72cac4
+end
+
+probe every value type
+kind 70726f62652f7632
+semantics 1111111111111111111111111111111111111111111111111111111111111111
+value bytes 00ff
+value u32 5
+value u64 5
+value str c3a9
+value id abababababababababababababababababababababababababababababababab
+expect 5541ed9c75f0b3b10afde6eb87699433b40f11f44b211803923fd0f2d8f46e84
+end
+
+probe u32 five
+kind 70726f62652f7632
+semantics 1111111111111111111111111111111111111111111111111111111111111111
+value u32 5
+expect 63542e6a3292376ef8b8439f8ccee66127c1532b9a29231864341640240cd321
+end
+
+probe u64 five
+kind 70726f62652f7632
+semantics 1111111111111111111111111111111111111111111111111111111111111111
+value u64 5
+expect e71dce3974f73d993ba207967004780ae48bab80d0466ffdab35c97810e48181
+end
+
+probe str ab then c
+kind 70726f62652f7632
+semantics 1111111111111111111111111111111111111111111111111111111111111111
+value str 6162
+value str 63
+expect 512c744ef72d76e49ee7cef04c45d32b038b87c07884ef7aeb01bc575ad65dcd
+end
+
+probe str a then bc
+kind 70726f62652f7632
+semantics 1111111111111111111111111111111111111111111111111111111111111111
+value str 61
+value str 6263
+expect 1253e1fbac9714cebfe905137dbc3832043829c68b8694c40c3864cad1a619a9
+end
+
+probe bytes and str of the same content
+kind 70726f62652f7632
+semantics 1111111111111111111111111111111111111111111111111111111111111111
+value bytes 6162
+value str 6162
+expect ceb6d43b9f27d7cf9f7042172b8c168fdd36111f2ed417ca414e9d6d4ee9d057
+end
+
+probe empty bytes and empty str
+kind 70726f62652f7632
+semantics 1111111111111111111111111111111111111111111111111111111111111111
+value bytes 
+value str 
+expect 5928666ad8db3bc4ad23dfd7080e1071baaca02742f1a554c251ace855a2046d
+end
+
+probe a signal-law kind
+kind 7369676e616c2d6c61772f706f6c796e6f6d69616c2f7631
+semantics abababababababababababababababababababababababababababababababab
+value u64 3
+value str 736f75726365
+expect ca0b6036b9a6821ab7a1b86053eb0d5b40eb017cfb3f414a7cdbee0bb3240438
+end
