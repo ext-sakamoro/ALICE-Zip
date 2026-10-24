@@ -3,7 +3,7 @@
 //! Rust port of the Python `media_generators.py` module.
 //! Provides procedural image and audio generation.
 //!
-//! License: Apache-2.0
+//! License: LicenseRef-Proprietary
 //! Author: Moroya Sakamoto
 
 pub mod audio;

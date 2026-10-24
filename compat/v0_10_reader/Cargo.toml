@@ -9,7 +9,7 @@ name = "alice-zip-compat-v0-10-reader"
 version = "0.0.0"
 edition = "2021"
 rust-version = "1.87"
-license = "Apache-2.0"
+license = "LicenseRef-Proprietary"
 publish = false
 
 [workspace]

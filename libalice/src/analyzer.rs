@@ -8,7 +8,7 @@
 //! - `crate::generators::analyze_signal` (core `analyze_signal_fft`, in-crate FFT)
 //! - `crate::generators::fit_polynomial` (core `fit_polynomial_unit`, `.alice` convention)
 //!
-//! License: Apache-2.0
+//! License: LicenseRef-Proprietary
 //! Author: Moroya Sakamoto
 
 use std::f64::consts::PI;

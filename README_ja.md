@@ -10,7 +10,7 @@
   <a href="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/ci.yml"><img src="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/security-audit.yml"><img src="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/security-audit.yml/badge.svg" alt="Security"></a>
   <a href="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/fuzz.yml"><img src="https://github.com/ext-sakamoro/ALICE-Zip/actions/workflows/fuzz.yml/badge.svg" alt="Fuzz"></a>
-  <a href="#ライセンス"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg" alt="License"></a>
+  <a href="#ライセンス"><img src="https://img.shields.io/badge/license-LicenseRef--Proprietary-lightgrey.svg" alt="License"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.9+-yellow.svg" alt="Python"></a>
 </p>
 
@@ -487,15 +487,13 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 
 ## ライセンス
 
-- [Apache License, Version 2.0](LICENSE-APACHE): Rust core crate `alice-zip` (`/`)、
-  CLI / FFI crate と Python の wheel (`libalice/`)、Python package (`alice_zip/`)、bindings
-- 再配布 (source でも binary でも) には [LICENSE-APACHE](LICENSE-APACHE) と
-  [NOTICE](NOTICE) を添える (Apache-2.0 第 4 条) application の画面に表示する必要は無い
-- それより前の版は出した時のライセンスのまま: crates.io の `alice-zip` 0.8.0 までは
-  MIT OR Apache-2.0、crates.io の `alice-zip-cli` (libalice) 2.6.0 までと git の libalice
-  2.7.0 までは MIT、git から入れる Python package (PyPI には無い) の 1.0.0 までは MIT
-- 「ALICE」の名前はライセンスによらず [TRADEMARK_NOTICE](TRADEMARK_NOTICE) の対象
-- `libalice-enterprise/`: 別建ての非公開 proprietary crate (同 dir の [LICENSE](libalice-enterprise/LICENSE) 参照)
+この版から `LicenseRef-Proprietary`: ソースは閲覧用に公開しており、利用・複製・改変・配布には
+著作権者との書面での合意が必要 条文は [LICENSE-Proprietary](LICENSE-Proprietary)
+それより前に公開した版は、公開時のライセンスのまま
+
+ライセンスの問い合わせ: <contact@extoria.co.jp>
+
+`libalice-enterprise/` は別建ての非公開 crate で、同 dir の [LICENSE](libalice-enterprise/LICENSE) に従う
 
 ## 作者
 
