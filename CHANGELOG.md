@@ -53,7 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - CI: semver gate (`semver-checks.yml`) と package integrity (`security-audit.yml` の job) を休止にした (dispatch の時だけ走る、必須の検査でない) ALICE の crate はこの project 自身の service のためのもので crates.io に公開しない preflight も同じ 2 つを `PREFLIGHT-SKIP` にし、`cargo-semver-checks` を要求しない
+- Licence: `Apache-2.0` → `LicenseRef-Proprietary`
+- `wasm/Cargo.toml` (alice-zip-wasm) is `LicenseRef-Proprietary` too, and `scripts/license_check.py` reads every package manifest instead of a fixed list (build tools and the fuzz crate excepted)
+- The PyPI workflows build and check the `alice-zip` and `libalice` packages but no longer publish them; versions already on PyPI stay as they are
 - `libalice-enterprise/LICENSE` の先頭に `SPDX-License-Identifier: LicenseRef-Proprietary` を追加 (条文の内容は不変、`libalice-enterprise/Cargo.toml` の `license` と同じ識別子を条文 file 側にも明示する)
+- `libalice-enterprise/` の独自の Enterprise License Agreement を廃止し、root と同じ `LICENSE-Proprietary` の写しにした
 - CI: 試験 `scripts/test_public_text.py` を ALICE-SDF と同じ版にした (公開する text の検査を pin の checker で走らせ、置いた note link を tree と commit message で検出すること、pin の 3 行目 `config-sha256` が設定を承認することを確かめる、network を使う) `scripts/public_text.sh` と public-text の pin は変えないので検査の結果は変わらない `.github/shared-files-pin` を ALICE-Law の新しい版に移す
 - CI: `scripts/run_tests.sh` と試験 `scripts/test_run_tests.py` を ALICE-LLM と同じ bytes にし、`.github/shared-files-pin` を ALICE-Law の新しい版に移す 名前 `lib` を library の単体試験として数えるようになったが、この repository は `lib` を名指さないので各段の試験の名前と件数は変わらない 試験 `scripts/test_public_text.py` は ALICE-SDF と同じ版にした (置いた note link を tree と commit message で検出することを pin の checker で確かめる、network を使う) `scripts/public_text.sh` と pin は変えないので検査の結果は変わらない
 - `alice-law-conformance.toml`: evidence / mutant / note の行番号参照 44 件を anchor (`path#token`、ALICE-Law の roster が ref の file で 1 か所に解決するか確かめる) にした 行番号がずれて別の行を指していた参照 (clippy.toml・ci.yml・scripts/preflight.sh の範囲と列挙、src/container.rs の error と reader、src/law.rs の max64 / min64 等) は文章が名指す構文 (step 名、fn、表の entry) に直し、測定の記録に出る行番号はその行を名指す文に置き換えた 各 gate の status は変わらない

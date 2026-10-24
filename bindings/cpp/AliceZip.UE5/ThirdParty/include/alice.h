@@ -3,13 +3,10 @@
  * @brief ALICE-Zip C API Header
  * @author Moroya Sakamoto
  * @version 2.3.0
- * @license Apache-2.0 (Core) / Commercial (Pro features)
+ * @license LicenseRef-Proprietary (see LICENSE-Proprietary)
  *
  * This header provides C bindings for the libalice library.
  * Compatible with C, C++, C# (P/Invoke), and other FFI-capable languages.
- *
- * Game Industry Exception: Free with attribution for game development.
- * See LICENSE for details.
  */
 
 #ifndef ALICE_H

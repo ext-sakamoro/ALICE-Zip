@@ -86,8 +86,9 @@ jobs:
           PY=$(command -v python3 || command -v python)
           "$PY" scripts/test_lock_check.py
           "$PY" scripts/lock_check.py
-      # Apache-2.0 everywhere it is stated, NOTICE + LICENSE-APACHE shipped in
-      # both crates (libalice carries identical copies); 0 comparisons fail
+      # LicenseRef-Proprietary everywhere it is stated, LICENSE-Proprietary shipped
+      # in both crates (libalice carries an identical copy) and none of the
+      # previous licence files; 0 comparisons fail
       - name: Licence agrees and its files are packaged
         run: |
           PY=$(command -v python3 || command -v python)
@@ -96,10 +97,11 @@ jobs:
           "$PY" scripts/test_dist_license_check.py
           for m in Cargo.toml libalice/Cargo.toml; do
             list=$(cargo package --list --allow-dirty --manifest-path "$m")
-            for f in LICENSE-APACHE NOTICE; do
-              grep -qx "$f" <<<"$list" || { echo "::error::$m: the package lacks $f"; exit 1; }
+            grep -qx LICENSE-Proprietary <<<"$list" || { echo "::error::$m: the package lacks LICENSE-Proprietary"; exit 1; }
+            for f in LICENSE-APACHE LICENSE-MIT NOTICE; do
+              if grep -qx "$f" <<<"$list"; then echo "::error::$m: the package still carries $f"; exit 1; fi
             done
-            echo "$m: LICENSE-APACHE and NOTICE packaged"
+            echo "$m: LICENSE-Proprietary packaged, no previous licence file"
           done
       # A suite gated on a feature compiles to an empty test binary when the
       # feature is missing, which passes with 0 tests. Each of these must
@@ -526,8 +528,9 @@ jobs:
           pip install maturin numpy pytest scipy
           (cd libalice && maturin build --release --out ../target/wheels)
           pip install target/wheels/libalice-*.whl
-      # LICENSE-APACHE and NOTICE inside every built archive, and the
-      # Apache-2.0 expression in its metadata (libalice and alice-zip)
+      # LICENSE-Proprietary inside every built archive and no previous licence
+      # file, and the LicenseRef-Proprietary expression in its metadata
+      # (libalice and alice-zip)
       - name: Licence files in the wheels and sdists
         run: |
           pip install build

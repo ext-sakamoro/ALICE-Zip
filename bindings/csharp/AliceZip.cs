@@ -4,7 +4,7 @@
  * High-performance procedural compression library.
  *
  * Author: Moroya Sakamoto
- * License: Apache-2.0 (Core) / Game Industry Exception available
+ * License: LicenseRef-Proprietary
  *
  * Usage:
  *   // Generate Perlin noise texture

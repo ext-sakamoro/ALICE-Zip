@@ -199,10 +199,11 @@ step "ci.yml / test: Licence agrees and its files are packaged"
   python3 scripts/test_dist_license_check.py
   for m in Cargo.toml libalice/Cargo.toml; do
     list=$(cargo package --list --allow-dirty --manifest-path "$m")
-    for f in LICENSE-APACHE NOTICE; do
-      grep -qx "$f" <<<"$list" || { echo "$m: the package lacks $f"; exit 1; }
+    grep -qx LICENSE-Proprietary <<<"$list" || { echo "$m: the package lacks LICENSE-Proprietary"; exit 1; }
+    for f in LICENSE-APACHE LICENSE-MIT NOTICE; do
+      if grep -qx "$f" <<<"$list"; then echo "$m: the package still carries $f"; exit 1; fi
     done
-    echo "$m: LICENSE-APACHE and NOTICE packaged"
+    echo "$m: LICENSE-Proprietary packaged, no previous licence file"
   done
 )
 

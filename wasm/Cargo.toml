@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 # alice-sign uses slice::as_chunks (1.88)
 rust-version = "1.88"
-authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
+authors = ["Moroya Sakamoto"]
 description = "The browser entry of ALICE-Zip: open a container and check an Ed25519 signature from JavaScript"
 repository = "https://github.com/ext-sakamoro/ALICE-Zip"
-license = "Apache-2.0"
+license = "LicenseRef-Proprietary"
 publish = false
 
 [lib]
