@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 試験 (`tests/minmax_sign_golden.rs`): 入力を `std::hint::black_box` に通すようにした 入力が literal なので release build で最小値・最大値の比較が定数畳み込みされると、x86_64 の `minsd`/`maxsd` (ゼロ同士では第 2 引数を返す) を実行しないまま試験が通りうる 定義域の lo / hi と量子化の min の 3 箇所は、変更の前後とも `f64::min`/`max`/`f32::min` に戻すと x86_64 の debug と release の両方で red (aarch64 は green) 量子化の max は `max - min` の scale にしか入らず、混在ゼロでは符号が出力に届かないので戻しても全構成で green 期待値は変えていない
 
 ### Changed
+- ALICE-Law G11 → pass: scripts/id_move_check.py / test を ALICE-Physics の re-roll 済 target (d896d624 / 760bbaf3) に更新、shared-files pin と g11-table pin を ALICE-Law 0e8c14ec に移し、全共有 checker が記録 target bytes、conformance/g11.toml の全 pass gate に行あり (g11_table.sh 0 findings)
 - CI: semver gate (`semver-checks.yml`) と package integrity (`security-audit.yml` の job) を休止にした (dispatch の時だけ走る、必須の検査でない) ALICE の crate はこの project 自身の service のためのもので crates.io に公開しない preflight も同じ 2 つを `PREFLIGHT-SKIP` にし、`cargo-semver-checks` を要求しない
 - Licence: `Apache-2.0` → `LicenseRef-Proprietary`
 - `wasm/Cargo.toml` (alice-zip-wasm) is `LicenseRef-Proprietary` too, and `scripts/license_check.py` reads every package manifest instead of a fixed list (build tools and the fuzz crate excepted)
