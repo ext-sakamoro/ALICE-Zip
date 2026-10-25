@@ -133,6 +133,9 @@ jobs:
           PY=$(command -v python3 || command -v python)
           "$PY" scripts/test_shared_files.py
           scripts/shared_files.sh
+      - name: G11 table matches the declared gates
+        shell: bash
+        run: scripts/g11_table.sh
       # G14, static half: no fast-math-style flag, target-cpu=native or flag value
       # the guard cannot resolve in any file a flag can come from (deliberate
       # occurrences in scripts/build_config_allowlist.toml); nothing read fails.
