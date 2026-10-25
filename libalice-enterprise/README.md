@@ -4,10 +4,9 @@
 
 ## License
 
-**PROPRIETARY AND CONFIDENTIAL**
+`LicenseRef-Proprietary`. The text is [LICENSE-Proprietary](LICENSE-Proprietary).
 
-This software requires a valid Commercial License.
-For licensing inquiries, contact the author.
+Enquiries: https://extoria.co.jp/
 
 ## Features
 

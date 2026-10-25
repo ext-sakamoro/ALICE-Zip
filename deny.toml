@@ -48,7 +48,7 @@ allow = [
     "CC0-1.0",           # public domain 相当
     "0BSD",
     "BSL-1.0",           # Boost Software License
-    "MPL-2.0",           # weak copyleft (file-level)、静的リンク OK
+    "MPL-2.0",           # 条件は file 単位 (変更した file だけ)、静的リンク OK
     "OpenSSL",           # ring 等
 ]
 

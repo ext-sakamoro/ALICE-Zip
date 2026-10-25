@@ -10,7 +10,7 @@
 //!
 //! # License
 //!
-//! This software requires a valid Commercial License.
+//! `LicenseRef-Proprietary` (the text is `LICENSE-Proprietary` in this crate).
 //!
 //! # Usage
 //!

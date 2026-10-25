@@ -1,5 +1,7 @@
 {
   "name": "com.alice-zip.core",
+  "license": "LicenseRef-Proprietary",
+  "private": true,
   "version": "2.2.0",
   "displayName": "ALICE-Zip",
   "description": "High-performance procedural compression library for Unity. Generate Perlin noise textures, compress game data, and more.",

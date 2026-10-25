@@ -491,8 +491,6 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 
 Enquiries: https://extoria.co.jp/
 
-`libalice-enterprise/` は別建ての非公開 crate で、同じ [LICENSE-Proprietary](libalice-enterprise/LICENSE-Proprietary) に従う
-
 ## 作者
 
 **坂本師哉** (Moroya Sakamoto)
