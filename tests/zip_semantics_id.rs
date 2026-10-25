@@ -175,6 +175,7 @@ fn check_semantics_reads_this_and_previous_identifiers() {
     }
     // the identifiers this crate published up to 0.10 (alice-det-math's) are previous ones
     for old in [
+        "65ba78c17a0cab6d1717270ad7ceca8856c293425f92289de943767ecb1ae883",
         "85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315",
         "135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000",
     ] {

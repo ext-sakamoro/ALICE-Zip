@@ -211,6 +211,28 @@ fn law_id_digest_under_the_previous_zip_identifier_is_unchanged() {
         32 + 41 * 8,
         "7269c5962d23f95f4488a3e316630d880dc58446d7d085d10ebcae7b1ddb3bb8",
     );
+
+    // The identifier of the commit before the 0.10 version bump (`65ba78c1…`,
+    // kept in `PREVIOUS_SEMANTICS_IDS`): law_id and evaluate reproduce under it
+    // too, so removing it from the previous list fails this test.
+    let previous_pre_010 = alice_zip::law::PREVIOUS_SEMANTICS_IDS
+        .iter()
+        .find(|id| {
+            hex(&id[..]) == "65ba78c17a0cab6d1717270ad7ceca8856c293425f92289de943767ecb1ae883"
+        })
+        .expect("alice-zip keeps the identifier before the 0.10 version bump as a previous one");
+    let mut bits = Bits::default();
+    bits.raw(&law.law_id(previous_pre_010));
+    for i in 0..=40_u32 {
+        let x = f64::from(i) / 10.0;
+        bits.f64(law.evaluate(x).expect("inside the domain"));
+    }
+    assert_golden(
+        "law_id and evaluate under the pre-0.10 alice-zip identifier",
+        bits,
+        32 + 41 * 8,
+        "b8a5064b51c71bf4388082efe3ccfce7e73e1989accb4a0f07c4e38dbe11f022",
+    );
 }
 
 /// The digest recorded before alice-det-math 0.5.1, reproduced with the
