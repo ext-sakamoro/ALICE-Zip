@@ -445,16 +445,16 @@ cargo build --manifest-path libalice/Cargo.toml --release
 
 どれも同じ考え方を共有する: **データそのものでなく、生成の手順を符号化する**
 
-<!-- law-integration:begin law=5c6363312520f9991837e519bab14909ccf6f2b3 -->
+<!-- law-integration:begin law=eb9a8cab90861f766e7e9a6cc1ad7a0eeb005e77 -->
 ## ALICE-Law との統合
 
-ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` とこの repository の `alice-law-conformance.toml` から生成する 手で編集しない
+ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `eb9a8cab9086` とこの repository の `alice-law-conformance.toml` から生成する 手で編集しない
 
 | | |
 |---|---|
 | release train | alice-zip 0.10.0 (published)、Law への依存: あり |
-| 算術 | train の alice-det-math 0.5.0、算術の識別子 `135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000` この crate の要求は `alice-det-math = "0.5.2"` |
-| end to end 検査 | 対象 (`alice-zip = "0.10"`)、digest `966a78784bb4e3341ac6627d519db896f398176b71c2402b188294db6c8e3728`、aarch64 と x86_64 で同じ |
+| 算術 | train の alice-det-math 0.5.1、算術の識別子 `85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315` この crate の要求は `alice-det-math = "0.5.2"` |
+| end to end 検査 | 対象 (`alice-zip = "0.10"`)、digest `9f7cf676708a272e3817ebbf0727c610f391e1547747af4307ee44d5523267c2`、aarch64 と x86_64 で同じ |
 
 ### 適合 (G1-G14)
 
@@ -470,7 +470,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `5c6363312520` と
 | G8 persisted-semantics-id | 適合 | The writers of the whole repository are covered, by the test whether decoding regenerates values from a law or parameters. Crate alice-zip: … |
 | G9 persisted-meaning-change-is-major | 適合 | the identifier moves in this crate's history are recorded as breaking releases naming both ids. 0.11.0 (CHANGELOG.md [Unreleased], Breaking, ALICE-Law G6): … |
 | G10 no-run-varying-artifacts | 適合 | the Python package has no other unseeded randomness, clock or UUID (a scan of alice_zip/ finds only RandomState(seed) at media_generators.py and … |
-| G11 gate-self-tests | 未達 | unmet: clause (c). scripts/clippy_canary.py, scripts/test_clippy_canary.py, scripts/gen_clippy_canary_calls.py, scripts/test_gen_clippy_canary_calls.py, … |
+| G11 gate-self-tests | 未達 | clause (c) has a check: scripts/g11_table.sh runs ALICE-Law's scripts/g11_table_check.py (fetched at .github/g11-table-pin, SHA-256 pinned, 0 compared fails); … |
 | G12 public-repo-text-rules | 適合 | the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names … |
 | G13 no-unspecified-order | 適合 | libalice (alice-zip-cli, a separate crate in this repository that preflight lints with the same clippy.toml) reads its JSON header into a BTreeMap (keyed … |
 | G14 float-environment-invariants | 適合 | the static scan covers the files of this repository (libalice/ included) and the dynamic check covers the alice-zip builds CI runs on ubuntu and macOS; a flag … |
