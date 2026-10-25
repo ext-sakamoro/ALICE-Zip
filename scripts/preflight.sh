@@ -180,6 +180,9 @@ step "ci.yml / test: Shared files equal ALICE-Law's table"
 python3 scripts/test_shared_files.py
 scripts/shared_files.sh
 
+step "ci.yml / test: G11 table matches the declared gates (G11)"
+scripts/g11_table.sh
+
 step "ci.yml / test: Build configuration guard (test, then check)"
 python3 scripts/test_build_config_guard.py
 python3 scripts/build_config_guard.py

@@ -133,6 +133,11 @@ jobs:
           PY=$(command -v python3 || command -v python)
           "$PY" scripts/test_shared_files.py
           scripts/shared_files.sh
+      # ALICE-Law G11: every gate declared pass has a row in conformance/g11.toml; the checker
+      # (scripts/g11_table_check.py) is fetched at .github/g11-table-pin and SHA-256 pinned; 0 compared fails
+      - name: G11 table matches the declared gates
+        shell: bash
+        run: scripts/g11_table.sh
       # G14, static half: no fast-math-style flag, target-cpu=native or flag value
       # the guard cannot resolve in any file a flag can come from (deliberate
       # occurrences in scripts/build_config_allowlist.toml); nothing read fails.
