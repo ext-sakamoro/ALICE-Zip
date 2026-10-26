@@ -20,3 +20,12 @@ previous-tests = [
 [[id]]
 # the payload of the FMID section of a container (no previous list: another value is refused)
 path = "alice_zip::container::FORMAT_ID"
+
+[[id]]
+# the bytes the deflate encoders give for the probe inputs (no previous list: a moved value
+# means compressed sizes counted by callers move, and check_codec_bytes refuses the other)
+path = "alice_zip::compression::DEFLATE_BYTES_ID"
+
+[[id]]
+# the same for the lzma encoder (lzma feature)
+path = "alice_zip::compression::LZMA_BYTES_ID"

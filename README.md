@@ -477,6 +477,13 @@ Reading the table:
   values (their residual files, the procedural `ALICE_ZIP` payload, the
   `ALICE_IMG` / `ALICE_AUD` / `ALICE_VID` parameters) record the arithmetic as
   `"semantics"` the same way. <!-- claim-test: another_identifier_is_refused_naming_both_before_decoding -->
+- **The encoders' bytes are pinned.** Decoding is compatible across encoder versions,
+  the encoded bytes need not be: `compression::DEFLATE_BYTES_ID` (and `LZMA_BYTES_ID` with
+  `lzma`) fold what `zlib_compress` and the raw deflate of the residual containers give
+  for 6 probe inputs at levels 0, 1, 6 and 9. A program that counts compressed bytes
+  calls `compression::check_codec_bytes` in its own tests, on each target it ships: its
+  `flate2` / `miniz_oxide` versions and features are its own, and a mismatch names both
+  identifiers. <!-- claim-test: deflate_id_is_the_recorded_value -->
 
 ## Ideal Use Cases
 

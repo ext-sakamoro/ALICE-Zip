@@ -395,6 +395,12 @@ assert_eq!(decode(&enc.bytes, &domain, &law)?, values);
   CLI crate と Python package が値を再生成する独自の file (残差 file、procedural の
   `ALICE_ZIP` payload、`ALICE_IMG` / `ALICE_AUD` / `ALICE_VID` の parameter) も同じく算術を
   `"semantics"` に記録する <!-- claim-test: another_identifier_is_refused_naming_both_before_decoding -->
+- **符号化した bytes を固定している** 復号は符号化器の版をまたいで互換だが、符号化した
+  bytes はそうとは限らない `compression::DEFLATE_BYTES_ID` (`lzma` では `LZMA_BYTES_ID`
+  も) は `zlib_compress` と残差容器の raw deflate が 6 つの probe 入力に level 0, 1, 6, 9
+  で出す bytes を畳んだ値 圧縮後の bytes を数える program は、出荷する target ごとに自分の
+  試験で `compression::check_codec_bytes` を呼ぶ (`flate2` / `miniz_oxide` の版と feature は
+  その program の build のもの) 違えば両方の識別子を示す <!-- claim-test: deflate_id_is_the_recorded_value -->
 
 ## 最適なユースケース
 

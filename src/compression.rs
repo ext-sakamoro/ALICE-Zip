@@ -61,6 +61,7 @@ use core::fmt;
 use flate2::read::{DeflateDecoder, ZlibDecoder};
 use flate2::write::{DeflateEncoder, ZlibEncoder};
 use flate2::Compression;
+use sha2::{Digest, Sha256};
 use std::io::{self, Read, Write};
 
 pub use crate::quantize::{dequantize_16bit, dequantize_8bit, quantize_16bit, quantize_8bit};
@@ -125,6 +126,257 @@ pub fn lzma_decompress(data: &[u8]) -> io::Result<Vec<u8>> {
         )
     })?;
     Ok(output)
+}
+
+// ------------------------------------------------- codec bytes identifier
+
+/// Domain of [`deflate_bytes_id`] and `lzma_bytes_id`
+pub const CODEC_BYTES_DOMAIN: &[u8] = b"alice-zip/codec-bytes/v1";
+
+/// The bytes the deflate paths ([`zlib_compress`] and the residual containers' raw deflate)
+/// produce for the probe inputs ([`codec_probe_inputs`] at [`CODEC_PROBE_LEVELS`]), folded
+/// into one identifier
+///
+/// Decoding stays compatible across encoder versions; the encoded bytes need not. A caller
+/// that keeps a compressed size or compressed bytes as a fact (a capacity counted in
+/// compressed bytes, a digest of a compressed file) depends on the encoder giving the same
+/// bytes on every target and with the `flate2` / `miniz_oxide` versions and features its own
+/// build resolves. [`check_codec_bytes`] recomputes this value in the caller's build.
+pub const DEFLATE_BYTES_ID: [u8; 32] = [
+    0x06, 0x59, 0xce, 0x52, 0xa0, 0xec, 0x10, 0x4a, 0x35, 0x08, 0x64, 0x05, 0xa7, 0xab, 0x83, 0x73,
+    0x65, 0xb0, 0x6e, 0xc0, 0x08, 0x8b, 0xe0, 0xbc, 0x61, 0xc3, 0x35, 0xe3, 0xd9, 0x95, 0xbe, 0x7d,
+];
+
+/// The bytes `lzma_compress` produces for the probe inputs, folded into one identifier
+/// (see [`DEFLATE_BYTES_ID`])
+///
+/// Defined in every build; `lzma_bytes_id` and its check need the `lzma` feature
+pub const LZMA_BYTES_ID: [u8; 32] = [
+    0xa9, 0x39, 0xb1, 0xff, 0x04, 0x75, 0x45, 0xb8, 0xa5, 0x7d, 0x77, 0x4e, 0xca, 0x0c, 0xe5, 0xdc,
+    0x3d, 0x6a, 0x3d, 0x28, 0x0f, 0xd5, 0x74, 0xdd, 0x68, 0x97, 0xdd, 0xd7, 0x15, 0x0d, 0x29, 0xbd,
+];
+
+/// The deflate levels of [`DEFLATE_BYTES_ID`] (each for zlib and for raw deflate)
+pub const CODEC_PROBE_LEVELS: [u32; 4] = [0, 1, 6, 9];
+
+/// The probe inputs of the codec identifiers, as `(name, bytes)` in the order they are folded
+///
+/// Built from integer arithmetic and literals only, so they are the same bytes everywhere.
+#[must_use]
+pub fn codec_probe_inputs() -> Vec<(&'static str, Vec<u8>)> {
+    let mut lcg = Vec::with_capacity(65_536);
+    let mut x: u32 = 0x1234_5678;
+    for _ in 0..65_536 {
+        x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        lcg.extend_from_slice(&[(x >> 24) as u8]);
+    }
+    let ramp: Vec<u8> = (0..4096u32).map(|i| (i % 251) as u8).collect();
+    vec![
+        ("empty", Vec::new()),
+        ("one-byte", b"a".to_vec()),
+        (
+            "english",
+            b"the quick brown fox jumps over the lazy dog. ".repeat(64),
+        ),
+        (
+            "japanese",
+            "準備で手が絵の具だらけになった。\n".repeat(48).into_bytes(),
+        ),
+        ("ramp", ramp),
+        ("lcg-64k", lcg),
+    ]
+}
+
+fn fold_bytes(h: &mut Sha256, b: &[u8]) {
+    h.update((b.len() as u64).to_be_bytes());
+    h.update(b);
+}
+
+/// The outputs folded into [`DEFLATE_BYTES_ID`], in order, as `(label, compressed bytes)`
+/// with labels `zlib/<level>/<probe>` and `deflate/<level>/<probe>`
+///
+/// # Errors
+///
+/// The encoder's error
+pub fn deflate_probe_outputs() -> io::Result<Vec<(String, Vec<u8>)>> {
+    let mut out = Vec::new();
+    for (name, bytes) in codec_probe_inputs() {
+        for level in CODEC_PROBE_LEVELS {
+            let zlib = zlib_compress(&bytes, level)?;
+            let raw = codec_compress(&bytes, ResidualCodec::Deflate, level)?;
+            out.extend([
+                (format!("zlib/{level}/{name}"), zlib),
+                (format!("deflate/{level}/{name}"), raw),
+            ]);
+        }
+    }
+    Ok(out)
+}
+
+/// The outputs folded into [`LZMA_BYTES_ID`], in order, as `(lzma/<probe>, compressed bytes)`
+///
+/// # Errors
+///
+/// The encoder's error
+#[cfg(feature = "lzma")]
+pub fn lzma_probe_outputs() -> io::Result<Vec<(String, Vec<u8>)>> {
+    codec_probe_inputs()
+        .into_iter()
+        .map(|(name, bytes)| Ok((format!("lzma/{name}"), lzma_compress(&bytes, 6)?)))
+        .collect()
+}
+
+/// Folds `(label, bytes)` outputs under `codec` into an identifier
+///
+/// Every field is length-prefixed (`u64` big-endian), so moving bytes between labels and
+/// outputs, or between two outputs, gives another identifier.
+#[must_use]
+pub fn fold_codec_outputs(codec: &[u8], outputs: &[(String, Vec<u8>)]) -> [u8; 32] {
+    let mut h = Sha256::new();
+    fold_bytes(&mut h, CODEC_BYTES_DOMAIN);
+    fold_bytes(&mut h, codec);
+    h.update((outputs.len() as u64).to_be_bytes());
+    for (label, bytes) in outputs {
+        fold_bytes(&mut h, label.as_bytes());
+        fold_bytes(&mut h, bytes);
+    }
+    h.finalize().into()
+}
+
+/// [`DEFLATE_BYTES_ID`] as this build's encoder computes it
+///
+/// # Errors
+///
+/// The encoder's error
+pub fn deflate_bytes_id() -> io::Result<[u8; 32]> {
+    Ok(fold_codec_outputs(b"deflate", &deflate_probe_outputs()?))
+}
+
+/// [`LZMA_BYTES_ID`] as this build's encoder computes it
+///
+/// # Errors
+///
+/// The encoder's error
+#[cfg(feature = "lzma")]
+pub fn lzma_bytes_id() -> io::Result<[u8; 32]> {
+    Ok(fold_codec_outputs(b"lzma", &lzma_probe_outputs()?))
+}
+
+/// This build's encoder does not give the recorded bytes, or failed
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum CodecBytesError {
+    /// The identifier this build computed differs from the recorded one
+    Mismatch {
+        /// `"deflate"` or `"lzma"`
+        codec: &'static str,
+        /// The recorded identifier
+        expected: [u8; 32],
+        /// The identifier this build computed
+        actual: [u8; 32],
+    },
+    /// The encoder failed on a probe input
+    Encode(io::Error),
+}
+
+impl fmt::Display for CodecBytesError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Mismatch {
+                codec,
+                expected,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "{codec} encoder bytes differ from the recorded ones: recorded "
+                )?;
+                for b in expected {
+                    write!(f, "{b:02x}")?;
+                }
+                f.write_str(", this build ")?;
+                for b in actual {
+                    write!(f, "{b:02x}")?;
+                }
+                Ok(())
+            }
+            Self::Encode(e) => write!(f, "encoder failed on a probe input: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for CodecBytesError {}
+
+fn check_codec(
+    codec: &'static str,
+    expected: [u8; 32],
+    actual: io::Result<[u8; 32]>,
+) -> Result<&'static str, CodecBytesError> {
+    let actual = actual.map_err(CodecBytesError::Encode)?;
+    if actual == expected {
+        Ok(codec)
+    } else {
+        Err(CodecBytesError::Mismatch {
+            codec,
+            expected,
+            actual,
+        })
+    }
+}
+
+/// Checks that this build's encoders give the recorded bytes: [`DEFLATE_BYTES_ID`], and
+/// [`LZMA_BYTES_ID`] with the `lzma` feature
+///
+/// A caller that treats compressed sizes or bytes as facts runs this in its own tests on
+/// every target it ships, since the encoder versions and features are those of its build.
+///
+/// # Errors
+///
+/// Returns the codecs it compared, in order (`["deflate"]`, or `["deflate", "lzma"]` with the
+/// `lzma` feature), so a caller can assert that its check compared what it ships
+///
+/// # Errors
+///
+/// [`CodecBytesError::Mismatch`] naming both identifiers, or the encoder's error
+pub fn check_codec_bytes() -> Result<Vec<&'static str>, CodecBytesError> {
+    let mut compared = Vec::new();
+    compared.extend([check_codec(
+        "deflate",
+        DEFLATE_BYTES_ID,
+        deflate_bytes_id(),
+    )?]);
+    #[cfg(feature = "lzma")]
+    {
+        compared.extend([check_codec("lzma", LZMA_BYTES_ID, lzma_bytes_id())?]);
+    }
+    Ok(compared)
+}
+
+#[cfg(test)]
+mod codec_bytes_tests {
+    use super::*;
+
+    #[test]
+    fn check_codec_names_both_identifiers_on_a_mismatch() {
+        let actual = deflate_bytes_id().unwrap();
+        let mut expected = actual;
+        expected[31] ^= 1;
+        let e = check_codec("deflate", expected, Ok(actual)).unwrap_err();
+        let text = e.to_string();
+        let hex = |b: &[u8; 32]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+        assert!(matches!(
+            e,
+            CodecBytesError::Mismatch {
+                codec: "deflate",
+                ..
+            }
+        ));
+        assert!(
+            text.contains(&hex(&expected)) && text.contains(&hex(&actual)),
+            "{text}"
+        );
+        assert!(check_codec("deflate", actual, Ok(actual)).is_ok());
+    }
 }
 
 // ------------------------------------------------- residual containers
