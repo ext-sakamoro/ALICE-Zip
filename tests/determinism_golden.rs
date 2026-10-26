@@ -116,14 +116,14 @@ fn integer_signal(n: usize) -> Vec<f32> {
 fn semantics_id_is_the_recorded_value() {
     assert_eq!(
         hex(&SEMANTICS_ID),
-        "51ffeb079769ea34bd3cb3df756b6cb940b8d2d6a6a0f1e1115ab8139415935e",
+        "50a40cf64625018acc99c940e544353b901457b4a7a80bf903544ed4ef9af406",
         "the semantics changed: every law identifier published under \
          the old value now describes something else"
     );
     // alice-zip's identifier folds alice-det-math's, pinned separately
     assert_eq!(
         hex(&alice_zip::law::DET_MATH_SEMANTICS_ID),
-        "85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315",
+        "a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf",
     );
 }
 
@@ -153,6 +153,34 @@ fn law_id_and_evaluation_are_the_recorded_bits() {
     }
     assert_golden(
         "law_id and evaluate",
+        bits,
+        32 + 41 * 8,
+        "6285eb4825996d80dfd1daa1283daabe3a3d601554de39541022d84e25365c45",
+    );
+}
+
+/// The digest recorded with alice-det-math 0.5.1 (identifier `51ffeb07…`, now in
+/// `PREVIOUS_SEMANTICS_IDS`): passing that identifier to `law_id` still gives it, so the move to
+/// det-math 0.5.2 at 39507d1b changed the identifier input only (the evaluated bits did not move)
+#[test]
+fn law_id_digest_under_the_identifier_before_the_det_math_clamp_change_is_unchanged() {
+    let previous = alice_zip::law::PREVIOUS_SEMANTICS_IDS
+        .iter()
+        .find(|id| {
+            hex(&id[..]) == "51ffeb079769ea34bd3cb3df756b6cb940b8d2d6a6a0f1e1115ab8139415935e"
+        })
+        .expect(
+            "alice-zip keeps the identifier before the det-math clamp change as a previous one",
+        );
+    let law = line_law();
+    let mut bits = Bits::default();
+    bits.raw(&law.law_id(previous));
+    for i in 0..=40_u32 {
+        let x = f64::from(i) / 10.0;
+        bits.f64(law.evaluate(x).expect("inside the domain"));
+    }
+    assert_golden(
+        "law_id and evaluate under the identifier before the det-math clamp change",
         bits,
         32 + 41 * 8,
         "330cc74e2fed5d92891e0db1ffed224772041fa425dc4e8aa3c471987aaf4344",
@@ -236,16 +264,17 @@ fn law_id_digest_under_the_previous_zip_identifier_is_unchanged() {
 }
 
 /// The digest recorded before alice-det-math 0.5.1, reproduced with the
-/// identifier of 0.5.0 (`135c407d…`, kept in `PREVIOUS_SEMANTICS_IDS`): the
+/// identifier of 0.5.0 (`135c407d…`, kept in alice-zip's `PREVIOUS_SEMANTICS_IDS`; alice-det-math's own
+/// list no longer has it, its clamp changed): the
 /// re-recording of the pin above moved the identifier input only
 #[test]
 fn law_id_digest_under_the_previous_identifier_is_unchanged() {
-    let previous = alice_det_math::PREVIOUS_SEMANTICS_IDS
+    let previous = alice_zip::law::PREVIOUS_SEMANTICS_IDS
         .iter()
         .find(|id| {
             hex(&id[..]) == "135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"
         })
-        .expect("alice-det-math keeps the identifier of 0.5.0 as a previous one");
+        .expect("alice-zip keeps the identifier of alice-det-math 0.5.0 as a previous one");
     let law = line_law();
     let mut bits = Bits::default();
     bits.raw(&law.law_id(previous));
