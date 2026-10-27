@@ -13,10 +13,10 @@
 //! det-math generation), not with the crate's version. The law identifier goldens are not
 //! entries: they are computed with this identifier, so they follow it.
 //!
-//! # Hex form (with `alice-det-math` 0.5.2 at 39507d1b; other generations in [`ZIP_SEMANTICS_BY_DET_MATH`])
+//! # Hex form (with `alice-det-math` 0.5.2 at 2d01c63f; other generations in [`ZIP_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 50a40cf64625018acc99c940e544353b901457b4a7a80bf903544ed4ef9af406
+//! 17d0df1d7c0a6e63d1a7380129f12386b677ac96e7ac193dece546805f4fe84c
 //! ```
 //!
 //! # Fold
@@ -125,6 +125,12 @@ pub const ZIP_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
         hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
         hex32("50a40cf64625018acc99c940e544353b901457b4a7a80bf903544ed4ef9af406"),
     ),
+    // alice-det-math 0.5.2 at 2d01c63f (sin / cos at |x| >= 2^13 through sin64 / cos64, powf of a
+    // negative base, powf64 as fdlibm e_pow, hypot of two subnormals; erf / erf64 added)
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        hex32("17d0df1d7c0a6e63d1a7380129f12386b677ac96e7ac193dece546805f4fe84c"),
+    ),
 ];
 
 /// The identifier of a build that resolved the `alice-det-math` with identifier `det_math`
@@ -164,6 +170,10 @@ const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
 /// by those releases carries `85e08846…` (det-math 0.5.1) or `135c407d…` (0.5.0); the outputs
 /// they computed are the pinned ones, so they stay reproducible here.
 pub const PREVIOUS_SEMANTICS_IDS: &[[u8; 32]] = &[
+    // with alice-det-math 0.5.2 at 39507d1b (`a2e46794…`): the generation before det-math 0.6's
+    // changes; alice-zip's library calls none of the functions whose bits moved (it uses sin64 /
+    // cos64 / sin_cos64, atan2, log2_64 / ln64 and max / min), so every pinned output has the same bits
+    hex32("50a40cf64625018acc99c940e544353b901457b4a7a80bf903544ed4ef9af406"),
     // with alice-det-math 0.5.1 (`85e08846…`): the generation before det-math's clamp followed the G2
     // order; alice-zip calls none of the functions that moved, so every pinned output has the same bits
     hex32("51ffeb079769ea34bd3cb3df756b6cb940b8d2d6a6a0f1e1115ab8139415935e"),

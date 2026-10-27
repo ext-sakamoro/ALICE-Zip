@@ -68,7 +68,7 @@ required-features = ["lzma"]
 # publishes `SEMANTICS_ID` so a stored result can name the arithmetic it used.
 # Pinned at a main commit: `law_bits` (the bits of a float a law identifier takes, refusing
 # non-canonical NaN) is not on crates.io yet; move back to a version requirement once it is
-alice-det-math = { git = "https://github.com/ext-sakamoro/ALICE-DetMath", rev = "39507d1b99960f260a0b760b3fba6cb60823340d", version = "0.5.2", default-features = false }
+alice-det-math = { git = "https://github.com/ext-sakamoro/ALICE-DetMath", rev = "2d01c63ff0849cf0ab82eafb89f87f1b729bd2a8", version = "0.5.2", default-features = false }
 flate2 = { version = "1.0", optional = true }
 # `sqrt` / `floor` / `round` for the `no_std` build (the `FloatExt` shim in
 # `src/math.rs`). IEEE 754 specifies all three exactly, so these agree with the

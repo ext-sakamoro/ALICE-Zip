@@ -116,14 +116,14 @@ fn integer_signal(n: usize) -> Vec<f32> {
 fn semantics_id_is_the_recorded_value() {
     assert_eq!(
         hex(&SEMANTICS_ID),
-        "50a40cf64625018acc99c940e544353b901457b4a7a80bf903544ed4ef9af406",
+        "17d0df1d7c0a6e63d1a7380129f12386b677ac96e7ac193dece546805f4fe84c",
         "the semantics changed: every law identifier published under \
          the old value now describes something else"
     );
     // alice-zip's identifier folds alice-det-math's, pinned separately
     assert_eq!(
         hex(&alice_zip::law::DET_MATH_SEMANTICS_ID),
-        "a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf",
+        "a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9",
     );
 }
 
@@ -153,6 +153,32 @@ fn law_id_and_evaluation_are_the_recorded_bits() {
     }
     assert_golden(
         "law_id and evaluate",
+        bits,
+        32 + 41 * 8,
+        "894c897f2c42e01d9ed168f26b57631490386a69bff5c9a3fad18cba4898c352",
+    );
+}
+
+/// The digest recorded with alice-det-math 0.5.2 at 39507d1b (identifier `50a40cf6…`, now in
+/// `PREVIOUS_SEMANTICS_IDS`): passing that identifier to `law_id` still gives it, so the move to
+/// det-math 0.5.2 at 2d01c63f changed the identifier input only (the evaluated bits did not move)
+#[test]
+fn law_id_digest_under_the_identifier_before_det_math_2d01c63f_is_unchanged() {
+    let previous = alice_zip::law::PREVIOUS_SEMANTICS_IDS
+        .iter()
+        .find(|id| {
+            hex(&id[..]) == "50a40cf64625018acc99c940e544353b901457b4a7a80bf903544ed4ef9af406"
+        })
+        .expect("alice-zip keeps the identifier before det-math 2d01c63f as a previous one");
+    let law = line_law();
+    let mut bits = Bits::default();
+    bits.raw(&law.law_id(previous));
+    for i in 0..=40_u32 {
+        let x = f64::from(i) / 10.0;
+        bits.f64(law.evaluate(x).expect("inside the domain"));
+    }
+    assert_golden(
+        "law_id and evaluate under the identifier before det-math 2d01c63f",
         bits,
         32 + 41 * 8,
         "6285eb4825996d80dfd1daa1283daabe3a3d601554de39541022d84e25365c45",
