@@ -13,7 +13,8 @@
 //! det-math generation), not with the crate's version. The law identifier goldens are not
 //! entries: they are computed with this identifier, so they follow it.
 //!
-//! # Hex form (with `alice-det-math` 0.5.2 at 2d01c63f; other generations in [`ZIP_SEMANTICS_BY_DET_MATH`])
+//! # Hex form (with `alice-det-math` 0.6.0, the identifier 0.5.2 at 2d01c63f already had; other
+//! generations in [`ZIP_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
 //! 17d0df1d7c0a6e63d1a7380129f12386b677ac96e7ac193dece546805f4fe84c
@@ -125,8 +126,9 @@ pub const ZIP_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
         hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
         hex32("50a40cf64625018acc99c940e544353b901457b4a7a80bf903544ed4ef9af406"),
     ),
-    // alice-det-math 0.5.2 at 2d01c63f (sin / cos at |x| >= 2^13 through sin64 / cos64, powf of a
-    // negative base, powf64 as fdlibm e_pow, hypot of two subnormals; erf / erf64 added)
+    // alice-det-math 0.5.2 at 2d01c63f and 0.6.0, the same identifier (sin / cos at |x| >= 2^13
+    // through sin64 / cos64, powf of a negative base, powf64 as fdlibm e_pow, hypot of two
+    // subnormals; erf / erf64 added)
     (
         hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
         hex32("17d0df1d7c0a6e63d1a7380129f12386b677ac96e7ac193dece546805f4fe84c"),
