@@ -459,7 +459,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `521d56dfa150` と
 | | |
 |---|---|
 | release train | alice-zip 0.10.0 (published)、Law への依存: あり |
-| 算術 | train の alice-det-math 0.5.1、算術の識別子 `85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315` この crate の要求は `alice-det-math = "0.6.0"` |
+| 算術 | train の alice-det-math 0.5.1、算術の識別子 `85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315` この crate の要求は `alice-det-math = "0.6.1"` |
 | end to end 検査 | 対象 (`alice-zip = "0.10"`)、digest `9f7cf676708a272e3817ebbf0727c610f391e1547747af4307ee44d5523267c2`、aarch64 と x86_64 で同じ |
 
 ### 適合 (G1-G14)
@@ -474,7 +474,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `521d56dfa150` と
 | G6 semantics-id | 適合 | the identifier moves when a pinned output, a tag or the det-math generation moves, not with the crate version. The law identifier goldens are not entries: they … |
 | G7 handshake-carries-id | 適合 | the published crate's only type-erasing boundaries that receive a Law-bearing identifier are the container decode paths (serialized bytes / file; the crate has … |
 | G8 persisted-semantics-id | 適合 | The writers of the whole repository are covered, by the test whether decoding regenerates values from a law or parameters. Crate alice-zip: … |
-| G9 persisted-meaning-change-is-major | 適合 | the identifier moves in this crate's history are recorded as breaking releases naming both ids. [Unreleased] (Breaking): with alice-det-math at 2d01c63f (sin / … |
+| G9 persisted-meaning-change-is-major | 適合 | the identifier moves in this crate's history are recorded as breaking releases naming both ids. [Unreleased] (Breaking): with alice-det-math 0.6.1 (tanh64 / … |
 | G10 no-run-varying-artifacts | 適合 | the Python package has no other unseeded randomness, clock or UUID (a scan of alice_zip/ finds only RandomState(seed) at media_generators.py and … |
 | G11 gate-self-tests | 適合 | clause (c) has a check: scripts/g11_table.sh runs ALICE-Law's scripts/g11_table_check.py (fetched at .github/g11-table-pin, SHA-256 pinned, 0 compared fails); … |
 | G12 public-repo-text-rules | 適合 | the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names … |

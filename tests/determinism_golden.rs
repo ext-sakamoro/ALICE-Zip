@@ -116,14 +116,14 @@ fn integer_signal(n: usize) -> Vec<f32> {
 fn semantics_id_is_the_recorded_value() {
     assert_eq!(
         hex(&SEMANTICS_ID),
-        "17d0df1d7c0a6e63d1a7380129f12386b677ac96e7ac193dece546805f4fe84c",
+        "06c11067caed2f27b3323c25b023b1237fb5f5936bf86624b2dfb33759183461",
         "the semantics changed: every law identifier published under \
          the old value now describes something else"
     );
     // alice-zip's identifier folds alice-det-math's, pinned separately
     assert_eq!(
         hex(&alice_zip::law::DET_MATH_SEMANTICS_ID),
-        "a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9",
+        "6fc214e924c53557f33775df51f1f8dfe2f246d67a9e493d6fb5837d999022f2",
     );
 }
 
@@ -153,6 +153,32 @@ fn law_id_and_evaluation_are_the_recorded_bits() {
     }
     assert_golden(
         "law_id and evaluate",
+        bits,
+        32 + 41 * 8,
+        "95fc886bb1797bac9eeb5379de20dbee17a162dd4945fb32637c200e29718b11",
+    );
+}
+
+/// The digest recorded with alice-det-math 0.6.0 (identifier `17d0df1d…`, now in
+/// `PREVIOUS_SEMANTICS_IDS`): passing that identifier to `law_id` still gives it, so the move to
+/// det-math 0.6.1 changed the identifier input only (the evaluated bits did not move)
+#[test]
+fn law_id_digest_under_the_identifier_before_det_math_0_6_1_is_unchanged() {
+    let previous = alice_zip::law::PREVIOUS_SEMANTICS_IDS
+        .iter()
+        .find(|id| {
+            hex(&id[..]) == "17d0df1d7c0a6e63d1a7380129f12386b677ac96e7ac193dece546805f4fe84c"
+        })
+        .expect("alice-zip keeps the identifier before det-math 0.6.1 as a previous one");
+    let law = line_law();
+    let mut bits = Bits::default();
+    bits.raw(&law.law_id(previous));
+    for i in 0..=40_u32 {
+        let x = f64::from(i) / 10.0;
+        bits.f64(law.evaluate(x).expect("inside the domain"));
+    }
+    assert_golden(
+        "law_id and evaluate under the identifier before det-math 0.6.1",
         bits,
         32 + 41 * 8,
         "894c897f2c42e01d9ed168f26b57631490386a69bff5c9a3fad18cba4898c352",

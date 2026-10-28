@@ -13,11 +13,10 @@
 //! det-math generation), not with the crate's version. The law identifier goldens are not
 //! entries: they are computed with this identifier, so they follow it.
 //!
-//! # Hex form (with `alice-det-math` 0.6.0, the identifier 0.5.2 at 2d01c63f already had; other
-//! generations in [`ZIP_SEMANTICS_BY_DET_MATH`])
+//! # Hex form (with `alice-det-math` 0.6.1; other generations in [`ZIP_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 17d0df1d7c0a6e63d1a7380129f12386b677ac96e7ac193dece546805f4fe84c
+//! 06c11067caed2f27b3323c25b023b1237fb5f5936bf86624b2dfb33759183461
 //! ```
 //!
 //! # Fold
@@ -133,6 +132,11 @@ pub const ZIP_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
         hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
         hex32("17d0df1d7c0a6e63d1a7380129f12386b677ac96e7ac193dece546805f4fe84c"),
     ),
+    // alice-det-math 0.6.1 (adds tanh64 / hypot64; the bits of the kernels this crate calls are unchanged)
+    (
+        hex32("6fc214e924c53557f33775df51f1f8dfe2f246d67a9e493d6fb5837d999022f2"),
+        hex32("06c11067caed2f27b3323c25b023b1237fb5f5936bf86624b2dfb33759183461"),
+    ),
 ];
 
 /// The identifier of a build that resolved the `alice-det-math` with identifier `det_math`
@@ -172,6 +176,9 @@ const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
 /// by those releases carries `85e08846…` (det-math 0.5.1) or `135c407d…` (0.5.0); the outputs
 /// they computed are the pinned ones, so they stay reproducible here.
 pub const PREVIOUS_SEMANTICS_IDS: &[[u8; 32]] = &[
+    // with alice-det-math 0.6.0 (`a2a11b9b…`): 0.6.1 adds tanh64 / hypot64, which this crate does not call;
+    // the identifier moves because it folds det-math's whole identifier, every pinned output has the same bits
+    hex32("17d0df1d7c0a6e63d1a7380129f12386b677ac96e7ac193dece546805f4fe84c"),
     // with alice-det-math 0.5.2 at 39507d1b (`a2e46794…`): the generation before det-math 0.6's
     // changes; alice-zip's library calls none of the functions whose bits moved (it uses sin64 /
     // cos64 / sin_cos64, atan2, log2_64 / ln64 and max / min), so every pinned output has the same bits

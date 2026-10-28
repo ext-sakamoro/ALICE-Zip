@@ -10,8 +10,8 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "alice-det-math"
-version = "0.6.0"
-source = "git+https://github.com/ext-sakamoro/ALICE-DetMath?rev=b4e3d9464dcf1d32dcf56649b4546c73209fcb37#b4e3d9464dcf1d32dcf56649b4546c73209fcb37"
+version = "0.6.1"
+source = "git+https://github.com/ext-sakamoro/ALICE-DetMath?rev=98fd88465675bb53c0152438b8ead71655063548#98fd88465675bb53c0152438b8ead71655063548"
 
 [[package]]
 name = "alice-zip"
