@@ -56,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 試験 (`tests/minmax_sign_golden.rs`): 入力を `std::hint::black_box` に通すようにした 入力が literal なので release build で最小値・最大値の比較が定数畳み込みされると、x86_64 の `minsd`/`maxsd` (ゼロ同士では第 2 引数を返す) を実行しないまま試験が通りうる 定義域の lo / hi と量子化の min の 3 箇所は、変更の前後とも `f64::min`/`max`/`f32::min` に戻すと x86_64 の debug と release の両方で red (aarch64 は green) 量子化の max は `max - min` の scale にしか入らず、混在ゼロでは符号が出力に届かないので戻しても全構成で green 期待値は変えていない
 
 ### Changed
-- CI (ALICE-Law G9): 識別子の移動の検査器 (`scripts/id_move_check.py` と試験) を共有の新しい bytes にし、新しく足した associated const を受けるようにした shared-files と G11 の表の pin を ALICE-Law 5bb1bea9 に上げた
+- CI (ALICE-Law G9): 識別子の移動の検査器 (`scripts/id_move_check.py` と試験) を共有の新しい bytes にし、新しく足した associated const を受けるようにした shared-files と G11 の表の pin を ALICE-Law 7f5f4cbd に上げた
 - `alice-det-math` を 0.6.0 (rev b4e3d946) にした 0.6.0 は 2d01c63f と同じ算術と識別子 (`SEMANTICS_ID` a2a11b9b) に版の名前を付けた版で、この crate の `SEMANTICS_ID` と評価の bit は変わらない
 - CI (ALICE-Law G11): `.github/shared-files-pin` と `.github/g11-table-pin` を ALICE-Law 521d56df に上げ、共有の写し 10 件を表の目標 (各行の owner の main の bytes) にした README の ALICE-Law の block を再生成
 - CI (ALICE-Law G11): `.github/shared-files-pin` と `.github/g11-table-pin` を ALICE-Law 9cb423c9 に上げ、ALICE-Law の `scripts/g11_self_check.py` を pin の revision で test job (ubuntu / macOS / Windows) と preflight で走らせる README の ALICE-Law の節を 9cb423c9 から作り直した 共有の写しの bytes は同じ
