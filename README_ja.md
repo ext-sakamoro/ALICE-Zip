@@ -451,10 +451,10 @@ cargo build --manifest-path libalice/Cargo.toml --release
 
 どれも同じ考え方を共有する: **データそのものでなく、生成の手順を符号化する**
 
-<!-- law-integration:begin law=521d56dfa150c94342b728cf4d19b7dd7d0f9724 -->
+<!-- law-integration:begin law=7f5f4cbde8343a061051bb1addd30f1f0b3bea1e -->
 ## ALICE-Law との統合
 
-ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `521d56dfa150` とこの repository の `alice-law-conformance.toml` から生成する 手で編集しない
+ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `7f5f4cbde834` とこの repository の `alice-law-conformance.toml` から生成する 手で編集しない
 
 | | |
 |---|---|
@@ -480,6 +480,7 @@ ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `521d56dfa150` と
 | G12 public-repo-text-rules | 適合 | the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names … |
 | G13 no-unspecified-order | 適合 | libalice (alice-zip-cli, a separate crate in this repository that preflight lints with the same clippy.toml) reads its JSON header into a BTreeMap (keyed … |
 | G14 float-environment-invariants | 適合 | the static scan covers the files of this repository (libalice/ included) and the dynamic check covers the alice-zip builds CI runs on ubuntu and macOS; a flag … |
+| G15 surface-claims | 未申告 |  |
 
 ### feature と保証の範囲
 
