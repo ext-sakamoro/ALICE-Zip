@@ -103,7 +103,7 @@ step "ci.yml / clippy: libm ban list (tests)"
 python3 scripts/test_libm_ban_check.py
 
 step "ci.yml / clippy: Identifier moves (tests, then against the published release)"
-python3 scripts/test_id_move_check.py
+CARGO_TERM_COLOR=always python3 scripts/test_id_move_check.py
 python3 scripts/id_move_check.py
 
 step "ci.yml / no_std: Build rlib for a target without std"
