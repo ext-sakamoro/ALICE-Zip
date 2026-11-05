@@ -117,6 +117,7 @@ jobs:
           path: dist/
           merge-multiple: true
       - name: Check
+        shell: bash
         run: |
           version="${GITHUB_REF_NAME#py-libalice-v}"
           n_whl=$(find dist -maxdepth 1 -name 'libalice-*.whl' | wc -l)

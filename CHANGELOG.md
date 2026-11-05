@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### CI
+
+- `scripts/workflow_pipefail.py` (試験 `scripts/test_workflow_pipefail.py`、他の repo と同じ中身) が、pipe する `run` step が pipefail で走るかを全 workflow で確かめる PyPI の確認と ALICE-Law の block の step を `shell: bash` にした 週次の Summary の `missed.txt` は pipe をやめた (`head` が先に終わると前段が SIGPIPE で落ち、pipefail の下で報告の step が失敗するため)
+
 ### 破壊的変更
 
 - **Breaking:** `alice-det-math` を 0.6.1 (rev 98fd8846、`tanh64` / `hypot64` が加わる、既存の関数の bit は不変、det-math の `SEMANTICS_ID` は `a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9` から `6fc214e924c53557f33775df51f1f8dfe2f246d67a9e493d6fb5837d999022f2`) に上げ、`semantics::ZIP_SEMANTICS_BY_DET_MATH` に行を足した `law::SEMANTICS_ID` は det-math の識別子全体を fold するので `17d0df1d` から `06c11067` に動く (`17d0df1d` は `PREVIOUS_SEMANTICS_IDS` に残り VerifiedPrevious として読める、この crate は新しい 2 関数を呼ばず、`tests/determinism_golden.rs` は旧い law_id の digest を旧い識別子で再現する) Cargo.lock は 6 件とも alice-det-math の行だけ

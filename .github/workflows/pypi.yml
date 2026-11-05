@@ -48,6 +48,7 @@ jobs:
           python -m pip install --upgrade pip build twine
           python -m build --outdir dist .
       - name: One sdist and one wheel, LicenseRef-Proprietary with LICENSE-Proprietary inside
+        shell: bash
         run: |
           n_whl=$(find dist -maxdepth 1 -name 'alice_zip-*.whl' | wc -l)
           n_sdist=$(find dist -maxdepth 1 -name 'alice_zip-*.tar.gz' | wc -l)
