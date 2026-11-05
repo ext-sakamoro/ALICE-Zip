@@ -597,3 +597,8 @@ jobs:
         run: |
           python3 scripts/test_workflow_pipefail.py
           python3 scripts/workflow_pipefail.py
+      # no pipeline ends in grep -q (under pipefail its early exit can flip the result)
+      - name: pipe-grep-q
+        run: |
+          python3 scripts/test_check_pipe_grep_q.py
+          python3 scripts/check_pipe_grep_q.py

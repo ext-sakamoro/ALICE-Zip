@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### CI
 
+- `scripts/check_pipe_grep_q.py` を CI と `scripts/preflight.sh` で走らせる `scripts/preflight.sh` の該当 4 行は pipe をやめて here-string で読む
 - `scripts/workflow_pipefail.py` (試験 `scripts/test_workflow_pipefail.py`、他の repo と同じ中身) が、pipe する `run` step が pipefail で走るかを全 workflow で確かめる PyPI の確認と ALICE-Law の block の step を `shell: bash` にした 週次の Summary の `missed.txt` は pipe をやめた (`head` が先に終わると前段が SIGPIPE で落ち、pipefail の下で報告の step が失敗するため)
 
 ### 破壊的変更
