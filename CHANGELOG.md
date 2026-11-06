@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `libalice/tests/media_goldens.rs`: 音声 (sine、multi-sine、white noise) と画像 (linear、radial、checkerboard) の出力の bit を SHA-256 で固定する 位相は 2^13 を超える 出力は識別子を刻まないので `SEMANTICS_ID` に入れない
+
 ### CI
 
 - libalice の `Test (default)` と `Test (codec bridge)` を `scripts/run_tests.sh` に通す 試験 file が build されなくなると落ちる (素の `cargo test` は 0 本でも通る)
