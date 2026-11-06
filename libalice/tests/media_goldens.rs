@@ -112,3 +112,19 @@ fn checkerboard_is_the_recorded_bits() {
         "e108e09f3359d840657dbaa2d6430f6fff40b4949b19b6822912ee1606230708"
     );
 }
+
+#[test]
+fn noise_is_the_recorded_bits() {
+    assert_eq!(
+        digest_u8(&image(ImagePattern::Noise)),
+        "88a47223a836cf2b5dd296c0d7610869200452a40f176171b1ec47b97770a8fe"
+    );
+}
+
+#[test]
+fn fractal_is_the_recorded_bits() {
+    assert_eq!(
+        digest_u8(&image(ImagePattern::Fractal)),
+        "e00e6d4083b77da3644d3c4df2fa488547539f2724d3c8919fa30896cf3f2ea3"
+    );
+}

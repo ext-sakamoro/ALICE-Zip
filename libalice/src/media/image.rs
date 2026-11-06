@@ -8,6 +8,11 @@
 
 use std::f32::consts::PI;
 
+use alice_zip::generators::generate_perlin_2d;
+
+/// The octaves of [`ImagePattern::Fractal`]
+const FRACTAL_OCTAVES: u32 = 5;
+
 // ============================================================================
 // Enums
 // ============================================================================
@@ -41,11 +46,11 @@ pub struct ImageParams {
     /// Two colours: index 0 = start/color1, index 1 = end/color2.
     /// For Solid only index 0 is used.
     pub colors: Vec<[u8; 3]>,
-    /// Cell size for Checkerboard (pixels per square)
+    /// Cell size for Checkerboard (pixels per square) and the lattice cell of Noise and Fractal (at least 1)
     pub block_size: usize,
     /// Gradient direction in degrees (0 = left-to-right, 90 = top-to-bottom)
     pub angle_degrees: f32,
-    /// RNG seed (reserved for Noise / Fractal)
+    /// Seed of the texture of Noise and Fractal
     pub seed: u64,
 }
 
@@ -97,9 +102,9 @@ impl ImageGenerator {
                 let block = params.block_size.max(1);
                 Self::generate_checkerboard(w, h, color0, color1, block)
             }
-            // Noise / Fractal fall back to a mid-grey fill (matches Python's `else` branch)
-            ImagePattern::Noise | ImagePattern::Fractal => {
-                Self::generate_solid(w, h, [128, 128, 128])
+            ImagePattern::Noise => Self::generate_perlin(w, h, color0, color1, params, 1),
+            ImagePattern::Fractal => {
+                Self::generate_perlin(w, h, color0, color1, params, FRACTAL_OCTAVES)
             }
         }
     }
@@ -107,6 +112,32 @@ impl ImageGenerator {
     // ------------------------------------------------------------------ //
     //  Private helpers                                                     //
     // ------------------------------------------------------------------ //
+
+    /// The two colours mixed by `alice_zip`'s seeded Perlin texture, with `block_size` pixels to a lattice
+    /// cell: one octave is noise, several are fractal Brownian motion
+    fn generate_perlin(
+        w: usize,
+        h: usize,
+        start: [u8; 3],
+        end: [u8; 3],
+        params: &ImageParams,
+        octaves: u32,
+    ) -> Vec<u8> {
+        let scale = params.block_size.max(1) as f32;
+        let texture = generate_perlin_2d(w, h, params.seed, scale, octaves)
+            .expect("the scale is at least 1, there is an octave, and the size fits a buffer");
+        let s = start.map(f32::from);
+        let e = end.map(f32::from);
+        let mut out = Vec::with_capacity(texture.len() * 3);
+        for t in texture {
+            let one_minus_t = 1.0 - t;
+            for ch in 0..3 {
+                let v = s[ch].mul_add(one_minus_t, e[ch] * t);
+                out.push(v.clamp(0.0, 255.0) as u8);
+            }
+        }
+        out
+    }
 
     /// Fill the entire image with a single colour
     #[inline(always)]

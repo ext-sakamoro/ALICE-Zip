@@ -9,9 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- libalice の `ImagePattern::Noise` と `Fractal` は seed を見ず灰色の塗りを返していた `alice_zip::generators::generate_perlin_2d` で 2 色を混ぜる (`block_size` が格子の 1 辺、`Noise` は 1 octave、`Fractal` は 5 octave) `tests/media_image_patterns.rs` が格子点の中間色、seed、分布、octave の偏差の閉じた式を確かめる
+
 ### Added
 
-- `libalice/tests/media_goldens.rs`: 音声 (sine、multi-sine、white noise) と画像 (linear、radial、checkerboard) の出力の bit を SHA-256 で固定する 位相は 2^13 を超える 出力は識別子を刻まないので `SEMANTICS_ID` に入れない
+- `libalice/tests/media_goldens.rs`: 音声 (sine、multi-sine、white noise) と画像 (linear、radial、checkerboard、noise、fractal) の出力の bit を SHA-256 で固定する 位相は 2^13 を超える 出力は識別子を刻まないので `SEMANTICS_ID` に入れない
 
 ### CI
 

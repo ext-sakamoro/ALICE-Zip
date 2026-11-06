@@ -505,9 +505,9 @@ jobs:
       # for this gate; `codec` is a crates.io dep (alice-codec) and is tested
       # scripts/run_tests.sh: a suite that stops being built fails here, it would pass under plain cargo test
       - name: Test (default)
-        run: scripts/run_tests.sh lib,alz_cli,durable_writers,legacy_header_fail_closed,residual_acceptance,residual_delta,residual_exceptions,residual_header_gating,residual_reconstruct,residual_semantics,residual_version,media_goldens -- cargo test --manifest-path libalice/Cargo.toml
+        run: scripts/run_tests.sh lib,alz_cli,durable_writers,legacy_header_fail_closed,residual_acceptance,residual_delta,residual_exceptions,residual_header_gating,residual_reconstruct,residual_semantics,residual_version,media_goldens,media_image_patterns -- cargo test --manifest-path libalice/Cargo.toml
       - name: Test (codec bridge)
-        run: scripts/run_tests.sh lib,alz_cli,durable_writers,legacy_header_fail_closed,residual_acceptance,residual_delta,residual_exceptions,residual_header_gating,residual_reconstruct,residual_semantics,residual_version,media_goldens -- cargo test --manifest-path libalice/Cargo.toml --features codec
+        run: scripts/run_tests.sh lib,alz_cli,durable_writers,legacy_header_fail_closed,residual_acceptance,residual_delta,residual_exceptions,residual_header_gating,residual_reconstruct,residual_semantics,residual_version,media_goldens,media_image_patterns -- cargo test --manifest-path libalice/Cargo.toml --features codec
       - name: Clippy (-D warnings, all targets, codec)
         run: cargo clippy --manifest-path libalice/Cargo.toml --all-targets --features codec -- -D warnings
       - name: Doc (-D warnings)
