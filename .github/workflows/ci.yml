@@ -503,10 +503,11 @@ jobs:
           workspaces: libalice
       # `python` (PyO3 build against the runner's interpreter) is out of scope
       # for this gate; `codec` is a crates.io dep (alice-codec) and is tested
+      # scripts/run_tests.sh: a suite that stops being built fails here, it would pass under plain cargo test
       - name: Test (default)
-        run: cargo test --manifest-path libalice/Cargo.toml
+        run: scripts/run_tests.sh lib,alz_cli,durable_writers,legacy_header_fail_closed,residual_acceptance,residual_delta,residual_exceptions,residual_header_gating,residual_reconstruct,residual_semantics,residual_version -- cargo test --manifest-path libalice/Cargo.toml
       - name: Test (codec bridge)
-        run: cargo test --manifest-path libalice/Cargo.toml --features codec
+        run: scripts/run_tests.sh lib,alz_cli,durable_writers,legacy_header_fail_closed,residual_acceptance,residual_delta,residual_exceptions,residual_header_gating,residual_reconstruct,residual_semantics,residual_version -- cargo test --manifest-path libalice/Cargo.toml --features codec
       - name: Clippy (-D warnings, all targets, codec)
         run: cargo clippy --manifest-path libalice/Cargo.toml --all-targets --features codec -- -D warnings
       - name: Doc (-D warnings)
