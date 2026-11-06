@@ -2,13 +2,15 @@
 //!
 //! Every entry is checked against its source: each golden digest is read from the test of
 //! `tests/determinism_golden.rs` it is named after (the file, not a copy), each tag entry is
-//! the SHA-256 of the tag the crate uses, and the det-math entry is the resolved
-//! `alice_det_math::SEMANTICS_ID`. Then every row of `ZIP_SEMANTICS_BY_DET_MATH` is
-//! recomputed with the fold written here.
+//! the SHA-256 of the tag the crate uses, and each det-math entry is the resolved
+//! `alice_det_math::function_pin`. Then `ZIP_SEMANTICS_ID` is recomputed with the fold written
+//! here.
 
 use alice_det_math::SemanticsCheck;
 use alice_zip::law::{check_semantics, PREVIOUS_SEMANTICS_IDS, SEMANTICS_ID};
-use alice_zip::semantics::{semantics_id_for, ZIP_SEMANTICS_BY_DET_MATH, ZIP_SEMANTICS_PINS};
+use alice_zip::semantics::{
+    DET_MATH_FUNCTIONS, DET_MATH_PINS, ZIP_SEMANTICS_ID, ZIP_SEMANTICS_PINS,
+};
 use sha2::{Digest, Sha256};
 
 const GOLDEN_SOURCE: &str = include_str!("determinism_golden.rs");
@@ -78,15 +80,13 @@ fn every_entry_matches_its_source() {
     for (name, digest) in ZIP_SEMANTICS_PINS {
         if let Some(test) = name.strip_prefix("golden ") {
             assert_eq!(hex(digest), hex(&golden_of(test)), "{name}");
-        } else if let Some((_, tag)) = tags.iter().find(|(n, _)| n == name) {
+        } else {
+            let (_, tag) = tags
+                .iter()
+                .find(|(n, _)| n == name)
+                .unwrap_or_else(|| panic!("an entry of an unknown kind: {name}"));
             let want: [u8; 32] = Sha256::digest(tag).into();
             assert_eq!(*digest, want, "{name}");
-        } else {
-            assert_eq!(
-                *name, "alice-det-math",
-                "an entry of an unknown kind: {name}"
-            );
-            assert_eq!(*digest, alice_det_math::SEMANTICS_ID);
         }
         checked += 1;
     }
@@ -107,42 +107,45 @@ fn every_entry_matches_its_source() {
 }
 
 #[test]
-fn every_row_is_the_fold_of_the_pins() {
-    assert!(!ZIP_SEMANTICS_BY_DET_MATH.is_empty());
-    for (det_math, id) in ZIP_SEMANTICS_BY_DET_MATH {
-        let entries: Vec<(&str, [u8; 32])> = ZIP_SEMANTICS_PINS
-            .iter()
-            .map(|&(n, d)| {
-                if n == "alice-det-math" {
-                    (n, *det_math)
-                } else {
-                    (n, d)
-                }
-            })
-            .collect();
-        assert_eq!(
-            hex(id),
-            hex(&fold(&entries)),
-            "row for det-math {}",
-            hex(det_math)
-        );
-        assert_eq!(semantics_id_for(det_math), *id);
+fn every_det_math_entry_is_the_resolved_function() {
+    assert!(!DET_MATH_PINS.is_empty());
+    assert_eq!(DET_MATH_FUNCTIONS.len(), DET_MATH_PINS.len());
+    for (want, (name, digest)) in DET_MATH_FUNCTIONS.iter().zip(DET_MATH_PINS) {
+        assert_eq!(want, name);
+        assert_eq!(*digest, alice_det_math::function_pin(name), "{name}");
     }
-    // the build's identifier is the row of the resolved det-math, and the doc's hex form
-    assert_eq!(
-        SEMANTICS_ID,
-        semantics_id_for(&alice_det_math::SEMANTICS_ID)
-    );
+}
+
+/// the fold's entries: a det-math entry goes in under `det-math <function>`
+fn entries() -> Vec<(String, [u8; 32])> {
+    ZIP_SEMANTICS_PINS
+        .iter()
+        .map(|&(n, d)| (n.to_string(), d))
+        .chain(
+            DET_MATH_PINS
+                .iter()
+                .map(|&(n, d)| (format!("det-math {n}"), d)),
+        )
+        .collect()
+}
+
+#[test]
+fn the_identifier_is_the_fold_of_the_pins() {
+    let e = entries();
+    let named: Vec<(&str, [u8; 32])> = e.iter().map(|(n, d)| (n.as_str(), *d)).collect();
+    assert_eq!(hex(&ZIP_SEMANTICS_ID), hex(&fold(&named)));
+    assert_eq!(SEMANTICS_ID, ZIP_SEMANTICS_ID);
     let doc = include_str!("../src/semantics.rs");
     assert!(
-        doc.contains(&hex(&SEMANTICS_ID)),
+        doc.contains(&format!("//! {}", hex(&SEMANTICS_ID))),
         "the module doc shows another identifier"
     );
 }
 
 #[test]
 fn the_identifier_moves_with_each_entry() {
-    let base: Vec<(&str, [u8; 32])> = ZIP_SEMANTICS_PINS.to_vec();
+    let e = entries();
+    let base: Vec<(&str, [u8; 32])> = e.iter().map(|(n, d)| (n.as_str(), *d)).collect();
     let id = fold(&base);
     assert_eq!(id, SEMANTICS_ID);
     for i in 0..base.len() {
@@ -173,8 +176,10 @@ fn check_semantics_reads_this_and_previous_identifiers() {
     for p in PREVIOUS_SEMANTICS_IDS {
         assert_eq!(check_semantics(p), SemanticsCheck::VerifiedPrevious(*p));
     }
-    // the identifiers this crate published up to 0.10 (alice-det-math's) are previous ones
+    // the identifiers this crate published up to 0.10 (alice-det-math's) are previous ones, and the
+    // last one that folded det-math's whole identifier
     for old in [
+        "06c11067caed2f27b3323c25b023b1237fb5f5936bf86624b2dfb33759183461",
         "51ffeb079769ea34bd3cb3df756b6cb940b8d2d6a6a0f1e1115ab8139415935e",
         "65ba78c17a0cab6d1717270ad7ceca8856c293425f92289de943767ecb1ae883",
         "85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315",

@@ -116,11 +116,11 @@ fn integer_signal(n: usize) -> Vec<f32> {
 fn semantics_id_is_the_recorded_value() {
     assert_eq!(
         hex(&SEMANTICS_ID),
-        "06c11067caed2f27b3323c25b023b1237fb5f5936bf86624b2dfb33759183461",
+        "0ea7b226c52aa4a71b51d41697bf26cf26440280949a2095161fd775f16ca7df",
         "the semantics changed: every law identifier published under \
          the old value now describes something else"
     );
-    // alice-zip's identifier folds alice-det-math's, pinned separately
+    // alice-det-math's own identifier, re-exported; alice-zip's folds the functions it calls instead
     assert_eq!(
         hex(&alice_zip::law::DET_MATH_SEMANTICS_ID),
         "6fc214e924c53557f33775df51f1f8dfe2f246d67a9e493d6fb5837d999022f2",
@@ -153,6 +153,32 @@ fn law_id_and_evaluation_are_the_recorded_bits() {
     }
     assert_golden(
         "law_id and evaluate",
+        bits,
+        32 + 41 * 8,
+        "01d82b38d4e6474916481f7a61c8c0bc208b3e8c84f5dd3226794140f3f3ad19",
+    );
+}
+
+/// The digest recorded when this crate folded alice-det-math's whole identifier (`06c11067…`, now in
+/// `PREVIOUS_SEMANTICS_IDS`): passing that identifier to `law_id` still gives it, so folding the
+/// functions this crate calls changed the identifier input only (the evaluated bits did not move)
+#[test]
+fn law_id_digest_under_the_identifier_before_the_function_ids_is_unchanged() {
+    let previous = alice_zip::law::PREVIOUS_SEMANTICS_IDS
+        .iter()
+        .find(|id| {
+            hex(&id[..]) == "06c11067caed2f27b3323c25b023b1237fb5f5936bf86624b2dfb33759183461"
+        })
+        .expect("alice-zip keeps the identifier before the function ids as a previous one");
+    let law = line_law();
+    let mut bits = Bits::default();
+    bits.raw(&law.law_id(previous));
+    for i in 0..=40_u32 {
+        let x = f64::from(i) / 10.0;
+        bits.f64(law.evaluate(x).expect("inside the domain"));
+    }
+    assert_golden(
+        "law_id and evaluate under the identifier before the function ids",
         bits,
         32 + 41 * 8,
         "95fc886bb1797bac9eeb5379de20dbee17a162dd4945fb32637c200e29718b11",

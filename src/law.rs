@@ -82,12 +82,11 @@ pub const SIGNAL_LAW_KIND: &[u8] = b"signal-law/polynomial/v1";
 /// Up to 0.10 this name re-exported `alice-det-math`'s identifier; those values are in
 /// [`PREVIOUS_SEMANTICS_IDS`] and [`check_semantics`] reads data stamped with them as
 /// reproducible.
-pub const SEMANTICS_ID: [u8; 32] =
-    crate::semantics::semantics_id_for(&alice_det_math::SEMANTICS_ID);
+pub const SEMANTICS_ID: [u8; 32] = crate::semantics::ZIP_SEMANTICS_ID;
 
 pub use crate::semantics::{check_semantics, PREVIOUS_SEMANTICS_IDS};
-/// `alice-det-math`'s identifier (the transcendental functions), which this crate's
-/// [`SEMANTICS_ID`] folds
+/// `alice-det-math`'s identifier (the transcendental functions), re-exported for reference;
+/// this crate's [`SEMANTICS_ID`] folds the functions it calls ([`crate::semantics::DET_MATH_PINS`])
 pub use alice_det_math::SEMANTICS_ID as DET_MATH_SEMANTICS_ID;
 use alice_det_math::{max64, min64};
 
