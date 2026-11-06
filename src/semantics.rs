@@ -180,46 +180,12 @@ pub const DET_MATH_PINS: &[(&str, [u8; 32])] = &[
     ),
 ];
 
-const _: () = {
-    assert!(DET_MATH_FUNCTIONS.len() == DET_MATH_PINS.len());
-    let mut i = 0;
-    while i < DET_MATH_PINS.len() {
-        assert!(
-            same_bytes(
-                DET_MATH_FUNCTIONS[i].as_bytes(),
-                DET_MATH_PINS[i].0.as_bytes()
-            ),
-            "DET_MATH_PINS names another function than DET_MATH_FUNCTIONS"
-        );
-        assert!(
-            same_bytes(
-                &DET_MATH_PINS[i].1,
-                &alice_det_math::function_pin(DET_MATH_PINS[i].0)
-            ),
-            "a function this crate calls moved in alice-det-math: re-record DET_MATH_PINS and ZIP_SEMANTICS_ID"
-        );
-        i += 1;
-    }
-};
+const _: () = alice_det_math::assert_function_pins(DET_MATH_PINS);
 
 /// [`SEMANTICS_ID`](crate::law::SEMANTICS_ID): the fold of [`ZIP_SEMANTICS_PINS`] and
 /// [`DET_MATH_PINS`] (`tests/zip_semantics_id.rs` recomputes it)
 pub const ZIP_SEMANTICS_ID: [u8; 32] =
     hex32("0ea7b226c52aa4a71b51d41697bf26cf26440280949a2095161fd775f16ca7df");
-
-const fn same_bytes(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut i = 0;
-    while i < a.len() {
-        if a[i] != b[i] {
-            return false;
-        }
-        i += 1;
-    }
-    true
-}
 
 /// Earlier values of [`SEMANTICS_ID`](crate::law::SEMANTICS_ID) under which every pinned
 /// output has the same bits as in this build, newest first
@@ -250,11 +216,9 @@ pub const PREVIOUS_SEMANTICS_IDS: &[[u8; 32]] = &[
 /// ([`Verified`](alice_det_math::SemanticsCheck::Verified)), one of
 /// [`PREVIOUS_SEMANTICS_IDS`] (`VerifiedPrevious`), or neither (`Mismatch`)
 pub fn check_semantics(stored: &[u8; 32]) -> alice_det_math::SemanticsCheck {
-    if *stored == crate::law::SEMANTICS_ID {
-        alice_det_math::SemanticsCheck::Verified
-    } else if PREVIOUS_SEMANTICS_IDS.contains(stored) {
-        alice_det_math::SemanticsCheck::VerifiedPrevious(*stored)
-    } else {
-        alice_det_math::SemanticsCheck::Mismatch
-    }
+    alice_det_math::check_semantics_against(
+        stored,
+        &crate::law::SEMANTICS_ID,
+        PREVIOUS_SEMANTICS_IDS,
+    )
 }
