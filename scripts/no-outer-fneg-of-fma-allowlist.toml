@@ -6,9 +6,10 @@
 # check finds in every scanned file / in src/. Both must equal what it finds: update
 # them in the commit that adds or removes a call. src/ has none (the polynomial and
 # law evaluators multiply and add separately, tests/law_single_source.rs pins that);
-# the 5 in tests/ are reference computations: 1 in law_single_source.rs builds the fused
-# value that test tells apart, 4 in analytic_oracle.rs are the independent libalice Perlin.
-expected-fma-calls = 5
+# the 7 in tests/ are reference computations: 1 in law_single_source.rs builds the fused
+# value that test tells apart, 4 in analytic_oracle.rs are the independent libalice Perlin,
+# 2 in media_image_patterns.rs are the off-centre radial distances.
+expected-fma-calls = 7
 expected-src-fma-calls = 0
 
 # [[ir]]: per target and package, the floor of fma-family calls in the optimised IR.
