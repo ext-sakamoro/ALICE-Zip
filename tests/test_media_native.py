@@ -5,6 +5,7 @@ image code, on the same files.
 """
 import hashlib
 import json
+import os
 from types import SimpleNamespace
 
 import numpy as np
@@ -18,6 +19,10 @@ from alice_zip.media_generators import (AudioGenerator, AudioParams, AudioPatter
 NATIVE = native_accelerator.is_available()
 needs_native = pytest.mark.skipif(not NATIVE, reason="needs the native extension")
 needs_no_native = pytest.mark.skipif(NATIVE, reason="the case without the native extension")
+# ImageGenerator and VideoGenerator need Pillow (the `images` extra); CI installs it, so these run there
+# ALICE_ZIP_REQUIRE_PILLOW=1 (set in CI) turns the skip off: without Pillow these tests then fail, never skip
+needs_pil = pytest.mark.skipif(not media_generators.HAS_PIL and os.environ.get("ALICE_ZIP_REQUIRE_PILLOW") != "1",
+                               reason="needs Pillow")
 
 RECORDED = {
     "solid_color": "d36cca5380d6cd08a239d5b9e29f8d5c3b28c6dc9b0fde1aa46f53027d961f93",
@@ -51,12 +56,14 @@ def params(pattern, **kw):
     return ImageParams(pattern=pattern, **base)
 
 
+@needs_pil
 @pytest.mark.parametrize("pattern", sorted(RECORDED))
 def test_a_file_of_the_numpy_identifier_reads_what_it_recorded(pattern):
     data = file_of(pattern, semantics.PYTHON_SEMANTICS_ID.hex())
     assert digest(ImageGenerator().decompress(data)) == RECORDED[pattern]
 
 
+@needs_pil
 def test_a_file_with_no_identifier_reads_what_it_recorded_unless_strict():
     data = file_of("gradient_radial", None)
     with pytest.warns(semantics.LegacySemanticsWarning):
@@ -65,11 +72,13 @@ def test_a_file_with_no_identifier_reads_what_it_recorded_unless_strict():
         ImageGenerator().decompress(data, strict=True)
 
 
+@needs_pil
 def test_a_file_of_another_identifier_is_refused():
     with pytest.raises(ValueError, match="regenerated under"):
         ImageGenerator().decompress(file_of("fractal", bytes(32).hex()))
 
 
+@needs_pil
 @needs_native
 def test_a_file_of_the_native_identifier_regenerates_with_the_rust_crate():
     data = file_of("fractal", semantics.NATIVE_SEMANTICS_ID.hex(), pattern_seed=5)
@@ -79,6 +88,7 @@ def test_a_file_of_the_native_identifier_regenerates_with_the_rust_crate():
     assert digest(got) != digest(other)
 
 
+@needs_pil
 @needs_native
 @pytest.mark.parametrize("pattern,golden", [
     (ImagePattern.SOLID_COLOR, "media_solid_is_the_recorded_bits"),
@@ -97,6 +107,7 @@ def test_python_gets_the_bits_of_the_rust_golden(pattern, golden):
     assert digest(ImageGenerator().generate(params(pattern))) == want
 
 
+@needs_pil
 @needs_native
 def test_noise_takes_the_seed_and_the_channels():
     a = ImageGenerator().generate(params(ImagePattern.NOISE_PERLIN, pattern_seed=1))
@@ -111,6 +122,7 @@ def test_noise_takes_the_seed_and_the_channels():
     assert (four[:, :, 3] > 127).any()
 
 
+@needs_pil
 @needs_native
 def test_a_radial_gradient_has_its_centre_where_the_params_say():
     g = ImageGenerator()
@@ -123,6 +135,7 @@ def test_a_radial_gradient_has_its_centre_where_the_params_say():
     assert tuple(corner[8, 8]) == (250, 3, 140)
 
 
+@needs_pil
 @needs_native
 @pytest.mark.parametrize("centre", [(0.75, 0.25), (0.25, 0.75)])
 def test_a_radial_gradient_off_centre_measures_from_its_farthest_corner(centre):
@@ -137,6 +150,7 @@ def test_a_radial_gradient_off_centre_measures_from_its_farthest_corner(centre):
     assert np.abs(image.astype(float) - want).max() <= 1.0
 
 
+@needs_pil
 @needs_native
 @pytest.mark.parametrize("stamp", [lambda: semantics.NATIVE_SEMANTICS_ID.hex(), lambda: None])
 def test_a_file_stating_a_huge_image_is_refused_before_allocating(stamp):
@@ -147,6 +161,7 @@ def test_a_file_stating_a_huge_image_is_refused_before_allocating(stamp):
         ImageGenerator().decompress(file)
 
 
+@needs_pil
 def test_the_size_limit_is_the_limit_it_is_given():
     file = lambda w: json.dumps({"magic": "ALICE_IMG", "semantics": None, "params": {
         "pattern": "solid_color", "width": w, "height": 1, "channels": 1, "color": [9]}}).encode()
@@ -156,6 +171,7 @@ def test_the_size_limit_is_the_limit_it_is_given():
         ImageGenerator().decompress(file(9), max_output_size=8)
 
 
+@needs_pil
 def test_the_zipper_passes_its_limit_to_the_media_readers():
     zipper = ALICEZip()
     zipper.MAX_OUTPUT_SIZE = 8
@@ -165,6 +181,7 @@ def test_the_zipper_passes_its_limit_to_the_media_readers():
         zipper._decompress_media_json(file, None)
 
 
+@needs_pil
 @pytest.mark.parametrize("payload_type,magic,extra", [
     (AlicePayloadType.MEDIA_IMAGE, "ALICE_IMG", {"params": {"pattern": "solid_color", "width": 9, "height": 1, "channels": 1}}),
     (AlicePayloadType.MEDIA_VIDEO, "ALICE_VID", {"keyframes": [[0, {"pattern": "solid_color", "width": 9, "height": 1, "channels": 1}]]})])
@@ -204,6 +221,7 @@ def test_the_audio_limit_counts_the_bytes_of_the_samples_it_would_return():
         assert AudioGenerator().decompress(_audio_file(1.1), max_output_size=16)[0].nbytes == 16
 
 
+@needs_pil
 def test_the_zipper_passes_its_limit_to_the_audio_reader():
     zipper = ALICEZip()
     zipper.MAX_OUTPUT_SIZE = 8
@@ -213,6 +231,7 @@ def test_the_zipper_passes_its_limit_to_the_audio_reader():
         zipper._decode_payload(SimpleNamespace(payload_type=AlicePayloadType.MEDIA_AUDIO), _audio_file(1), None)
 
 
+@needs_pil
 def test_a_video_stating_a_huge_keyframe_is_refused(monkeypatch):
     monkeypatch.setattr(media_generators, "HAS_CV2", True)  # no frame is written
     file = json.dumps({"magic": "ALICE_VID", "pattern": "keyframes", "width": 1, "height": 1, "fps": 1, "duration": 1,
@@ -227,6 +246,7 @@ def test_the_native_call_refuses_a_huge_image_itself():
         native_accelerator.media_image("solid_color", 2 ** 45, 1, (0,), (0,), 0.0, (0.5, 0.5), 8, 42)
 
 
+@needs_pil
 @needs_native
 @pytest.mark.parametrize("pattern", [ImagePattern.PERIODIC, ImagePattern.UNKNOWN])
 def test_the_native_identifier_does_not_cover_what_numpy_computes(pattern):
@@ -236,6 +256,7 @@ def test_the_native_identifier_does_not_cover_what_numpy_computes(pattern):
         ImageGenerator().decompress(file)
 
 
+@needs_pil
 @needs_native
 @pytest.mark.parametrize("change", [{"pattern_scale": 0}, {"pattern_scale": -3}, {"pattern_scale": float("nan")},
                                     {"gradient_angle": float("inf")}, {"gradient_angle": 1e300},
@@ -245,6 +266,7 @@ def test_values_that_name_no_law_are_refused(change):
         ImageGenerator().generate(params(ImagePattern.CHECKERBOARD, **change))
 
 
+@needs_pil
 @needs_native
 def test_a_keyframe_is_cached_under_its_law_and_its_centre(monkeypatch):
     monkeypatch.setattr(media_generators, "HAS_CV2", True)  # no frame is written
@@ -260,6 +282,7 @@ def test_a_keyframe_is_cached_under_its_law_and_its_centre(monkeypatch):
     assert not np.array_equal(g._get_base_frame(key, 9, 9), g._get_base_frame(other, 9, 9))
 
 
+@needs_pil
 @needs_no_native
 @pytest.mark.parametrize("pattern", [ImagePattern.SOLID_COLOR, ImagePattern.GRADIENT_LINEAR,
                                      ImagePattern.GRADIENT_RADIAL, ImagePattern.CHECKERBOARD,
@@ -269,6 +292,7 @@ def test_without_the_extension_a_new_image_is_refused(pattern):
         ImageGenerator().generate(params(pattern))
 
 
+@needs_pil
 @pytest.mark.parametrize("pattern", [ImagePattern.STRIPES, ImagePattern.NOISE_GAUSSIAN])
 def test_an_image_pattern_with_no_law_raises(pattern):
     with pytest.raises(ValueError, match="no law"):
