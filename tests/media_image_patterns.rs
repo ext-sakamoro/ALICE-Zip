@@ -225,6 +225,64 @@ fn a_radial_gradient_takes_its_centre() {
     assert_eq!(pixel(&px, 9, 8, 8), B);
 }
 
+/// oracle: each channel is `A` to `B` at (distance to the centre) / (distance to the farthest corner), to one
+/// level. A centre past the middle on one axis and before it on the other: the farthest corner is on the far side
+/// of each.
+#[test]
+fn a_radial_gradient_off_centre_measures_from_its_farthest_corner() {
+    for center in [[0.75_f32, 0.25], [0.25, 0.75]] {
+        let (w, h) = (17_usize, 9_usize);
+        let params = ImageParams {
+            pattern: ImagePattern::RadialGradient,
+            width: w,
+            height: h,
+            colors: vec![A, B],
+            center,
+            ..ImageParams::default()
+        };
+        let px = ImageGenerator::new().generate(&params);
+        let (cx, cy) = (
+            f64::from(center[0]) * (w - 1) as f64,
+            f64::from(center[1]) * (h - 1) as f64,
+        );
+        let longer = |near: f64, side: f64| {
+            if near > side - near {
+                near
+            } else {
+                side - near
+            }
+        };
+        let (fx, fy) = (longer(cx, (w - 1) as f64), longer(cy, (h - 1) as f64));
+        let far = fx.mul_add(fx, fy * fy).sqrt();
+        for y in 0..h {
+            for x in 0..w {
+                let (dx, dy) = (x as f64 - cx, y as f64 - cy);
+                let t = dx.mul_add(dx, dy * dy).sqrt() / far;
+                let got = pixel(&px, w, x, y);
+                for c in 0..3 {
+                    let want = f64::from(A[c]) + (f64::from(B[c]) - f64::from(A[c])) * t;
+                    assert!(
+                        (f64::from(got[c]) - want).abs() <= 1.0,
+                        "centre {center:?} at ({x}, {y}): {got:?}, expected about {want}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+#[should_panic(expected = "overflows")]
+fn an_image_size_that_overflows_is_refused() {
+    let params = ImageParams {
+        pattern: ImagePattern::Solid,
+        width: usize::MAX,
+        height: 2,
+        ..ImageParams::default()
+    };
+    let _ = ImageGenerator::new().generate(&params);
+}
+
 #[test]
 fn channels_follow_the_two_colours() {
     let params = ImageParams {

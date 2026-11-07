@@ -10,7 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
-
+- ALICE_IMG と ALICE_VID の keyframe は、記載された大きさが `MAX_OUTPUT_SIZE` (既定 4 GiB) を超えると確保の前に `MemoryError` で拒む 確保の失敗は native 拡張ではプロセスを終わらせていた `libalice.media_image` も同じ上限で拒む
+- `VideoGenerator` の keyframe の cache は法則と `gradient_center` を鍵に含める 同じ生成器で別の法則や別の中心の絵を返すことがあった
+- native の識別子を記載した `periodic` と `unknown` の ALICE_IMG は拒む native は計算しない 新しい画像は `pattern_scale` が 1 未満、`gradient_angle` と `gradient_center` が 32 bit で有限でない値を拒む
+- `ImageGenerator::generate_channels` は width * height * channels の桁あふれで panic する release では短い出力を返していた
 - `ImagePattern::Noise` と `Fractal` は seed を見ず灰色の塗りを返していた `generators::generate_perlin_2d` で 2 色を混ぜる (`block_size` が格子の 1 辺で最小 2、`Noise` は 1 octave、`Fractal` は 5 octave) `tests/media_image_patterns.rs` が格子点の中間色、seed、分布、octave の偏差の閉じた式を確かめる
 - 放射グラデーションの中心が半画素ずれ、丸めが切り捨てで端の色に 1 段届かなかった 中心は `center` × 最後の添字、全 pattern の色は四捨五入 Python の `gradient_center` も同じ意味
 - Python: 実装の無い pattern を黙って埋めていた `ImageGenerator.generate` は `STRIPES` / `NOISE_GAUSSIAN` で、`AudioGenerator.generate` は `NOISE_PINK` / `SPEECH` / `MUSIC` / `UNKNOWN` で `ValueError`

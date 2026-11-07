@@ -259,6 +259,19 @@ class VideoParams:
 # Image Generator
 # ============================================================================
 
+# Largest image or frame a file may state (4 GiB, as ALICEZip.MAX_OUTPUT_SIZE)
+MAX_REGENERATED_SIZE = 4 * 1024 * 1024 * 1024
+
+
+def _check_regenerated_size(width, height, channels, limit: int) -> None:
+    """Refuse a stated size past ``limit``. A few bytes of JSON can state any size, and an allocation that fails
+    in the native extension ends the process, so this runs before either language allocates. A size that is not
+    a positive integer is left to the generators, which raise on it."""
+    sides = (width, height, channels)
+    if all(isinstance(n, int) and n > 0 for n in sides) and width * height * channels > limit:
+        raise MemoryError(f"an image of {width} x {height} x {channels} exceeds the limit of {limit} bytes")
+
+
 class ImageGenerator:
     """Generate images from procedural parameters"""
 
@@ -279,6 +292,12 @@ class ImageGenerator:
         """
         h, w, c = params.height, params.width, params.channels
         if params.pattern in self._NATIVE_PATTERNS:
+            if not params.pattern_scale >= 1:
+                raise ValueError(f"pattern_scale {params.pattern_scale!r} names no cell, the smallest is 1")
+            for value in (params.gradient_angle, *params.gradient_center):
+                if not abs(float(value)) <= float(np.finfo(np.float32).max):
+                    raise ValueError(f"{value!r} is not a finite 32-bit value")
+
             def levels(colour, pad):
                 return tuple(colour[:c]) + (pad,) * (c - len(colour[:c]))
             if params.pattern == ImagePattern.SOLID_COLOR:
@@ -288,7 +307,7 @@ class ImageGenerator:
             else:
                 start, end = levels(params.gradient_start, 0), levels(params.gradient_end, 255)
             return _accel.media_image(params.pattern.value, w, h, start, end, params.gradient_angle,
-                                      params.gradient_center, max(int(params.pattern_scale), 1),
+                                      params.gradient_center, int(params.pattern_scale),
                                       params.pattern_seed)
         if params.pattern in (ImagePattern.PERIODIC, ImagePattern.UNKNOWN):
             return self._generate_from_dct(params)
@@ -444,12 +463,15 @@ class ImageGenerator:
         else:
             return np.stack([gray] * params.channels, axis=-1)
 
-    def decompress(self, data: bytes, strict: bool = False) -> np.ndarray:
+    def decompress(self, data: bytes, strict: bool = False,
+                   max_output_size: int = MAX_REGENERATED_SIZE) -> np.ndarray:
         """Decompress ALICE format to image
 
-        A file recording the native identifier regenerates with the Rust crate. One recording
-        ``semantics.PYTHON_SEMANTICS_ID`` (or none, which ``strict`` refuses) reads what it recorded, by the
-        formulas it was written under. Any other identifier is refused.
+        A file recording the native identifier regenerates with the Rust crate, for the patterns it computes;
+        ``PERIODIC`` and ``UNKNOWN`` under that identifier are refused, the crate does not compute them. One
+        recording ``semantics.PYTHON_SEMANTICS_ID`` (or none, which ``strict`` refuses) reads what it recorded,
+        by the formulas it was written under. Any other identifier is refused. A file whose stated size passes
+        ``max_output_size`` raises ``MemoryError`` before anything is allocated.
         """
         parsed = json.loads(data.decode('utf-8'))
 
@@ -462,6 +484,7 @@ class ImageGenerator:
             _semantics.check(stored, _semantics.PYTHON_SEMANTICS_ID, "ALICE_IMG", strict)
 
         p = parsed['params']
+        _check_regenerated_size(p['width'], p['height'], p['channels'], max_output_size)
         params = ImageParams(
             pattern=ImagePattern(p['pattern']),
             width=p['width'],
@@ -479,7 +502,11 @@ class ImageGenerator:
             dct_coefficients_b64=p.get('dct_coefficients_b64')
         )
 
-        return self._generate_recorded(params) if recorded else self.generate(params)
+        if recorded:
+            return self._generate_recorded(params)
+        if params.pattern not in self._NATIVE_PATTERNS:
+            raise ValueError(f"the native identifier does not cover the image pattern {params.pattern.value!r}")
+        return self.generate(params)
 
 
 # ============================================================================
@@ -712,17 +739,16 @@ class VideoGenerator:
             raise ImportError("OpenCV required: pip install opencv-python")
         self.image_generator = ImageGenerator()
         # Frame cache: stores base images for keyframes to avoid regeneration
-        self._frame_cache: Dict[int, np.ndarray] = {}
+        self._frame_cache: Dict[tuple, np.ndarray] = {}
         self._last_keyframe_id: Optional[int] = None
 
-    def _get_keyframe_id(self, kf_params: Optional[ImageParams]) -> int:
-        """Generate a hash ID for keyframe parameters for caching"""
-        if kf_params is None:
-            return 0
+    def _get_keyframe_id(self, kf_params: ImageParams, recorded: bool) -> tuple:
+        """The cache key of a keyframe: everything its frame depends on, and which law regenerates it"""
         # Use a tuple of key parameters as cache key
         # Convert list to tuple recursively for hashability (JSON decoder returns lists, not tuples)
         dct_coeffs_tuple = tuple(tuple(c) for c in kf_params.dct_coefficients) if kf_params.dct_coefficients else None
-        return hash((
+        return (
+            recorded,
             kf_params.pattern,
             kf_params.width,
             kf_params.height,
@@ -731,11 +757,12 @@ class VideoGenerator:
             kf_params.gradient_start,
             kf_params.gradient_end,
             kf_params.gradient_angle,
+            tuple(kf_params.gradient_center),
             kf_params.pattern_scale,
             kf_params.pattern_seed,
             kf_params.dct_coefficients_b64,
             dct_coeffs_tuple
-        ))
+        )
 
     def _get_base_frame(self, kf_params: Optional[ImageParams],
                         width: int, height: int, recorded: bool = False) -> np.ndarray:
@@ -748,7 +775,7 @@ class VideoGenerator:
         if kf_params is None:
             return np.zeros((height, width, 3), dtype=np.uint8)
 
-        kf_id = self._get_keyframe_id(kf_params)
+        kf_id = self._get_keyframe_id(kf_params, recorded)
 
         # Check cache
         if kf_id in self._frame_cache:
@@ -815,7 +842,8 @@ class VideoGenerator:
         # Clear cache after video generation
         self._frame_cache.clear()
 
-    def decompress(self, data: bytes, output_path: Union[str, Path], strict: bool = False):
+    def decompress(self, data: bytes, output_path: Union[str, Path], strict: bool = False,
+                   max_output_size: int = MAX_REGENERATED_SIZE):
         """Decompress ALICE format to video
 
         The stored ``"semantics"`` is compared with the numpy arithmetic
@@ -829,6 +857,7 @@ class VideoGenerator:
 
         keyframes = []
         for t, kf_dict in parsed.get('keyframes', []):
+            _check_regenerated_size(kf_dict['width'], kf_dict['height'], kf_dict['channels'], max_output_size)
             img_params = ImageParams(
                 pattern=ImagePattern(kf_dict['pattern']),
                 width=kf_dict['width'],

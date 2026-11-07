@@ -9,9 +9,10 @@ import json
 import numpy as np
 import pytest
 
-from alice_zip import native_accelerator, semantics
+from alice_zip import media_generators, native_accelerator, semantics
+from alice_zip.core import ALICEZip
 from alice_zip.media_generators import (AudioGenerator, AudioParams, AudioPattern, ImageGenerator, ImageParams,
-                                        ImagePattern)
+                                        ImagePattern, VideoGenerator)
 
 NATIVE = native_accelerator.is_available()
 needs_native = pytest.mark.skipif(not NATIVE, reason="needs the native extension")
@@ -119,6 +120,95 @@ def test_a_radial_gradient_has_its_centre_where_the_params_say():
     corner = g.generate(params(ImagePattern.GRADIENT_RADIAL, width=9, height=9, gradient_center=(0.0, 0.0)))
     assert tuple(corner[0, 0]) == (12, 200, 77)
     assert tuple(corner[8, 8]) == (250, 3, 140)
+
+
+@needs_native
+@pytest.mark.parametrize("centre", [(0.75, 0.25), (0.25, 0.75)])
+def test_a_radial_gradient_off_centre_measures_from_its_farthest_corner(centre):
+    # oracle: (12, 200, 77) to (250, 3, 140) at distance / distance to the farthest corner, to one level
+    w, h = 17, 9
+    image = ImageGenerator().generate(params(ImagePattern.GRADIENT_RADIAL, width=w, height=h, gradient_center=centre))
+    cx, cy = centre[0] * (w - 1), centre[1] * (h - 1)
+    far = np.hypot(max(cx, w - 1 - cx), max(cy, h - 1 - cy))
+    yy, xx = np.mgrid[:h, :w]
+    t = (np.hypot(xx - cx, yy - cy) / far)[..., None]
+    want = np.array([12, 200, 77]) + (np.array([250, 3, 140]) - np.array([12, 200, 77])) * t
+    assert np.abs(image.astype(float) - want).max() <= 1.0
+
+
+@needs_native
+@pytest.mark.parametrize("stamp", [lambda: semantics.NATIVE_SEMANTICS_ID.hex(), lambda: None])
+def test_a_file_stating_a_huge_image_is_refused_before_allocating(stamp):
+    # the native case would end the process if it reached the allocation
+    file = json.dumps({"magic": "ALICE_IMG", "semantics": stamp(), "params": {
+        "pattern": "solid_color", "width": 2 ** 45, "height": 1, "channels": 3}}).encode()
+    with pytest.raises(MemoryError, match="exceeds the limit"):
+        ImageGenerator().decompress(file)
+
+
+def test_the_size_limit_is_the_limit_it_is_given():
+    file = lambda w: json.dumps({"magic": "ALICE_IMG", "semantics": None, "params": {
+        "pattern": "solid_color", "width": w, "height": 1, "channels": 1, "color": [9]}}).encode()
+    with pytest.warns(Warning):
+        assert ImageGenerator().decompress(file(8), max_output_size=8).shape == (1, 8, 1)
+    with pytest.raises(MemoryError):
+        ImageGenerator().decompress(file(9), max_output_size=8)
+
+
+def test_the_zipper_passes_its_limit_to_the_media_readers():
+    zipper = ALICEZip()
+    zipper.MAX_OUTPUT_SIZE = 8
+    file = json.dumps({"magic": "ALICE_IMG", "params": {
+        "pattern": "solid_color", "width": 9, "height": 1, "channels": 1}}).encode()
+    with pytest.raises(MemoryError):
+        zipper._decompress_media_json(file, None)
+
+
+def test_a_video_stating_a_huge_keyframe_is_refused(monkeypatch):
+    monkeypatch.setattr(media_generators, "HAS_CV2", True)  # no frame is written
+    file = json.dumps({"magic": "ALICE_VID", "pattern": "keyframes", "width": 1, "height": 1, "fps": 1, "duration": 1,
+                       "keyframes": [[0, {"pattern": "solid_color", "width": 2 ** 45, "height": 1, "channels": 3}]]})
+    with pytest.raises(MemoryError):
+        VideoGenerator().decompress(file.encode(), "unused.mp4")
+
+
+@needs_native
+def test_the_native_call_refuses_a_huge_image_itself():
+    with pytest.raises(ValueError, match="exceeds"):
+        native_accelerator.media_image("solid_color", 2 ** 45, 1, (0,), (0,), 0.0, (0.5, 0.5), 8, 42)
+
+
+@needs_native
+@pytest.mark.parametrize("pattern", [ImagePattern.PERIODIC, ImagePattern.UNKNOWN])
+def test_the_native_identifier_does_not_cover_what_numpy_computes(pattern):
+    file = json.dumps({"magic": "ALICE_IMG", "semantics": semantics.NATIVE_SEMANTICS_ID.hex(), "params": {
+        "pattern": pattern.value, "width": 4, "height": 4, "channels": 3}}).encode()
+    with pytest.raises(ValueError, match="does not cover"):
+        ImageGenerator().decompress(file)
+
+
+@needs_native
+@pytest.mark.parametrize("change", [{"pattern_scale": 0}, {"pattern_scale": -3}, {"pattern_scale": float("nan")},
+                                    {"gradient_angle": float("inf")}, {"gradient_angle": 1e300},
+                                    {"gradient_center": (float("nan"), 0.5)}])
+def test_values_that_name_no_law_are_refused(change):
+    with pytest.raises(ValueError):
+        ImageGenerator().generate(params(ImagePattern.CHECKERBOARD, **change))
+
+
+@needs_native
+def test_a_keyframe_is_cached_under_its_law_and_its_centre(monkeypatch):
+    monkeypatch.setattr(media_generators, "HAS_CV2", True)  # no frame is written
+    g = VideoGenerator()
+    key = params(ImagePattern.GRADIENT_RADIAL, width=9, height=9, gradient_center=(0.25, 0.25))
+    # oracle: each read equals the frame a generator with an empty cache makes
+    for first, second in ((True, False), (False, True)):
+        g._frame_cache.clear()
+        g._get_base_frame(key, 9, 9, recorded=first)
+        frame = g._get_base_frame(key, 9, 9, recorded=second)
+        assert np.array_equal(frame, VideoGenerator()._get_base_frame(key, 9, 9, recorded=second))
+    other = params(ImagePattern.GRADIENT_RADIAL, width=9, height=9, gradient_center=(0.75, 0.75))
+    assert not np.array_equal(g._get_base_frame(key, 9, 9), g._get_base_frame(other, 9, 9))
 
 
 @needs_no_native

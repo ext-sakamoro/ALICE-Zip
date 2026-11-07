@@ -126,14 +126,17 @@ mod python {
                 "start and end must name the same channels, at least one",
             ));
         }
-        if width
+        // an allocation that fails here ends the process, so the size is refused first
+        const MAX_IMAGE_BYTES: usize = 4 * 1024 * 1024 * 1024;
+        if !width
             .checked_mul(height)
             .and_then(|n| n.checked_mul(start.len()))
-            .is_none()
+            .is_some_and(|n| n <= MAX_IMAGE_BYTES)
         {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "the image size overflows",
-            ));
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "an image of {width} x {height} x {} exceeds {MAX_IMAGE_BYTES} bytes",
+                start.len()
+            )));
         }
         let params = ImageParams {
             pattern,

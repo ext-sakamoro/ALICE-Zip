@@ -101,7 +101,7 @@ impl ImageGenerator {
     ///
     /// # Panics
     ///
-    /// When `start` is empty or `end` has another length
+    /// When `start` is empty, `end` has another length, or width * height * channels overflows
     #[must_use]
     pub fn generate_channels(&self, params: &ImageParams, start: &[u8], end: &[u8]) -> Vec<u8> {
         assert!(
@@ -109,6 +109,12 @@ impl ImageGenerator {
             "start and end name the same channels"
         );
         let (w, h) = (params.width, params.height);
+        assert!(
+            w.checked_mul(h)
+                .and_then(|n| n.checked_mul(start.len()))
+                .is_some(),
+            "the image size overflows"
+        );
         match params.pattern {
             ImagePattern::Solid => Self::mix(w * h, start, end, |_| 0.0),
             ImagePattern::LinearGradient => {

@@ -490,10 +490,11 @@ class ALICEZip:
         meta_len = struct.pack('<I', len(meta_json))
         return meta_len + meta_json + result.compressed_data
 
-    # Largest original_size the LZMA fallback reader decodes (4 GiB). The
-    # header states original_size and a few bytes of xz can expand to
-    # gigabytes, so the reader decodes at most this much; lower it on an
-    # instance (`zipper.MAX_OUTPUT_SIZE = n`) to bound memory further.
+    # Largest original_size the LZMA fallback reader decodes (4 GiB), and the
+    # largest image or video frame a media file may state. The header states
+    # the size and a few bytes can expand to gigabytes, so the readers decode
+    # at most this much; lower it on an instance (`zipper.MAX_OUTPUT_SIZE = n`)
+    # to bound memory further.
     MAX_OUTPUT_SIZE = 4 * 1024 * 1024 * 1024
     # Files whose values are regenerated (procedural payloads, ALICE_IMG / AUD /
     # VID) record the arithmetic that regenerates them as "semantics"; a file
@@ -687,7 +688,7 @@ class ALICEZip:
 
         # Dispatch based on magic string
         if magic == ALICE_IMAGE_MAGIC.decode():
-            return self.media.image.decompress(data, self.STRICT_SEMANTICS)
+            return self.media.image.decompress(data, self.STRICT_SEMANTICS, self.MAX_OUTPUT_SIZE)
 
         elif magic == ALICE_AUDIO_MAGIC.decode():
             return self.media.audio.decompress(data, self.STRICT_SEMANTICS)
@@ -695,7 +696,7 @@ class ALICEZip:
         elif magic == ALICE_VIDEO_MAGIC.decode():
             if output_path is None:
                 raise ValueError("output_path required for video decompression")
-            return self.media.video.decompress(data, output_path, self.STRICT_SEMANTICS)
+            return self.media.video.decompress(data, output_path, self.STRICT_SEMANTICS, self.MAX_OUTPUT_SIZE)
 
         elif magic == 'ALICE_TEX':
             return self._decompress_texture(parsed)
