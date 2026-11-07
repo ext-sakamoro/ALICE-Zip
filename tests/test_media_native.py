@@ -5,12 +5,13 @@ image code, on the same files.
 """
 import hashlib
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from alice_zip import media_generators, native_accelerator, semantics
-from alice_zip.core import ALICEZip
+from alice_zip.core import ALICEZip, AlicePayloadType
 from alice_zip.media_generators import (AudioGenerator, AudioParams, AudioPattern, ImageGenerator, ImageParams,
                                         ImagePattern, VideoGenerator)
 
@@ -162,6 +163,18 @@ def test_the_zipper_passes_its_limit_to_the_media_readers():
         "pattern": "solid_color", "width": 9, "height": 1, "channels": 1}}).encode()
     with pytest.raises(MemoryError):
         zipper._decompress_media_json(file, None)
+
+
+@pytest.mark.parametrize("payload_type,magic,extra", [
+    (AlicePayloadType.MEDIA_IMAGE, "ALICE_IMG", {"params": {"pattern": "solid_color", "width": 9, "height": 1, "channels": 1}}),
+    (AlicePayloadType.MEDIA_VIDEO, "ALICE_VID", {"keyframes": [[0, {"pattern": "solid_color", "width": 9, "height": 1, "channels": 1}]]})])
+def test_the_zipper_passes_its_limit_when_the_header_names_the_payload(monkeypatch, payload_type, magic, extra):
+    monkeypatch.setattr(media_generators, "HAS_CV2", True)  # no frame is written
+    zipper = ALICEZip()
+    zipper.MAX_OUTPUT_SIZE = 8
+    with pytest.raises(MemoryError):
+        zipper._decode_payload(SimpleNamespace(payload_type=payload_type),
+                               json.dumps({"magic": magic, **extra}).encode(), "unused.mp4")
 
 
 def test_a_video_stating_a_huge_keyframe_is_refused(monkeypatch):

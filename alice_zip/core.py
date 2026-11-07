@@ -803,7 +803,7 @@ class ALICEZip:
         """
         # Dispatch based on payload_type (v2) or content detection (v1)
         if header.payload_type == AlicePayloadType.MEDIA_IMAGE:
-            return self.media.image.decompress(payload_data, self.STRICT_SEMANTICS)
+            return self.media.image.decompress(payload_data, self.STRICT_SEMANTICS, self.MAX_OUTPUT_SIZE)
 
         elif header.payload_type == AlicePayloadType.MEDIA_AUDIO:
             return self.media.audio.decompress(payload_data, self.STRICT_SEMANTICS)
@@ -811,7 +811,7 @@ class ALICEZip:
         elif header.payload_type == AlicePayloadType.MEDIA_VIDEO:
             if output_path is None:
                 raise ValueError("output_path required for video decompression")
-            return self.media.video.decompress(payload_data, output_path, self.STRICT_SEMANTICS)
+            return self.media.video.decompress(payload_data, output_path, self.STRICT_SEMANTICS, self.MAX_OUTPUT_SIZE)
 
         elif header.payload_type == AlicePayloadType.TEXTURE:
             try:
