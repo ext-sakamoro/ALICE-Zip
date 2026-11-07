@@ -8,6 +8,8 @@ These tests check the decompression/generation capabilities.
 """
 
 import pytest
+
+from alice_zip import native_accelerator
 import numpy as np
 import json
 import sys
@@ -39,6 +41,10 @@ try:
     HAS_MEDIA = True
 except ImportError:
     HAS_MEDIA = False
+
+
+needs_native = pytest.mark.skipif(
+    not native_accelerator.is_available(), reason="the image law runs in the native extension")
 
 
 @pytest.mark.skipif(not HAS_MEDIA, reason="Media generators not available")
@@ -142,6 +148,7 @@ class TestImageGenerator:
     def setup_method(self):
         self.generator = ImageGenerator()
 
+    @needs_native
     def test_generate_solid_color(self):
         """Test solid color image generation"""
         params = ImageParams(
@@ -161,6 +168,7 @@ class TestImageGenerator:
         assert np.all(result[:, :, 1] == 128)
         assert np.all(result[:, :, 2] == 0)
 
+    @needs_native
     def test_generate_linear_gradient_horizontal(self):
         """Test horizontal linear gradient generation"""
         params = ImageParams(
@@ -179,6 +187,7 @@ class TestImageGenerator:
         # Left edge should be dark, right edge should be light
         assert np.mean(result[:, 0, :]) < np.mean(result[:, -1, :])
 
+    @needs_native
     def test_generate_linear_gradient_vertical(self):
         """Test vertical linear gradient generation"""
         params = ImageParams(
@@ -197,6 +206,7 @@ class TestImageGenerator:
         # Top edge should be dark, bottom edge should be light
         assert np.mean(result[0, :, :]) < np.mean(result[-1, :, :])
 
+    @needs_native
     def test_generate_radial_gradient(self):
         """Test radial gradient generation"""
         params = ImageParams(
@@ -217,6 +227,7 @@ class TestImageGenerator:
         corner_val = np.mean(result[0, 0, :])
         assert center_val > corner_val
 
+    @needs_native
     def test_generate_checkerboard(self):
         """Test checkerboard pattern generation"""
         params = ImageParams(

@@ -51,7 +51,6 @@ dependencies = [
  "pyo3",
  "rand",
  "rand_chacha",
- "sha2",
 ]
 
 [[package]]

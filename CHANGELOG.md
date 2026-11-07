@@ -11,11 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- libalice の `ImagePattern::Noise` と `Fractal` は seed を見ず灰色の塗りを返していた `alice_zip::generators::generate_perlin_2d` で 2 色を混ぜる (`block_size` が格子の 1 辺、`Noise` は 1 octave、`Fractal` は 5 octave) `tests/media_image_patterns.rs` が格子点の中間色、seed、分布、octave の偏差の閉じた式を確かめる
+- `ImagePattern::Noise` と `Fractal` は seed を見ず灰色の塗りを返していた `generators::generate_perlin_2d` で 2 色を混ぜる (`block_size` が格子の 1 辺で最小 2、`Noise` は 1 octave、`Fractal` は 5 octave) `tests/media_image_patterns.rs` が格子点の中間色、seed、分布、octave の偏差の閉じた式を確かめる
+- 放射グラデーションの中心が半画素ずれ、丸めが切り捨てで端の色に 1 段届かなかった 中心は `center` × 最後の添字、全 pattern の色は四捨五入 Python の `gradient_center` も同じ意味
+- Python: 実装の無い pattern を黙って埋めていた `ImageGenerator.generate` は `STRIPES` / `NOISE_GAUSSIAN` で、`AudioGenerator.generate` は `NOISE_PINK` / `SPEECH` / `MUSIC` / `UNKNOWN` で `ValueError`
 
-### Added
+### Changed
 
-- `libalice/tests/media_goldens.rs`: 音声 (sine、multi-sine、white noise) と画像 (linear、radial、checkerboard、noise、fractal) の出力の bit を SHA-256 で固定する 位相は 2^13 を超える 出力は識別子を刻まないので `SEMANTICS_ID` に入れない
+- **Breaking:** media の法則を libalice から core に移した (`alice_zip::media`、libalice は再公開し、WAV の書き出し `media::generate_to_wav` だけ libalice に置く) 9 本の golden (`tests/determinism_golden.rs`) を `SEMANTICS_ID` に畳む `ImageParams` に `center`、`ImageGenerator::generate_channels` を足す
+- **Breaking:** Python の新しい画像は拡張 (`libalice.media_image`) の Rust 実装だけで作る 拡張が無ければ `RuntimeError` (DCT の `PERIODIC` / `UNKNOWN` を除く) `PYTHON_SEMANTICS_ID` か識別子無しの media file は書かれた時の numpy の式で読む (灰色の noise も含む、`tests/test_media_native.py`)
 
 ### CI
 
@@ -25,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 破壊的変更
 
-- **Breaking:** `law::SEMANTICS_ID` は `alice-det-math` 全体の識別子でなく、この crate が呼ぶ 13 関数の識別子 (`semantics::DET_MATH_FUNCTIONS` / `DET_MATH_PINS`) を fold する (値は `0ea7b226…`、golden は全部不変、前の値 `06c11067…` は `PREVIOUS_SEMANTICS_IDS` に) 呼ばない関数が動いても識別子は動かず、呼ぶ関数が動けば compile が止まる `ZIP_SEMANTICS_BY_DET_MATH` と `semantics_id_for` を削除、`ZIP_SEMANTICS_ID` を追加 `alice-det-math` は `branch = "main"`, `version = "0.6"` で引き、commit は `Cargo.lock` が決める
+- **Breaking:** `law::SEMANTICS_ID` は `alice-det-math` 全体の識別子でなく、この crate が呼ぶ 14 関数の識別子 (`semantics::DET_MATH_FUNCTIONS` / `DET_MATH_PINS`) を fold する (値は `65f48962…`、既存の golden は不変、media の golden 9 本を足す、前の値 `06c11067…` は `PREVIOUS_SEMANTICS_IDS` に) 呼ばない関数が動いても識別子は動かず、呼ぶ関数が動けば compile が止まる `ZIP_SEMANTICS_BY_DET_MATH` と `semantics_id_for` を削除、`ZIP_SEMANTICS_ID` を追加 `alice-det-math` は `branch = "main"`, `version = "0.6"` で引き、commit は `Cargo.lock` が決める
 - **Breaking:** `alice-det-math` を 0.6.1 (rev 98fd8846、`tanh64` / `hypot64` が加わる、既存の関数の bit は不変、det-math の `SEMANTICS_ID` は `a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9` から `6fc214e924c53557f33775df51f1f8dfe2f246d67a9e493d6fb5837d999022f2`) に上げ、`semantics::ZIP_SEMANTICS_BY_DET_MATH` に行を足した `law::SEMANTICS_ID` は det-math の識別子全体を fold するので `17d0df1d` から `06c11067` に動く (`17d0df1d` は `PREVIOUS_SEMANTICS_IDS` に残り VerifiedPrevious として読める、この crate は新しい 2 関数を呼ばず、`tests/determinism_golden.rs` は旧い law_id の digest を旧い識別子で再現する) Cargo.lock は 6 件とも alice-det-math の行だけ
 - **Breaking:** `alice-det-math` の pin を 39507d1b から 2d01c63f (`sin` / `cos` の `|x| ≥ 2¹³`、`powf` の負の底、`powf64` (fdlibm `e_pow`)、`hypot` の両方 subnormal の bit が変わり、`erf` / `erf64` が加わる、det-math の `SEMANTICS_ID` は `a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf` から `a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9`) に上げ、`semantics::ZIP_SEMANTICS_BY_DET_MATH` にその行を足した `law::SEMANTICS_ID` は `50a40cf64625018acc99c940e544353b901457b4a7a80bf903544ed4ef9af406` から `17d0df1d7c0a6e63d1a7380129f12386b677ac96e7ac193dece546805f4fe84c` に動く alice-zip の library が呼ぶ関数 (`sin64` / `cos64` / `sin_cos64`、`atan2`、`log2_64` / `ln64`、`max` / `min`) の bits は変わらないので、旧い識別子は `PREVIOUS_SEMANTICS_IDS` に入り `VerifiedPrevious` で読める (旧い識別子で law_id と評価を取り直すと記録した digest 6285eb48 に一致する試験を足した) law_id はこの識別子から作るので、同じ law の law_id は変わる `tests/data/residual/rust_semantics.bin` を作り直した (識別子の 64 文字だけが変わる) libalice の音声と画像の生成は `sin` と `hypot` を呼ぶので、`|x| ≥ 2¹³` の位相と subnormal の距離で出力の bit が変わる
 - **Breaking:** `alice-det-math` の pin を 6384856c から 39507d1b (clamp / clamp64 が ALICE-Law G2 の順に従う、det-math の `SEMANTICS_ID` は `85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315` から `a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf`) に上げ、`semantics::ZIP_SEMANTICS_BY_DET_MATH` にその行を足した `law::SEMANTICS_ID` は `51ffeb079769ea34bd3cb3df756b6cb940b8d2d6a6a0f1e1115ab8139415935e` から `50a40cf64625018acc99c940e544353b901457b4a7a80bf903544ed4ef9af406` に動く alice-zip が呼ぶ関数の bits は変わらないので、旧い識別子は `PREVIOUS_SEMANTICS_IDS` に入り `VerifiedPrevious` で読める (旧い識別子で law_id と評価を取り直すと記録した digest に一致する試験を足した) law_id はこの識別子から作るので、同じ law の law_id は変わる `tests/data/residual/rust_semantics.bin` を作り直した (識別子の 64 文字だけが変わる)

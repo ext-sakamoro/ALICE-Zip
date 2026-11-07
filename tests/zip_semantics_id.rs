@@ -95,7 +95,7 @@ fn every_entry_matches_its_source() {
         .iter()
         .filter(|(n, _)| n.starts_with("golden "))
         .count();
-    assert_eq!(goldens, 5);
+    assert_eq!(goldens, 14);
     for (tag, _) in tags {
         assert!(
             ZIP_SEMANTICS_PINS.iter().any(|(n, _)| *n == tag),
@@ -103,7 +103,7 @@ fn every_entry_matches_its_source() {
         );
     }
     assert_eq!(checked, ZIP_SEMANTICS_PINS.len());
-    assert!(checked >= 10);
+    assert!(checked >= 19);
 }
 
 #[test]

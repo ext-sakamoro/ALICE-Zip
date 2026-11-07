@@ -76,6 +76,9 @@ mod python {
 
         // Identifier of the arithmetic the generators above use
         m.add_function(wrap_pyfunction!(semantics_id, m)?)?;
+
+        // The image law of the core crate
+        m.add_function(wrap_pyfunction!(media_image, m)?)?;
         Ok(())
     }
 
@@ -86,6 +89,63 @@ mod python {
     #[pyfunction]
     fn semantics_id() -> Vec<u8> {
         alice_zip::law::SEMANTICS_ID.to_vec()
+    }
+
+    /// `alice_zip::media::ImageGenerator` for the pattern named by the Python package: `start` and `end` hold one
+    /// level per channel. Under [`semantics_id`]: its bits are folded there.
+    #[pyfunction]
+    #[pyo3(signature = (pattern, width, height, start, end, angle_degrees=0.0, center=(0.5, 0.5), block_size=8, seed=42))]
+    #[allow(clippy::too_many_arguments)]
+    fn media_image(
+        pattern: &str,
+        width: usize,
+        height: usize,
+        start: Vec<u8>,
+        end: Vec<u8>,
+        angle_degrees: f32,
+        center: (f32, f32),
+        block_size: usize,
+        seed: u64,
+    ) -> PyResult<Vec<u8>> {
+        use alice_zip::media::{ImageGenerator, ImageParams, ImagePattern};
+        let pattern = match pattern {
+            "solid_color" => ImagePattern::Solid,
+            "gradient_linear" => ImagePattern::LinearGradient,
+            "gradient_radial" => ImagePattern::RadialGradient,
+            "checkerboard" => ImagePattern::Checkerboard,
+            "noise_perlin" => ImagePattern::Noise,
+            "fractal" => ImagePattern::Fractal,
+            other => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "no image law named {other:?}"
+                )))
+            }
+        };
+        if start.is_empty() || start.len() != end.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "start and end must name the same channels, at least one",
+            ));
+        }
+        if width
+            .checked_mul(height)
+            .and_then(|n| n.checked_mul(start.len()))
+            .is_none()
+        {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "the image size overflows",
+            ));
+        }
+        let params = ImageParams {
+            pattern,
+            width,
+            height,
+            block_size,
+            angle_degrees,
+            seed,
+            center: [center.0, center.1],
+            ..ImageParams::default()
+        };
+        Ok(ImageGenerator::new().generate_channels(&params, &start, &end))
     }
 
     // ============================================================================

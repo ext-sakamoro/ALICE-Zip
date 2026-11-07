@@ -27,8 +27,10 @@ Python fallback (numpy):
   changes, not with the package version.
 
 :func:`procedural_semantics_id` is the one the procedural generators use in
-this process; the media generators (``media_generators``) always run on numpy
-and use :data:`PYTHON_SEMANTICS_ID`.
+this process. New images of ``media_generators`` come from the Rust crate
+(:data:`NATIVE_SEMANTICS_ID` names them: its goldens are folded there). A media
+file recording :data:`PYTHON_SEMANTICS_ID` or none reads what it recorded, by
+the numpy formulas kept for that purpose and by nothing else.
 """
 import hashlib
 import struct

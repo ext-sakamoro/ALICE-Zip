@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # (built before 3.0.0) is not used, since the files written with it could not
 # record which arithmetic regenerated their values
 _NATIVE_REQUIRED = ("sine_wave", "fourier_generate", "polynomial_generate", "perlin_2d",
-                    "perlin_advanced", "semantics_id")
+                    "perlin_advanced", "semantics_id", "media_image")
 _HAS_LIBALICE = False
 _native = None
 try:
@@ -138,6 +138,24 @@ def perlin_advanced(
         return _python_perlin_advanced(
             width, height, seed, scale, octaves, persistence, lacunarity
         )
+
+
+def media_image(pattern: str, width: int, height: int, start: Tuple[int, ...], end: Tuple[int, ...],
+                angle_degrees: float, center: Tuple[float, float], block_size: int, seed: int) -> np.ndarray:
+    """The image law of the Rust crate as a ``height x width x channels`` uint8 array.
+
+    It has no pure Python version: one law in two languages is how they drifted apart.
+
+    Raises:
+        RuntimeError: the native extension is not installed
+    """
+    if not _HAS_LIBALICE:
+        raise RuntimeError(
+            f"image pattern {pattern!r} is computed by the native extension (libalice), which is not "
+            f"installed: install it to generate this pattern")
+    data = _native.media_image(pattern, width, height, bytes(start), bytes(end), angle_degrees,
+                                 tuple(center), block_size, seed)
+    return np.frombuffer(bytes(data), dtype=np.uint8).reshape(height, width, len(start))
 
 
 def fourier_generate(

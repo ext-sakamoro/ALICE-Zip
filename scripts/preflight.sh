@@ -628,10 +628,10 @@ else
 fi
 
 step "ci.yml / libalice: Test (default)"
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh lib,alz_cli,durable_writers,legacy_header_fail_closed,residual_acceptance,residual_delta,residual_exceptions,residual_header_gating,residual_reconstruct,residual_semantics,residual_version,media_goldens,media_image_patterns -- cargo test --manifest-path libalice/Cargo.toml )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh lib,alz_cli,durable_writers,legacy_header_fail_closed,residual_acceptance,residual_delta,residual_exceptions,residual_header_gating,residual_reconstruct,residual_semantics,residual_version -- cargo test --manifest-path libalice/Cargo.toml )
 
 step "ci.yml / libalice: Test (codec bridge)"
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh lib,alz_cli,durable_writers,legacy_header_fail_closed,residual_acceptance,residual_delta,residual_exceptions,residual_header_gating,residual_reconstruct,residual_semantics,residual_version,media_goldens,media_image_patterns -- cargo test --manifest-path libalice/Cargo.toml --features codec )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh lib,alz_cli,durable_writers,legacy_header_fail_closed,residual_acceptance,residual_delta,residual_exceptions,residual_header_gating,residual_reconstruct,residual_semantics,residual_version -- cargo test --manifest-path libalice/Cargo.toml --features codec )
 
 step "security-audit.yml / audit: cargo audit (core)"
 ( export CARGO_TERM_COLOR="always" CARGO_NET_RETRY="5" CARGO_HTTP_MULTIPLEXING="false"; cargo audit --deny yanked )

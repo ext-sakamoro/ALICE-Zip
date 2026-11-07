@@ -1,7 +1,7 @@
 //! What each image pattern draws, against what it must be by construction: Perlin noise is 0 on its lattice, a
 //! gradient reaches its two colours, a checkerboard alternates, and a seed changes a noise image.
 
-use alice_core::media::{ImageGenerator, ImageParams, ImagePattern};
+use alice_zip::media::{ImageGenerator, ImageParams, ImagePattern};
 
 const A: [u8; 3] = [10, 200, 40];
 const B: [u8; 3] = [250, 0, 90];
@@ -15,6 +15,7 @@ fn image(pattern: ImagePattern, w: usize, h: usize, block: usize, seed: u64) -> 
         block_size: block,
         angle_degrees: 0.0,
         seed,
+        ..ImageParams::default()
     })
 }
 
@@ -161,17 +162,6 @@ fn fractal_has_finer_detail_than_noise_at_the_same_scale() {
 }
 
 #[test]
-fn a_block_size_of_zero_is_the_smallest_lattice() {
-    for pattern in [ImagePattern::Noise, ImagePattern::Fractal] {
-        assert_eq!(
-            image(pattern, 8, 8, 0, 1),
-            image(pattern, 8, 8, 1, 1),
-            "{pattern:?}"
-        );
-    }
-}
-
-#[test]
 fn the_size_is_three_bytes_a_pixel_and_empty_when_there_are_no_pixels() {
     for pattern in [ImagePattern::Noise, ImagePattern::Fractal] {
         assert_eq!(image(pattern, 5, 3, 2, 1).len(), 45);
@@ -191,15 +181,93 @@ fn a_linear_gradient_reaches_both_colours_at_its_ends() {
 }
 
 #[test]
-fn a_radial_gradient_is_the_first_colour_at_its_centre_and_the_second_at_the_far_corner() {
-    // the centre is (w / 2, h / 2) in pixel indices, so the far corner is (0, 0)
-    let (w, h) = (32, 32);
+fn a_radial_gradient_is_the_first_colour_at_the_centre_and_the_second_at_every_corner() {
+    let (w, h) = (33, 33);
     let px = image(ImagePattern::RadialGradient, w, h, 8, 0);
     assert_eq!(pixel(&px, w, 16, 16), A);
-    // t reaches 1 only up to rounding, and the cast to a byte truncates: within one level
-    let corner = pixel(&px, w, 0, 0);
-    for c in 0..3 {
-        assert!(corner[c].abs_diff(B[c]) <= 1, "{corner:?}");
+    for (x, y) in [(0, 0), (32, 0), (0, 32), (32, 32)] {
+        assert_eq!(pixel(&px, w, x, y), B, "({x}, {y})");
+    }
+}
+
+#[test]
+fn a_radial_gradient_is_mirror_symmetric() {
+    let (w, h) = (32, 20);
+    let px = image(ImagePattern::RadialGradient, w, h, 8, 0);
+    for y in 0..h {
+        for x in 0..w {
+            assert_eq!(
+                pixel(&px, w, x, y),
+                pixel(&px, w, w - 1 - x, y),
+                "({x}, {y})"
+            );
+            assert_eq!(
+                pixel(&px, w, x, y),
+                pixel(&px, w, x, h - 1 - y),
+                "({x}, {y})"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_radial_gradient_takes_its_centre() {
+    let params = ImageParams {
+        pattern: ImagePattern::RadialGradient,
+        width: 9,
+        height: 9,
+        colors: vec![A, B],
+        center: [0.0, 0.0],
+        ..ImageParams::default()
+    };
+    let px = ImageGenerator::new().generate(&params);
+    assert_eq!(pixel(&px, 9, 0, 0), A);
+    assert_eq!(pixel(&px, 9, 8, 8), B);
+}
+
+#[test]
+fn channels_follow_the_two_colours() {
+    let params = ImageParams {
+        pattern: ImagePattern::Noise,
+        width: 16,
+        height: 16,
+        ..ImageParams::default()
+    };
+    let gen = ImageGenerator::new();
+    let one = gen.generate_channels(&params, &[0], &[255]);
+    let four = gen.generate_channels(&params, &[0, 0, 0, 0], &[255, 255, 255, 255]);
+    assert_eq!(one.len(), 256);
+    assert_eq!(four.len(), 1024);
+    for (i, v) in one.iter().enumerate() {
+        assert_eq!(&four[i * 4..i * 4 + 4], &[*v; 4]);
+    }
+}
+
+#[test]
+fn a_level_is_rounded_to_the_nearest() {
+    // the middle of 0 and 255 is 127.5, on a lattice point of the noise
+    let params = ImageParams {
+        pattern: ImagePattern::Noise,
+        width: 9,
+        height: 1,
+        block_size: 8,
+        ..ImageParams::default()
+    };
+    let px = ImageGenerator::new().generate_channels(&params, &[0], &[255]);
+    assert_eq!(px[0], 128);
+    assert_eq!(px[8], 128);
+}
+
+#[test]
+fn a_noise_cell_of_one_is_not_a_flat_image() {
+    // on a cell of 1 every pixel is a lattice point, where Perlin noise is 0: the smallest cell is 2
+    for pattern in [ImagePattern::Noise, ImagePattern::Fractal] {
+        let px = image(pattern, 16, 16, 1, 1);
+        assert_eq!(px, image(pattern, 16, 16, 2, 1), "{pattern:?}");
+        assert!(
+            px.chunks_exact(3).any(|p| p != &px[..3]),
+            "{pattern:?} is flat"
+        );
     }
 }
 

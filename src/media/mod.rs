@@ -1,7 +1,6 @@
 //! Media Generators for ALICE-Zip
 //!
-//! Rust port of the Python `media_generators.py` module.
-//! Provides procedural image and audio generation.
+//! Procedural image and audio generation.
 //!
 //! License: LicenseRef-Proprietary
 //! Author: Moroya Sakamoto

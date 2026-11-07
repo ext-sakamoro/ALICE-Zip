@@ -3,7 +3,7 @@
 //! `alice-det-math`'s identifiers name the functions it computes; this crate's identifier
 //! names what alice-zip itself computes with them. It is the fold of [`ZIP_SEMANTICS_PINS`]:
 //! the recorded bit-pattern goldens of `tests/determinism_golden.rs` (the generators, the
-//! spectrum analysis, the entropy and the polynomial generation), the SHA-256 of each
+//! spectrum analysis, the entropy, the polynomial generation and the media generators), the SHA-256 of each
 //! identifier tag a law identifier is built from (`LAW_ID_DOMAIN` and every law kind), and
 //! [`DET_MATH_PINS`], the identifier of each `alice-det-math` function this crate calls
 //! ([`DET_MATH_FUNCTIONS`]). Two builds with the same identifier compute every pinned output to
@@ -18,7 +18,7 @@
 //! # Hex form
 //!
 //! ```text
-//! 0ea7b226c52aa4a71b51d41697bf26cf26440280949a2095161fd775f16ca7df
+//! 65f48962c757ebb619d252f8784f830aca5f3698fbd22f34150f9887863f38dd
 //! ```
 //!
 //! # Fold
@@ -82,6 +82,42 @@ pub const ZIP_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
         hex32("45d33355d39cf0632cf5a5faa5cc92dcbf8ff7d65b9192dbb5e0b7a4c8b60727"),
     ),
     (
+        "golden media_sine_past_two_to_the_13_is_the_recorded_bits",
+        hex32("642df5acc91bcc9d765ff4e94aac7b9c288b48a82e5f3800b43402872328cdbd"),
+    ),
+    (
+        "golden media_multi_sine_with_a_large_phase_is_the_recorded_bits",
+        hex32("920f1fff92165631f01805f361c6dd974f7bd7cf78fe5411f9d4897f85f19221"),
+    ),
+    (
+        "golden media_white_noise_is_the_recorded_bits",
+        hex32("f925866c6848d774181d25a9477e56b45ba0a9341fdbfbd6596b2889442514d0"),
+    ),
+    (
+        "golden media_solid_is_the_recorded_bits",
+        hex32("02d09e8f1e2d6b85773ba59bea51560cbc4c3b777fd9e6b6d3bc795c706e36e3"),
+    ),
+    (
+        "golden media_linear_gradient_is_the_recorded_bits",
+        hex32("dadaff2d5c7c9297a4595b6b6b75b1339bbe83a09a47bbf67a2f7fcf8b55a9d6"),
+    ),
+    (
+        "golden media_radial_gradient_is_the_recorded_bits",
+        hex32("11deef1aac1d9fe02cd0a596663f6405a13364995942a2a42fe0dd0f9b49835b"),
+    ),
+    (
+        "golden media_checkerboard_is_the_recorded_bits",
+        hex32("e108e09f3359d840657dbaa2d6430f6fff40b4949b19b6822912ee1606230708"),
+    ),
+    (
+        "golden media_noise_is_the_recorded_bits",
+        hex32("0bf28d293779c7d4c001d6501e7900179ab59693ff65c48d28b442ee496193d5"),
+    ),
+    (
+        "golden media_fractal_is_the_recorded_bits",
+        hex32("c2f085f73f2cbf2ca50afa54e002f0982c9015004a091ca275474f61fdb56405"),
+    ),
+    (
         "tag law::LAW_ID_DOMAIN",
         hex32("ef5947ee24f227228e3e72932c0bae747bc260df5a96429c8be92782ae2ac546"),
     ),
@@ -116,6 +152,7 @@ pub const DET_MATH_FUNCTIONS: &[&str] = &[
     "max64",
     "min",
     "min64",
+    "round",
     "sin",
     "sin64",
     "sin_cos64",
@@ -167,6 +204,10 @@ pub const DET_MATH_PINS: &[(&str, [u8; 32])] = &[
         hex32("1bef418073152f5e1e76f41718aa29b2517de8966a8c8ea8c1c2b5ba92fab3cb"),
     ),
     (
+        "round",
+        hex32("664695a5ceabc94e9fd1f6fb956055e1e3c1e2eab35c6af53ab97881e495bb0a"),
+    ),
+    (
         "sin",
         hex32("ee1b80d12df18ec0de5bce5a6bf05432484dabfc1cee1bb9b3f3291dd862cfec"),
     ),
@@ -185,7 +226,7 @@ const _: () = alice_det_math::assert_function_pins(DET_MATH_PINS);
 /// [`SEMANTICS_ID`](crate::law::SEMANTICS_ID): the fold of [`ZIP_SEMANTICS_PINS`] and
 /// [`DET_MATH_PINS`] (`tests/zip_semantics_id.rs` recomputes it)
 pub const ZIP_SEMANTICS_ID: [u8; 32] =
-    hex32("0ea7b226c52aa4a71b51d41697bf26cf26440280949a2095161fd775f16ca7df");
+    hex32("65f48962c757ebb619d252f8784f830aca5f3698fbd22f34150f9887863f38dd");
 
 /// Earlier values of [`SEMANTICS_ID`](crate::law::SEMANTICS_ID) under which every pinned
 /// output has the same bits as in this build, newest first

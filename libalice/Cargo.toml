@@ -83,4 +83,3 @@ codegen-units = 1
 debug = false
 
 [dev-dependencies]
-sha2 = "0.10"

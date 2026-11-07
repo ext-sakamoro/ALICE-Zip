@@ -1,14 +1,17 @@
 //! Image Generator
 //!
-//! Rust port of the Python `ImageGenerator` in `media_generators.py`.
-//! Generates procedural images from parametric descriptions.
+//! Generates procedural images from parametric descriptions. The Python package calls this through the
+//! extension (`alice_zip.native_accelerator.media_image`). The bits of each pattern are golden entries of
+//! [`crate::semantics::ZIP_SEMANTICS_PINS`].
 //!
 //! License: LicenseRef-Proprietary
 //! Author: Moroya Sakamoto
 
-use std::f32::consts::PI;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::f32::consts::PI;
 
-use alice_zip::generators::generate_perlin_2d;
+use crate::generators::generate_perlin_2d;
 
 /// The octaves of [`ImagePattern::Fractal`]
 const FRACTAL_OCTAVES: u32 = 5;
@@ -46,12 +49,14 @@ pub struct ImageParams {
     /// Two colours: index 0 = start/color1, index 1 = end/color2.
     /// For Solid only index 0 is used.
     pub colors: Vec<[u8; 3]>,
-    /// Cell size for Checkerboard (pixels per square) and the lattice cell of Noise and Fractal (at least 1)
+    /// Cell size for Checkerboard (pixels per square) and the lattice cell of Noise and Fractal (Noise and Fractal take at least 2: on a cell of 1 every pixel is a lattice point, where the noise is 0)
     pub block_size: usize,
     /// Gradient direction in degrees (0 = left-to-right, 90 = top-to-bottom)
     pub angle_degrees: f32,
     /// Seed of the texture of Noise and Fractal
     pub seed: u64,
+    /// Centre of RadialGradient, as a fraction of the last pixel index (0.5 is the middle of the image)
+    pub center: [f32; 2],
 }
 
 impl Default for ImageParams {
@@ -64,6 +69,7 @@ impl Default for ImageParams {
             block_size: 8,
             angle_degrees: 0.0,
             seed: 42,
+            center: [0.5, 0.5],
         }
     }
 }
@@ -85,26 +91,38 @@ impl ImageGenerator {
     /// Generate RGB pixel data (width * height * 3 bytes, row-major)
     #[must_use]
     pub fn generate(&self, params: &ImageParams) -> Vec<u8> {
-        let w = params.width;
-        let h = params.height;
+        let start = params.colors.first().copied().unwrap_or([0, 0, 0]);
+        let end = params.colors.get(1).copied().unwrap_or([255, 255, 255]);
+        self.generate_channels(params, &start, &end)
+    }
 
-        // Colour helpers with safe fallbacks
-        let color0 = params.colors.first().copied().unwrap_or([0, 0, 0]);
-        let color1 = params.colors.get(1).copied().unwrap_or([255, 255, 255]);
-
+    /// Generate pixel data with `start.len()` channels (width * height * channels bytes, row-major), from
+    /// `start` to `end`; `params.colors` is not read
+    ///
+    /// # Panics
+    ///
+    /// When `start` is empty or `end` has another length
+    #[must_use]
+    pub fn generate_channels(&self, params: &ImageParams, start: &[u8], end: &[u8]) -> Vec<u8> {
+        assert!(
+            !start.is_empty() && start.len() == end.len(),
+            "start and end name the same channels"
+        );
+        let (w, h) = (params.width, params.height);
         match params.pattern {
-            ImagePattern::Solid => Self::generate_solid(w, h, color0),
+            ImagePattern::Solid => Self::mix(w * h, start, end, |_| 0.0),
             ImagePattern::LinearGradient => {
-                Self::generate_linear_gradient(w, h, color0, color1, params.angle_degrees)
+                Self::generate_linear_gradient(w, h, start, end, params.angle_degrees)
             }
-            ImagePattern::RadialGradient => Self::generate_radial_gradient(w, h, color0, color1),
+            ImagePattern::RadialGradient => {
+                Self::generate_radial_gradient(w, h, start, end, params.center)
+            }
             ImagePattern::Checkerboard => {
-                let block = params.block_size.max(1);
-                Self::generate_checkerboard(w, h, color0, color1, block)
+                Self::generate_checkerboard(w, h, start, end, params.block_size.max(1))
             }
-            ImagePattern::Noise => Self::generate_perlin(w, h, color0, color1, params, 1),
+            ImagePattern::Noise => Self::generate_perlin(w, h, start, end, params, 1),
             ImagePattern::Fractal => {
-                Self::generate_perlin(w, h, color0, color1, params, FRACTAL_OCTAVES)
+                Self::generate_perlin(w, h, start, end, params, FRACTAL_OCTAVES)
             }
         }
     }
@@ -113,170 +131,106 @@ impl ImageGenerator {
     //  Private helpers                                                     //
     // ------------------------------------------------------------------ //
 
-    /// The two colours mixed by `alice_zip`'s seeded Perlin texture, with `block_size` pixels to a lattice
-    /// cell: one octave is noise, several are fractal Brownian motion
-    fn generate_perlin(
-        w: usize,
-        h: usize,
-        start: [u8; 3],
-        end: [u8; 3],
-        params: &ImageParams,
-        octaves: u32,
-    ) -> Vec<u8> {
-        let scale = params.block_size.max(1) as f32;
-        let texture = generate_perlin_2d(w, h, params.seed, scale, octaves)
-            .expect("the scale is at least 1, there is an octave, and the size fits a buffer");
-        let s = start.map(f32::from);
-        let e = end.map(f32::from);
-        let mut out = Vec::with_capacity(texture.len() * 3);
-        for t in texture {
-            let one_minus_t = 1.0 - t;
-            for ch in 0..3 {
-                let v = s[ch].mul_add(one_minus_t, e[ch] * t);
-                out.push(v.clamp(0.0, 255.0) as u8);
+    /// The law every pattern ends in: for each of `n` pixels, each channel is `start` to `end` at `t(pixel)`,
+    /// rounded to the nearest level
+    fn mix(n: usize, start: &[u8], end: &[u8], t: impl Fn(usize) -> f32) -> Vec<u8> {
+        let mut out = Vec::with_capacity(n * start.len());
+        for i in 0..n {
+            let t = t(i);
+            for (&s, &e) in start.iter().zip(end) {
+                let v = f32::from(s) * (1.0 - t) + f32::from(e) * t;
+                out.push(alice_det_math::round(v).clamp(0.0, 255.0) as u8);
             }
         }
         out
     }
 
-    /// Fill the entire image with a single colour
-    #[inline(always)]
-    fn generate_solid(w: usize, h: usize, color: [u8; 3]) -> Vec<u8> {
-        let n = w * h;
-        let mut out = Vec::with_capacity(n * 3);
-        for _ in 0..n {
-            out.push(color[0]);
-            out.push(color[1]);
-            out.push(color[2]);
-        }
-        out
+    /// `start` and `end` mixed by the seeded Perlin texture, with `block_size` pixels to a lattice cell: one
+    /// octave is noise, several are fractal Brownian motion
+    fn generate_perlin(
+        w: usize,
+        h: usize,
+        start: &[u8],
+        end: &[u8],
+        params: &ImageParams,
+        octaves: u32,
+    ) -> Vec<u8> {
+        let scale = params.block_size.max(2) as f32;
+        let texture = generate_perlin_2d(w, h, params.seed, scale, octaves)
+            .expect("the scale is at least 2, there is an octave, and the size fits a buffer");
+        Self::mix(texture.len(), start, end, |i| texture[i])
     }
 
-    /// Linear gradient along a given angle (vectorised, branchless interpolation)
-    ///
-    /// `angle_degrees`:
-    ///   - 0   → left-to-right
-    ///   - 90  → top-to-bottom
-    ///   - other → arbitrary direction
-    #[inline(always)]
+    /// Linear gradient along an angle in degrees: 0 is left to right, 90 top to bottom
     fn generate_linear_gradient(
         w: usize,
         h: usize,
-        start: [u8; 3],
-        end: [u8; 3],
+        start: &[u8],
+        end: &[u8],
         angle_degrees: f32,
     ) -> Vec<u8> {
         let rcp_w = if w > 1 { 1.0 / (w - 1) as f32 } else { 1.0 };
         let rcp_h = if h > 1 { 1.0 / (h - 1) as f32 } else { 1.0 };
-
         let angle_rad = angle_degrees * (PI / 180.0);
         let nx = alice_det_math::cos(angle_rad);
         let ny = alice_det_math::sin(angle_rad);
-
-        // Pre-compute divisor reciprocal to avoid per-pixel division
-        let divisor = (w as f32).mul_add(nx.abs(), (h as f32) * ny.abs());
+        let divisor = w as f32 * nx.abs() + h as f32 * ny.abs();
         let rcp_divisor = if divisor > 1e-10 { 1.0 / divisor } else { 1.0 };
-
-        // Convert start/end to f32 once
-        let s = [
-            f32::from(start[0]),
-            f32::from(start[1]),
-            f32::from(start[2]),
-        ];
-        let e = [f32::from(end[0]), f32::from(end[1]), f32::from(end[2])];
-
-        let mut out = Vec::with_capacity(w * h * 3);
-
-        for y in 0..h {
-            for x in 0..w {
-                // t = interpolation factor in [0, 1]
-                let t = if angle_degrees.abs() < f32::EPSILON {
-                    x as f32 * rcp_w
-                } else if (angle_degrees - 90.0).abs() < f32::EPSILON {
-                    y as f32 * rcp_h
-                } else {
-                    let raw = (x as f32).mul_add(nx, y as f32 * ny) * rcp_divisor;
-                    // Branchless clamp: clamp(raw, 0, 1)
-                    raw.clamp(0.0, 1.0)
-                };
-
-                // Branchless lerp: start * (1 - t) + end * t
-                let one_minus_t = 1.0 - t;
-                for ch in 0..3 {
-                    let v = s[ch].mul_add(one_minus_t, e[ch] * t);
-                    out.push(v.clamp(0.0, 255.0) as u8);
-                }
+        let width = w.max(1);
+        Self::mix(w * h, start, end, |i| {
+            let (x, y) = ((i % width) as f32, (i / width) as f32);
+            if angle_degrees.abs() < f32::EPSILON {
+                x * rcp_w
+            } else if (angle_degrees - 90.0).abs() < f32::EPSILON {
+                y * rcp_h
+            } else {
+                ((x * nx + y * ny) * rcp_divisor).clamp(0.0, 1.0)
             }
-        }
-        out
+        })
     }
 
-    /// Radial gradient from centre (start) to edge (end)
-    #[inline(always)]
-    fn generate_radial_gradient(w: usize, h: usize, start: [u8; 3], end: [u8; 3]) -> Vec<u8> {
-        let cx = w as f32 * 0.5;
-        let cy = h as f32 * 0.5;
-
-        // Maximum possible distance from centre (to a corner)
-        let dx_max = alice_det_math::max(cx, w as f32 - cx);
-        let dy_max = alice_det_math::max(cy, h as f32 - cy);
+    /// Radial gradient: `start` at the centre, `end` at the farthest corner
+    fn generate_radial_gradient(
+        w: usize,
+        h: usize,
+        start: &[u8],
+        end: &[u8],
+        center: [f32; 2],
+    ) -> Vec<u8> {
+        let last_x = w.saturating_sub(1) as f32;
+        let last_y = h.saturating_sub(1) as f32;
+        let (cx, cy) = (center[0] * last_x, center[1] * last_y);
+        let dx_max = alice_det_math::max(cx, last_x - cx);
+        let dy_max = alice_det_math::max(cy, last_y - cy);
         let max_dist = alice_det_math::hypot(dx_max, dy_max);
-        let rcp_max = if max_dist > 1e-10 {
-            1.0 / max_dist
-        } else {
-            1.0
-        };
-
-        let s = [
-            f32::from(start[0]),
-            f32::from(start[1]),
-            f32::from(start[2]),
-        ];
-        let e = [f32::from(end[0]), f32::from(end[1]), f32::from(end[2])];
-
-        let mut out = Vec::with_capacity(w * h * 3);
-
-        for y in 0..h {
-            for x in 0..w {
-                let dx = x as f32 - cx;
-                let dy = y as f32 - cy;
-                let t = (alice_det_math::hypot(dx, dy) * rcp_max).clamp(0.0, 1.0);
-                let one_minus_t = 1.0 - t;
-                for ch in 0..3 {
-                    let v = s[ch].mul_add(one_minus_t, e[ch] * t);
-                    out.push(v.clamp(0.0, 255.0) as u8);
-                }
+        let width = w.max(1);
+        Self::mix(w * h, start, end, |i| {
+            if max_dist <= 1e-10 {
+                return 0.0;
             }
-        }
-        out
+            let dx = (i % width) as f32 - cx;
+            let dy = (i / width) as f32 - cy;
+            (alice_det_math::hypot(dx, dy) / max_dist).clamp(0.0, 1.0)
+        })
     }
 
-    /// Checkerboard pattern — fully branchless colour selection
-    ///
-    /// `((x / block) + (y / block)) & 1` selects colour index (0 or 1).
-    #[inline(always)]
+    /// Checkerboard of cells of `block_size` pixels, the cell at the origin being `start`
     fn generate_checkerboard(
         w: usize,
         h: usize,
-        c1: [u8; 3],
-        c2: [u8; 3],
+        start: &[u8],
+        end: &[u8],
         block_size: usize,
     ) -> Vec<u8> {
-        // Colour table so we can index without branching
-        let palette: [[u8; 3]; 2] = [c1, c2];
-
-        let mut out = Vec::with_capacity(w * h * 3);
-        for y in 0..h {
-            for x in 0..w {
-                // Branchless: parity = ((x/block) + (y/block)) & 1
-                let parity = ((x / block_size) + (y / block_size)) & 1;
-                let col = palette[parity];
-                out.push(col[0]);
-                out.push(col[1]);
-                out.push(col[2]);
+        let width = w.max(1);
+        Self::mix(w * h, start, end, |i| {
+            let (x, y) = (i % width, i / width);
+            if (x / block_size + y / block_size).is_multiple_of(2) {
+                0.0
+            } else {
+                1.0
             }
-        }
-        out
+        })
     }
 }
 
@@ -303,6 +257,7 @@ mod tests {
             block_size: 4,
             angle_degrees: 0.0,
             seed: 0,
+            ..ImageParams::default()
         }
     }
 
@@ -354,6 +309,7 @@ mod tests {
             block_size: 4,
             angle_degrees: 0.0,
             seed: 0,
+            ..ImageParams::default()
         };
         let pixels = gen.generate(&p);
         assert_eq!(pixels.len(), 8 * 8 * 3);
@@ -386,6 +342,7 @@ mod tests {
             block_size: 4,
             angle_degrees: 0.0,
             seed: 0,
+            ..ImageParams::default()
         };
         let pixels = gen.generate(&p);
         assert_eq!(pixels.len(), 32 * 32 * 3);

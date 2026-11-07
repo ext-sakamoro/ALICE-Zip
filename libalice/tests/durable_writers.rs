@@ -52,8 +52,8 @@ const WRITERS: [(&str, &str, Decision); 19] = [
     ("lib.rs", "zlib_compress", Literal),
     ("ffi.rs", "alice_lzma_compress", Literal),
     ("ffi.rs", "alice_zlib_compress", Literal),
+    ("media.rs", "write_wav_f32", Literal),
     ("bin/alice.rs", "cmd_compress", Literal), // the ALZ file: zlib or 8/16-bit quantisation of the input
-    ("media/audio.rs", "write_wav_f32", Literal),
 ];
 // further names the scan finds that are not writers
 const NOT_WRITERS: [(&str, &str, &str); 2] = [
@@ -102,7 +102,7 @@ fn writers_in_source() -> Scan {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();
     sources(&root, &root, &mut files);
-    assert!(files.len() > 10, "read too few files: {}", files.len());
+    assert!(files.len() > 5, "read too few files: {}", files.len());
     let mut found = BTreeSet::new();
     for (file, text) in &files {
         let lines: Vec<&str> = text.lines().collect();

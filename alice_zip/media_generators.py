@@ -38,6 +38,7 @@ from typing import Optional, List, Dict, Any, Tuple, Union
 from enum import Enum
 import numpy as np
 
+from . import native_accelerator as _accel
 from . import semantics as _semantics
 
 # Optional imports with graceful fallback
@@ -265,8 +266,38 @@ class ImageGenerator:
         if not HAS_PIL:
             raise ImportError("PIL/Pillow required: pip install Pillow")
 
+    # the patterns the Rust crate computes (alice_zip::media): the only implementation that makes new images
+    _NATIVE_PATTERNS = (ImagePattern.SOLID_COLOR, ImagePattern.GRADIENT_LINEAR, ImagePattern.GRADIENT_RADIAL,
+                        ImagePattern.CHECKERBOARD, ImagePattern.NOISE_PERLIN, ImagePattern.FRACTAL)
+
     def generate(self, params: ImageParams) -> np.ndarray:
-        """Generate image from procedural parameters"""
+        """Generate an image from procedural parameters.
+
+        The patterns of ``_NATIVE_PATTERNS`` run in the native extension and raise ``RuntimeError`` without it.
+        ``PERIODIC`` and ``UNKNOWN`` regenerate from DCT coefficients on numpy. A pattern with no law
+        (``STRIPES``, ``NOISE_GAUSSIAN``) raises ``ValueError``.
+        """
+        h, w, c = params.height, params.width, params.channels
+        if params.pattern in self._NATIVE_PATTERNS:
+            def levels(colour, pad):
+                return tuple(colour[:c]) + (pad,) * (c - len(colour[:c]))
+            if params.pattern == ImagePattern.SOLID_COLOR:
+                start = end = levels(params.color, 0)
+            elif params.pattern == ImagePattern.CHECKERBOARD:
+                start, end = levels(params.color, 0), levels(params.gradient_end, 255)
+            else:
+                start, end = levels(params.gradient_start, 0), levels(params.gradient_end, 255)
+            return _accel.media_image(params.pattern.value, w, h, start, end, params.gradient_angle,
+                                      params.gradient_center, max(int(params.pattern_scale), 1),
+                                      params.pattern_seed)
+        if params.pattern in (ImagePattern.PERIODIC, ImagePattern.UNKNOWN):
+            return self._generate_from_dct(params)
+        raise ValueError(f"no law generates the image pattern {params.pattern.value!r}")
+
+    def _generate_recorded(self, params: ImageParams) -> np.ndarray:
+        """What a file written under ``PYTHON_SEMANTICS_ID`` (or none) records, unchanged: read-only, for those
+        files. New images come from :meth:`generate`.
+        """
         h, w, c = params.height, params.width, params.channels
 
         if params.pattern == ImagePattern.SOLID_COLOR:
@@ -416,14 +447,19 @@ class ImageGenerator:
     def decompress(self, data: bytes, strict: bool = False) -> np.ndarray:
         """Decompress ALICE format to image
 
-        The stored ``"semantics"`` is compared with the numpy arithmetic
-        (``semantics.PYTHON_SEMANTICS_ID``); ``strict`` refuses a file without one.
+        A file recording the native identifier regenerates with the Rust crate. One recording
+        ``semantics.PYTHON_SEMANTICS_ID`` (or none, which ``strict`` refuses) reads what it recorded, by the
+        formulas it was written under. Any other identifier is refused.
         """
         parsed = json.loads(data.decode('utf-8'))
 
         if parsed.get('magic') != ALICE_IMAGE_MAGIC.decode():
             raise ValueError("Invalid ALICE_IMG file")
-        _semantics.check(parsed.get('semantics'), _semantics.PYTHON_SEMANTICS_ID, "ALICE_IMG", strict)
+        stored = parsed.get('semantics')
+        native = _semantics.NATIVE_SEMANTICS_ID
+        recorded = native is None or stored != native.hex()
+        if recorded:
+            _semantics.check(stored, _semantics.PYTHON_SEMANTICS_ID, "ALICE_IMG", strict)
 
         p = parsed['params']
         params = ImageParams(
@@ -437,12 +473,13 @@ class ImageGenerator:
             gradient_angle=p.get('gradient_angle', 0.0),
             gradient_center=tuple(p.get('gradient_center', (0.5, 0.5))),
             pattern_scale=p.get('pattern_scale', 1.0),
+            pattern_seed=p.get('pattern_seed', 42),
             # Prefer binary format (faster, smaller)
             dct_coefficients=p.get('dct_coefficients', []),
             dct_coefficients_b64=p.get('dct_coefficients_b64')
         )
 
-        return self.generate(params)
+        return self._generate_recorded(params) if recorded else self.generate(params)
 
 
 # ============================================================================
@@ -459,7 +496,7 @@ class AudioGenerator:
         if not HAS_SCIPY:
             raise ImportError("SciPy required: pip install scipy")
 
-    def generate_chunks(self, params: AudioParams, chunk_samples: Optional[int] = None):
+    def generate_chunks(self, params: AudioParams, chunk_samples: Optional[int] = None, recorded: bool = False):
         """
         Generate audio in chunks (generator pattern).
 
@@ -513,8 +550,12 @@ class AudioGenerator:
             elif params.pattern == AudioPattern.NOISE_WHITE:
                 chunk = noise_rng.standard_normal(chunk_len) * params.noise_amplitude
 
-            else:
+            elif recorded:
+                # a file written under this identifier reads what it recorded
                 chunk = np.zeros(chunk_len, dtype=np.float64)
+
+            else:
+                raise ValueError(f"no law generates the audio pattern {params.pattern.value!r}")
 
             # Apply envelope for this chunk's position
             if params.pattern != AudioPattern.SILENCE:
@@ -538,7 +579,7 @@ class AudioGenerator:
 
             yield chunk_int16
 
-    def generate(self, params: AudioParams) -> np.ndarray:
+    def generate(self, params: AudioParams, recorded: bool = False) -> np.ndarray:
         """
         Generate complete audio array from procedural parameters.
 
@@ -564,7 +605,7 @@ class AudioGenerator:
             )
 
         # Use chunked generation and concatenate
-        chunks = list(self.generate_chunks(params))
+        chunks = list(self.generate_chunks(params, recorded=recorded))
         return np.concatenate(chunks, axis=0)
 
     def generate_to_file(self, params: AudioParams, output_path: Union[str, Path],
@@ -656,7 +697,7 @@ class AudioGenerator:
             seed=p.get('seed'),
         )
 
-        return self.generate(params), params.sample_rate
+        return self.generate(params, recorded=True), params.sample_rate
 
 
 # ============================================================================
@@ -697,7 +738,7 @@ class VideoGenerator:
         ))
 
     def _get_base_frame(self, kf_params: Optional[ImageParams],
-                        width: int, height: int) -> np.ndarray:
+                        width: int, height: int, recorded: bool = False) -> np.ndarray:
         """
         Get base frame for keyframe, using cache if parameters unchanged.
 
@@ -714,7 +755,8 @@ class VideoGenerator:
             return self._frame_cache[kf_id].copy()
 
         # Generate and cache
-        frame = self.image_generator.generate(kf_params)
+        frame = (self.image_generator._generate_recorded(kf_params) if recorded
+                 else self.image_generator.generate(kf_params))
         self._frame_cache[kf_id] = frame
 
         # Limit cache size (keep only last 10 keyframes)
@@ -724,7 +766,7 @@ class VideoGenerator:
 
         return frame.copy()
 
-    def generate(self, params: VideoParams, output_path: Union[str, Path]):
+    def generate(self, params: VideoParams, output_path: Union[str, Path], recorded: bool = False):
         """Generate video from procedural parameters with frame caching"""
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(
@@ -756,7 +798,7 @@ class VideoGenerator:
                 next_kf = params.keyframes[-1] if params.keyframes else (0, None)
 
             # Use cached base frame instead of regenerating every time
-            frame = self._get_base_frame(prev_kf[1], params.width, params.height)
+            frame = self._get_base_frame(prev_kf[1], params.width, params.height, recorded)
 
             # Apply motion transforms (these are cheap compared to regeneration)
             if params.pattern == VideoPattern.SLIDE and params.motion_vectors:
@@ -808,7 +850,7 @@ class VideoGenerator:
             motion_vectors=parsed.get('motion_vectors', [])
         )
 
-        self.generate(params, output_path)
+        self.generate(params, output_path, recorded=True)
 
 
 # ============================================================================

@@ -116,7 +116,7 @@ fn integer_signal(n: usize) -> Vec<f32> {
 fn semantics_id_is_the_recorded_value() {
     assert_eq!(
         hex(&SEMANTICS_ID),
-        "0ea7b226c52aa4a71b51d41697bf26cf26440280949a2095161fd775f16ca7df",
+        "65f48962c757ebb619d252f8784f830aca5f3698fbd22f34150f9887863f38dd",
         "the semantics changed: every law identifier published under \
          the old value now describes something else"
     );
@@ -155,7 +155,7 @@ fn law_id_and_evaluation_are_the_recorded_bits() {
         "law_id and evaluate",
         bits,
         32 + 41 * 8,
-        "01d82b38d4e6474916481f7a61c8c0bc208b3e8c84f5dd3226794140f3f3ad19",
+        "8f77c25edb772b19a02d6cc637aca43c2c3e3a22e41f5605108411f5fba43c14",
     );
 }
 
@@ -561,4 +561,158 @@ fn checker_rejects_too_few_bytes() {
 fn checker_rejects_a_wrong_digest() {
     let wrong = "0".repeat(64);
     assert_golden("canary", eight_zero_bytes(), 8, &wrong);
+}
+
+// ------------------------------------------------------------------ media generators
+
+fn media_audio(
+    pattern: alice_zip::media::AudioPattern,
+    components: Vec<(f32, f32, f32)>,
+) -> Vec<f32> {
+    alice_zip::media::AudioGenerator::new().generate(&alice_zip::media::AudioParams {
+        pattern,
+        sample_rate: 44100,
+        duration_secs: 4.0,
+        frequency: 440.0,
+        amplitude: 0.75,
+        components,
+        seed: 7,
+        ..alice_zip::media::AudioParams::default()
+    })
+}
+
+fn media_image(pattern: alice_zip::media::ImagePattern) -> Vec<u8> {
+    alice_zip::media::ImageGenerator::new().generate(&alice_zip::media::ImageParams {
+        pattern,
+        width: 96,
+        height: 64,
+        colors: vec![[12, 200, 77], [250, 3, 140]],
+        block_size: 7,
+        angle_degrees: 33.0,
+        seed: 7,
+        ..alice_zip::media::ImageParams::default()
+    })
+}
+
+/// 4 s of samples reach an angle past 2^13, where `sin` of alice-det-math once changed; the multi-sine has such a phase at once
+#[test]
+fn media_sine_past_two_to_the_13_is_the_recorded_bits() {
+    let s = media_audio(alice_zip::media::AudioPattern::Sine, Vec::new());
+    let mut b = Bits::default();
+    b.f32s(&s);
+    assert_golden(
+        "media_sine_past_two_to_the_13_is_the_recorded_bits",
+        b,
+        4096,
+        "642df5acc91bcc9d765ff4e94aac7b9c288b48a82e5f3800b43402872328cdbd",
+    );
+}
+
+/// 4 s of samples reach an angle past 2^13, where `sin` of alice-det-math once changed; the multi-sine has such a phase at once
+#[test]
+fn media_multi_sine_with_a_large_phase_is_the_recorded_bits() {
+    let s = media_audio(
+        alice_zip::media::AudioPattern::MultiSine,
+        vec![(220.0, 0.5, 9000.0), (660.5, 0.25, 0.3)],
+    );
+    let mut b = Bits::default();
+    b.f32s(&s);
+    assert_golden(
+        "media_multi_sine_with_a_large_phase_is_the_recorded_bits",
+        b,
+        4096,
+        "920f1fff92165631f01805f361c6dd974f7bd7cf78fe5411f9d4897f85f19221",
+    );
+}
+
+/// 4 s of samples reach an angle past 2^13, where `sin` of alice-det-math once changed; the multi-sine has such a phase at once
+#[test]
+fn media_white_noise_is_the_recorded_bits() {
+    let s = media_audio(alice_zip::media::AudioPattern::WhiteNoise, Vec::new());
+    let mut b = Bits::default();
+    b.f32s(&s);
+    assert_golden(
+        "media_white_noise_is_the_recorded_bits",
+        b,
+        4096,
+        "f925866c6848d774181d25a9477e56b45ba0a9341fdbfbd6596b2889442514d0",
+    );
+}
+
+#[test]
+fn media_solid_is_the_recorded_bits() {
+    let px = media_image(alice_zip::media::ImagePattern::Solid);
+    let mut b = Bits::default();
+    b.raw(&px);
+    assert_golden(
+        "media_solid_is_the_recorded_bits",
+        b,
+        4096,
+        "02d09e8f1e2d6b85773ba59bea51560cbc4c3b777fd9e6b6d3bc795c706e36e3",
+    );
+}
+
+#[test]
+fn media_linear_gradient_is_the_recorded_bits() {
+    let px = media_image(alice_zip::media::ImagePattern::LinearGradient);
+    let mut b = Bits::default();
+    b.raw(&px);
+    assert_golden(
+        "media_linear_gradient_is_the_recorded_bits",
+        b,
+        4096,
+        "dadaff2d5c7c9297a4595b6b6b75b1339bbe83a09a47bbf67a2f7fcf8b55a9d6",
+    );
+}
+
+#[test]
+fn media_radial_gradient_is_the_recorded_bits() {
+    let px = media_image(alice_zip::media::ImagePattern::RadialGradient);
+    let mut b = Bits::default();
+    b.raw(&px);
+    assert_golden(
+        "media_radial_gradient_is_the_recorded_bits",
+        b,
+        4096,
+        "11deef1aac1d9fe02cd0a596663f6405a13364995942a2a42fe0dd0f9b49835b",
+    );
+}
+
+#[test]
+fn media_checkerboard_is_the_recorded_bits() {
+    let px = media_image(alice_zip::media::ImagePattern::Checkerboard);
+    let mut b = Bits::default();
+    b.raw(&px);
+    assert_golden(
+        "media_checkerboard_is_the_recorded_bits",
+        b,
+        4096,
+        "e108e09f3359d840657dbaa2d6430f6fff40b4949b19b6822912ee1606230708",
+    );
+}
+
+#[test]
+fn media_noise_is_the_recorded_bits() {
+    let px = media_image(alice_zip::media::ImagePattern::Noise);
+    let mut b = Bits::default();
+    b.raw(&px);
+    assert_golden(
+        "media_noise_is_the_recorded_bits",
+        b,
+        4096,
+        "0bf28d293779c7d4c001d6501e7900179ab59693ff65c48d28b442ee496193d5",
+    );
+}
+
+#[test]
+fn media_fractal_is_the_recorded_bits() {
+    let px = media_image(alice_zip::media::ImagePattern::Fractal);
+    let mut b = Bits::default();
+    b.raw(&px);
+    assert_golden(
+        "media_fractal_is_the_recorded_bits",
+        b,
+        4096,
+        "c2f085f73f2cbf2ca50afa54e002f0982c9015004a091ca275474f61fdb56405",
+    );
 }
