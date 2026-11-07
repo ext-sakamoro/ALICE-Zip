@@ -43,9 +43,6 @@ alice_zip = { package = "alice-zip", path = "..", version = "0.11", features = [
 # xz streams for residuals (the format the Python writer emits); same version as the core crate
 lzma-rs = "0.3"
 
-# Seeded white noise for media::audio
-rand = "0.8"
-rand_chacha = "0.3"
 
 # Memory-mapped file I/O
 memmap2 = "0.9"

@@ -49,8 +49,6 @@ dependencies = [
  "memmap2",
  "numpy",
  "pyo3",
- "rand",
- "rand_chacha",
 ]
 
 [[package]]
