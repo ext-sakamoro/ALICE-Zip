@@ -27,8 +27,8 @@ Python fallback (numpy):
   changes, not with the package version.
 
 :func:`procedural_semantics_id` is the one the procedural generators use in
-this process. New images of ``media_generators`` come from the Rust crate
-(:data:`NATIVE_SEMANTICS_ID` names them: its goldens are folded there). A media
+this process. New images and audio of ``media_generators`` come from the Rust
+crate (:data:`NATIVE_SEMANTICS_ID` names them: its goldens are folded there). A media
 file recording :data:`PYTHON_SEMANTICS_ID` or none reads what it recorded, by
 the numpy formulas kept for that purpose and by nothing else.
 """
@@ -44,7 +44,7 @@ from . import native_accelerator as _accel
 #   fourier:    _python_fourier_generate(4096, [(3, 1.0, 0.1), (17, 0.5, 1.2), (200, 0.25, -0.7)], 0.125)
 #   polynomial: _python_polynomial_generate(4096, [0.5, -1.25, 2.0, 0.75])
 #   perlin:     _python_perlin_advanced(64, 48, 1234, 8.0, 4, 0.5, 2.0)
-#   white noise: AudioGenerator().generate(seed 2024), int16 (tests/test_media_generators.py)
+#   white noise: AudioGenerator()._recorded_chunks(seed 2024), int16 (tests/test_media_generators.py)
 PYTHON_SEMANTICS_PINS = {
     "golden python sine_wave": "d54b3bf0f51e2d99c200eec59a2c46a7511e0f475f8e962c1471f5f847486f35",
     "golden python fourier_generate": "9cf69b6b36a9312a43d44214287e42623b16df92e0271916cf4b94915db9890f",

@@ -1,8 +1,7 @@
 //! Audio Generator
 //!
-//! Rust port of the Python `AudioGenerator` in `media_generators.py`.
-//! Generates procedural PCM audio from parametric descriptions and can
-//! write the result directly to a 32-bit IEEE-float WAV file.
+//! Generates procedural PCM audio from parametric descriptions. The Python package calls this through the
+//! extension (`alice_zip.native_accelerator.media_audio_stream`).
 //!
 //! License: LicenseRef-Proprietary
 //! Author: Moroya Sakamoto
@@ -98,147 +97,121 @@ impl AudioGenerator {
     #[must_use]
     pub fn generate(&self, params: &AudioParams) -> Vec<f32> {
         let n = (params.duration_secs * params.sample_rate as f32) as usize;
-        let sr = params.sample_rate;
+        let mut samples = vec![0.0_f32; n];
+        AudioStream::new(params, n).fill(&mut samples);
+        samples
+    }
+}
 
-        let mut samples = match params.pattern {
-            AudioPattern::Silence => Self::generate_silence(n),
+/// The samples of [`AudioGenerator::generate`] in order, a block at a time: how the blocks are cut does not
+/// change them
+#[derive(Debug, Clone)]
+pub struct AudioStream {
+    pattern: AudioPattern,
+    /// `(radians per sample, amplitude, phase)` of each sine
+    sines: Vec<(f32, f32, f32)>,
+    amplitude: f32,
+    rng: ChaCha8Rng,
+    position: usize,
+    n: usize,
+    attack_end: usize,
+    decay_end: usize,
+    release_start: usize,
+    rcp_attack: f32,
+    rcp_decay: f32,
+    rcp_release: f32,
+    sustain: f32,
+}
+
+impl AudioStream {
+    /// The stream of `n` samples of `params` (`params.duration_secs` is not read)
+    #[must_use]
+    pub fn new(params: &AudioParams, n: usize) -> Self {
+        let sr = params.sample_rate as f32;
+        let rcp_sr = 1.0 / sr;
+        let sines = match params.pattern {
             AudioPattern::Sine => {
-                Self::generate_sine(n, params.frequency, params.amplitude, 0.0, sr)
+                vec![(2.0 * PI * params.frequency * rcp_sr, params.amplitude, 0.0)]
             }
-            AudioPattern::MultiSine => Self::generate_multi_sine(n, &params.components, sr),
-            AudioPattern::WhiteNoise => {
-                Self::generate_white_noise(n, params.amplitude, params.seed)
-            }
+            _ => params
+                .components
+                .iter()
+                .map(|&(f, a, p)| (2.0 * PI * f * rcp_sr, a, p))
+                .collect(),
         };
-
-        // Apply ADSR envelope to everything except silence
-        if params.pattern != AudioPattern::Silence {
-            samples = Self::apply_adsr_envelope(
-                samples,
-                params.attack,
-                params.decay,
-                params.sustain,
-                params.release,
-                sr,
-            );
-        }
-
-        samples
-    }
-
-    // ------------------------------------------------------------------ //
-    //  Private helpers                                                     //
-    // ------------------------------------------------------------------ //
-
-    /// Return `n` zero samples
-    #[inline(always)]
-    fn generate_silence(n: usize) -> Vec<f32> {
-        vec![0.0_f32; n]
-    }
-
-    /// Generate a single sine wave.
-    ///
-    /// Pre-computes `omega = 2π * freq * rcp_sr` to avoid division inside the loop.
-    #[inline(always)]
-    fn generate_sine(n: usize, freq: f32, amp: f32, phase: f32, sr: u32) -> Vec<f32> {
-        let rcp_sr = 1.0 / sr as f32;
-        let omega = 2.0 * PI * freq * rcp_sr; // radians per sample
-        (0..n)
-            .map(|i| amp * alice_det_math::sin(omega * i as f32 + phase))
-            .collect()
-    }
-
-    /// Generate a sum of sine waves from `(freq_hz, amplitude, phase_rad)` components.
-    #[inline(always)]
-    fn generate_multi_sine(n: usize, components: &[(f32, f32, f32)], sr: u32) -> Vec<f32> {
-        // Pre-compute omega for each component (reciprocal multiply, no division per component)
-        let rcp_sr = 1.0 / sr as f32;
-        let omegas: Vec<(f32, f32, f32)> = components
-            .iter()
-            .map(|&(f, a, p)| (2.0 * PI * f * rcp_sr, a, p))
-            .collect();
-
-        (0..n)
-            .map(|i| {
-                omegas
-                    .iter()
-                    .map(|&(omega, amp, phase)| amp * alice_det_math::sin(omega * i as f32 + phase))
-                    .sum::<f32>()
-            })
-            .collect()
-    }
-
-    /// Generate white noise using `ChaCha8` CSPRNG for reproducibility.
-    #[inline(always)]
-    fn generate_white_noise(n: usize, amp: f32, seed: u64) -> Vec<f32> {
-        let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        (0..n)
-            .map(|_| {
-                // Uniform [-amp, amp]
-                let v: f32 = rng.gen_range(-1.0_f32..=1.0_f32);
-                v * amp
-            })
-            .collect()
-    }
-
-    /// Apply an ADSR volume envelope in-place and return the modified samples.
-    ///
-    /// The envelope is applied per-sample according to the global sample position,
-    /// matching the Python `_apply_envelope_chunk` logic.
-    #[inline(always)]
-    fn apply_adsr_envelope(
-        mut samples: Vec<f32>,
-        attack: f32,
-        decay: f32,
-        sustain: f32,
-        release: f32,
-        sr: u32,
-    ) -> Vec<f32> {
-        let n = samples.len();
-        let sr_f = sr as f32;
-
-        let attack_end = (attack * sr_f) as usize;
-        let decay_end = attack_end + (decay * sr_f) as usize;
-        let release_start = n.saturating_sub((release * sr_f) as usize);
-
-        // Pre-compute reciprocals to avoid repeated division
-        let rcp_attack = if attack_end > 0 {
-            1.0 / attack_end as f32
-        } else {
-            1.0
-        };
-        let decay_len = (decay * sr_f) as usize;
-        let rcp_decay = if decay_len > 0 {
-            1.0 / decay_len as f32
-        } else {
-            1.0
-        };
+        let attack_end = (params.attack * sr) as usize;
+        let decay_len = (params.decay * sr) as usize;
+        let decay_end = attack_end + decay_len;
+        let release_start = n.saturating_sub((params.release * sr) as usize);
         let release_len = n - release_start;
-        let rcp_release = if release_len > 0 {
-            1.0 / release_len as f32
-        } else {
-            1.0
-        };
-
-        for (i, s) in samples.iter_mut().enumerate() {
-            let env = if i < attack_end {
-                // Attack: 0 → 1
-                i as f32 * rcp_attack
-            } else if i < decay_end {
-                // Decay: 1 → sustain
-                let decay_pos = (i - attack_end) as f32;
-                1.0 - (1.0 - sustain) * decay_pos * rcp_decay
-            } else if i < release_start {
-                // Sustain: flat
-                sustain
-            } else {
-                // Release: sustain → 0
-                let release_pos = (i - release_start) as f32;
-                sustain * (1.0 - release_pos * rcp_release)
-            };
-            *s *= env;
+        let reciprocal = |len: usize| if len > 0 { 1.0 / len as f32 } else { 1.0 };
+        Self {
+            pattern: params.pattern,
+            sines,
+            amplitude: params.amplitude,
+            rng: ChaCha8Rng::seed_from_u64(params.seed),
+            position: 0,
+            n,
+            attack_end,
+            decay_end,
+            release_start,
+            rcp_attack: reciprocal(attack_end),
+            rcp_decay: reciprocal(decay_len),
+            rcp_release: reciprocal(release_len),
+            sustain: params.sustain,
         }
-        samples
+    }
+
+    /// The samples not yet given
+    #[must_use]
+    pub const fn remaining(&self) -> usize {
+        self.n - self.position
+    }
+
+    /// Writes the next samples to the start of `out`, and returns how many: `out.len()`, or fewer at the end
+    pub fn fill(&mut self, out: &mut [f32]) -> usize {
+        let count = out.len().min(self.remaining());
+        for slot in &mut out[..count] {
+            *slot = self.next_sample();
+        }
+        count
+    }
+
+    fn next_sample(&mut self) -> f32 {
+        let i = self.position;
+        self.position += 1;
+        let raw = match self.pattern {
+            AudioPattern::Silence => return 0.0,
+            AudioPattern::Sine => {
+                let (omega, amp, phase) = self.sines[0];
+                amp * alice_det_math::sin(omega * i as f32 + phase)
+            }
+            AudioPattern::MultiSine => self
+                .sines
+                .iter()
+                .map(|&(omega, amp, phase)| amp * alice_det_math::sin(omega * i as f32 + phase))
+                .sum::<f32>(),
+            AudioPattern::WhiteNoise => {
+                let v: f32 = self.rng.gen_range(-1.0_f32..=1.0_f32);
+                v * self.amplitude
+            }
+        };
+        raw * self.envelope(i)
+    }
+
+    /// The ADSR envelope at a sample
+    fn envelope(&self, i: usize) -> f32 {
+        if i < self.attack_end {
+            i as f32 * self.rcp_attack
+        } else if i < self.decay_end {
+            let decay_pos = (i - self.attack_end) as f32;
+            1.0 - (1.0 - self.sustain) * decay_pos * self.rcp_decay
+        } else if i < self.release_start {
+            self.sustain
+        } else {
+            let release_pos = (i - self.release_start) as f32;
+            self.sustain * (1.0 - release_pos * self.rcp_release)
+        }
     }
 }
 

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** Python の新しい音声は拡張の Rust 実装 (`alice_zip::media::AudioStream`、`libalice.MediaAudioStream`) だけで作る 拡張が無ければ `RuntimeError` 白色雑音は正規分布でなく Rust の一様分布になる チャンクの切り方で sample は変わらない `PYTHON_SEMANTICS_ID` か識別子無しの `ALICE_AUD` は書かれた時の numpy の式で読む 版は上げない: Python package の 3.0.0 は未公開 (公開済みは py-alice-zip-v2.0.0) で、この変更はその 3.0.0 に含まれる
+
 ### Fixed
 - ALICE_IMG と ALICE_VID の keyframe は、記載された大きさが `MAX_OUTPUT_SIZE` (既定 4 GiB) を超えると確保の前に `MemoryError` で拒む 確保の失敗は native 拡張ではプロセスを終わらせていた `libalice.media_image` も同じ上限で拒む
 - ALICE_AUD も、記載された長さの 16 bit のサンプルが `MAX_OUTPUT_SIZE` を超えると生成の前に `MemoryError` で拒む 長さ 1e12 秒の file は上限なしで生成を続けていた

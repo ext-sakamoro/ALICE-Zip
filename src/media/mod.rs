@@ -8,5 +8,5 @@
 pub mod audio;
 pub mod image;
 
-pub use audio::{AudioGenerator, AudioParams, AudioPattern};
+pub use audio::{AudioGenerator, AudioParams, AudioPattern, AudioStream};
 pub use image::{ImageGenerator, ImageParams, ImagePattern};

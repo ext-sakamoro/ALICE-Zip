@@ -299,6 +299,99 @@ def test_an_image_pattern_with_no_law_raises(pattern):
         ImageGenerator().generate(params(pattern))
 
 
+RECORDED_AUDIO = {
+    "silence": "668946bab9868b28489bb906205ee1026045c8bcd3ca62a1bdf733c65491351b",
+    "sine_wave": "4aa16c8802b2d9d8072b445823ccd90280d2b4ee9f391d77f49af5766765e921",
+    "multi_sine": "4aa16c8802b2d9d8072b445823ccd90280d2b4ee9f391d77f49af5766765e921",
+    "noise_white": "7f968530a1d13f5724f8ec95625caba4501c5be28d07179d71a788f2641bc6e6",
+    "noise_pink": "668946bab9868b28489bb906205ee1026045c8bcd3ca62a1bdf733c65491351b",
+    "speech": "668946bab9868b28489bb906205ee1026045c8bcd3ca62a1bdf733c65491351b",
+    "music": "668946bab9868b28489bb906205ee1026045c8bcd3ca62a1bdf733c65491351b",
+    "unknown": "668946bab9868b28489bb906205ee1026045c8bcd3ca62a1bdf733c65491351b",
+    "two_channels": "524176d0ec2c001111ea661132d3d04e7018026513cde87b12273d0e235f787f"
+}
+AUDIO_BASE = dict(sample_rate=8000, duration=0.5, channels=1, frequencies=[[220.0, 0.5, 0.1], [660.5, 0.25, 0.3]],
+                  noise_amplitude=0.5, seed=2024)
+
+
+def audio_file(pattern, stored, **extra):
+    head = {"magic": "ALICE_AUD", "params": dict(AUDIO_BASE, pattern=pattern, **extra)}
+    if stored is not None:
+        head["semantics"] = stored
+    return json.dumps(head).encode()
+
+
+def pcm_digest(samples):
+    return hashlib.sha256(samples.astype("<i2").tobytes()).hexdigest()
+
+
+@pytest.mark.parametrize("pattern", sorted(set(RECORDED_AUDIO) - {"two_channels"}))
+def test_an_audio_file_of_the_numpy_identifier_reads_what_it_recorded(pattern):
+    samples, rate = AudioGenerator().decompress(audio_file(pattern, semantics.PYTHON_SEMANTICS_ID.hex()))
+    assert rate == 8000
+    assert pcm_digest(samples) == RECORDED_AUDIO[pattern]
+
+
+def test_a_two_channel_audio_file_reads_what_it_recorded():
+    samples, _ = AudioGenerator().decompress(
+        audio_file("noise_white", semantics.PYTHON_SEMANTICS_ID.hex(), channels=2))
+    assert pcm_digest(samples) == RECORDED_AUDIO["two_channels"]
+
+
+@needs_native
+def test_an_audio_file_of_the_native_identifier_regenerates_with_the_rust_crate():
+    samples, _ = AudioGenerator().decompress(audio_file("noise_white", semantics.NATIVE_SEMANTICS_ID.hex()))
+    assert pcm_digest(samples) != RECORDED_AUDIO["noise_white"]
+
+
+@needs_native
+@pytest.mark.parametrize("pattern,golden,components", [
+    ("multi_sine", "media_multi_sine_with_a_large_phase_is_the_recorded_bits",
+     [(220.0, 0.5, 9000.0), (660.5, 0.25, 0.3)]),
+    ("noise_white", "media_white_noise_is_the_recorded_bits", []),
+])
+def test_python_gets_the_bits_of_the_rust_audio_golden(pattern, golden, components):
+    from pathlib import Path
+    import struct
+    source = (Path(__file__).parent.parent / "src" / "semantics.rs").read_text(encoding="utf-8")
+    want = source[source.index(f'"golden {golden}"'):].split('hex32("', 1)[1].split('"', 1)[0]
+    blocks = native_accelerator.media_audio_blocks(pattern, 44100, 176400, components, 0.75, 7,
+                                                   (0.01, 0.1, 0.7, 0.2), 4096)
+    samples = np.concatenate(list(blocks))
+    h = hashlib.sha256(struct.pack(">Q", len(samples)))
+    h.update(samples.astype(">f4").tobytes())
+    assert h.hexdigest() == want
+
+
+@needs_native
+def test_the_chunks_do_not_change_the_samples():
+    p = AudioParams(pattern=AudioPattern.NOISE_WHITE, sample_rate=8000, duration=0.5, noise_amplitude=0.5, seed=3)
+    g = AudioGenerator()
+    whole = g.generate(p)
+    assert len(whole) == 4000
+    assert np.any(whole)
+    for size in (1, 7, 1000):
+        assert np.array_equal(np.concatenate(list(g.generate_chunks(p, size))), whole)
+
+
+@needs_native
+def test_a_sine_is_its_closed_form_within_the_quantisation():
+    freq, amp = 100.0, 0.5
+    p = AudioParams(pattern=AudioPattern.SINE_WAVE, sample_rate=8000, duration=0.1, frequencies=[(freq, amp, 0.0)],
+                    envelope=(0.0, 0.0, 1.0, 0.0))
+    got = AudioGenerator().generate(p)
+    want = amp * np.sin(2 * np.pi * freq * np.arange(len(got)) / 8000) * 32767
+    assert np.max(np.abs(got - want)) <= 1.5
+
+
+@needs_no_native
+@pytest.mark.parametrize("pattern", [AudioPattern.SILENCE, AudioPattern.SINE_WAVE, AudioPattern.NOISE_WHITE])
+def test_without_the_extension_new_audio_is_refused(pattern):
+    p = AudioParams(pattern=pattern, sample_rate=8000, duration=0.1, seed=1)
+    with pytest.raises(RuntimeError, match="native extension"):
+        AudioGenerator().generate(p)
+
+
 @pytest.mark.parametrize("pattern", [AudioPattern.NOISE_PINK, AudioPattern.SPEECH, AudioPattern.MUSIC,
                                      AudioPattern.UNKNOWN])
 def test_an_audio_pattern_with_no_law_raises_and_its_file_reads_what_it_recorded(pattern):

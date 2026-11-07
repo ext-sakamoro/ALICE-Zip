@@ -534,12 +534,16 @@ class AudioGenerator:
         if not HAS_SCIPY:
             raise ImportError("SciPy required: pip install scipy")
 
-    def generate_chunks(self, params: AudioParams, chunk_samples: Optional[int] = None, recorded: bool = False):
-        """
-        Generate audio in chunks (generator pattern).
+    _NATIVE_PATTERNS = (AudioPattern.SILENCE, AudioPattern.SINE_WAVE, AudioPattern.MULTI_SINE,
+                        AudioPattern.NOISE_WHITE)
 
-        Yields chunks of audio data to avoid allocating entire audio buffer.
-        Memory usage is O(chunk_size) instead of O(total_duration).
+    def generate_chunks(self, params: AudioParams, chunk_samples: Optional[int] = None):
+        """
+        Generate audio in chunks, from the audio law of the Rust crate (the native extension: ``RuntimeError``
+        without it). A pattern with no law raises ``ValueError``.
+
+        Memory usage is O(chunk_size) instead of O(total_duration), and the samples do not depend on the chunk
+        size.
 
         Args:
             params: Audio generation parameters
@@ -547,6 +551,45 @@ class AudioGenerator:
 
         Yields:
             np.ndarray: Audio chunk as int16 array
+        """
+        if params.pattern not in self._NATIVE_PATTERNS:
+            raise ValueError(f"no law generates the audio pattern {params.pattern.value!r}")
+        seed = params.seed
+        if params.pattern == AudioPattern.NOISE_WHITE:
+            if seed is None:
+                raise ValueError(
+                    "AudioPattern.NOISE_WHITE needs AudioParams.seed: without it the "
+                    "samples would differ on every run"
+                )
+        else:
+            seed = 0
+        n_samples = int(params.duration * params.sample_rate)
+        for chunk in _accel.media_audio_blocks(
+                params.pattern.value, params.sample_rate, n_samples, list(params.frequencies),
+                params.noise_amplitude, seed, tuple(params.envelope),
+                chunk_samples or self.DEFAULT_CHUNK_SAMPLES):
+            yield self._to_pcm16(chunk, params)
+
+    @staticmethod
+    def _to_pcm16(chunk: np.ndarray, params: AudioParams) -> np.ndarray:
+        """Samples to int16, after the normalisation by the global maximum if there is one"""
+        # DO NOT normalize per-chunk - this causes severe audio artifacts!
+        if params.global_max_amplitude is not None and params.global_max_amplitude > 0:
+            chunk = chunk / params.global_max_amplitude * 0.9
+
+        # Convert to int16 (clip to prevent overflow)
+        chunk = np.clip(chunk, -1.0, 1.0)
+        chunk_int16 = (chunk * 32767).astype(np.int16)
+
+        # Handle multi-channel
+        if params.channels > 1:
+            chunk_int16 = np.stack([chunk_int16] * params.channels, axis=-1)
+
+        return chunk_int16
+
+    def _recorded_chunks(self, params: AudioParams, chunk_samples: Optional[int] = None):
+        """What a file written under ``PYTHON_SEMANTICS_ID`` (or none) records, by the numpy formulas it was
+        written under: read-only, for those files. New audio comes from :meth:`generate_chunks`.
         """
         if chunk_samples is None:
             chunk_samples = self.DEFAULT_CHUNK_SAMPLES
@@ -588,12 +631,8 @@ class AudioGenerator:
             elif params.pattern == AudioPattern.NOISE_WHITE:
                 chunk = noise_rng.standard_normal(chunk_len) * params.noise_amplitude
 
-            elif recorded:
-                # a file written under this identifier reads what it recorded
-                chunk = np.zeros(chunk_len, dtype=np.float64)
-
             else:
-                raise ValueError(f"no law generates the audio pattern {params.pattern.value!r}")
+                chunk = np.zeros(chunk_len, dtype=np.float64)
 
             # Apply envelope for this chunk's position
             if params.pattern != AudioPattern.SILENCE:
@@ -601,23 +640,10 @@ class AudioGenerator:
                     chunk, params, chunk_start, total_samples
                 )
 
-            # Apply normalization using global max (if provided from compression analysis)
-            # DO NOT normalize per-chunk - this causes severe audio artifacts!
-            if params.global_max_amplitude is not None and params.global_max_amplitude > 0:
-                # Use the global max from compression analysis
-                chunk = chunk / params.global_max_amplitude * 0.9
+            yield self._to_pcm16(chunk, params)
 
-            # Convert to int16 (clip to prevent overflow)
-            chunk = np.clip(chunk, -1.0, 1.0)
-            chunk_int16 = (chunk * 32767).astype(np.int16)
 
-            # Handle multi-channel
-            if params.channels > 1:
-                chunk_int16 = np.stack([chunk_int16] * params.channels, axis=-1)
-
-            yield chunk_int16
-
-    def generate(self, params: AudioParams, recorded: bool = False) -> np.ndarray:
+    def generate(self, params: AudioParams) -> np.ndarray:
         """
         Generate complete audio array from procedural parameters.
 
@@ -643,7 +669,7 @@ class AudioGenerator:
             )
 
         # Use chunked generation and concatenate
-        chunks = list(self.generate_chunks(params, recorded=recorded))
+        chunks = list(self.generate_chunks(params))
         return np.concatenate(chunks, axis=0)
 
     def generate_to_file(self, params: AudioParams, output_path: Union[str, Path],
@@ -710,15 +736,20 @@ class AudioGenerator:
                    max_output_size: int = MAX_REGENERATED_SIZE) -> Tuple[np.ndarray, int]:
         """Decompress ALICE format to audio
 
-        The stored ``"semantics"`` is compared with the numpy arithmetic
-        (``semantics.PYTHON_SEMANTICS_ID``); ``strict`` refuses a file without one. A file stating more than
+        A file recording the native identifier regenerates with the Rust crate. One recording
+        ``semantics.PYTHON_SEMANTICS_ID`` (or none, which ``strict`` refuses) reads what it recorded, by the
+        formulas it was written under. Any other identifier is refused. A file stating more than
         ``max_output_size`` bytes of samples raises ``MemoryError`` before any is generated.
         """
         parsed = json.loads(data.decode('utf-8'))
 
         if parsed.get('magic') != ALICE_AUDIO_MAGIC.decode():
             raise ValueError("Invalid ALICE_AUD file")
-        _semantics.check(parsed.get('semantics'), _semantics.PYTHON_SEMANTICS_ID, "ALICE_AUD", strict)
+        stored = parsed.get('semantics')
+        native = _semantics.NATIVE_SEMANTICS_ID
+        recorded = native is None or stored != native.hex()
+        if recorded:
+            _semantics.check(stored, _semantics.PYTHON_SEMANTICS_ID, "ALICE_AUD", strict)
 
         p = parsed['params']
         _check_regenerated_audio_size(p['duration'], p['sample_rate'], p['channels'], max_output_size)
@@ -738,7 +769,9 @@ class AudioGenerator:
             seed=p.get('seed'),
         )
 
-        return self.generate(params, recorded=True), params.sample_rate
+        if recorded:
+            return np.concatenate(list(self._recorded_chunks(params)), axis=0), params.sample_rate
+        return self.generate(params), params.sample_rate
 
 
 # ============================================================================

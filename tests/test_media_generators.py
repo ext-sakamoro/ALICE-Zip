@@ -276,6 +276,7 @@ class TestAudioGenerator:
     def setup_method(self):
         self.generator = AudioGenerator()
 
+    @needs_native
     def test_generate_silence(self):
         """Test silence generation"""
         params = AudioParams(
@@ -292,6 +293,7 @@ class TestAudioGenerator:
         # Silence should be all zeros
         assert np.all(result == 0)
 
+    @needs_native
     def test_generate_sine_wave(self):
         """Test sine wave generation"""
         params = AudioParams(
@@ -310,6 +312,7 @@ class TestAudioGenerator:
         # Should have some amplitude
         assert np.max(np.abs(result)) > 1000
 
+    @needs_native
     def test_generate_multi_sine(self):
         """Test multi-sine (chord) generation"""
         params = AudioParams(
@@ -329,6 +332,7 @@ class TestAudioGenerator:
         assert result.dtype == np.int16
         assert np.max(np.abs(result)) > 1000
 
+    @needs_native
     def test_generate_white_noise(self):
         """Test white noise generation"""
         params = AudioParams(
@@ -355,9 +359,7 @@ class TestAudioGenerator:
             noise_amplitude=0.5,
             seed=seed,
         )
-        if chunk_samples is None:
-            return self.generator.generate(params)
-        return np.concatenate(list(self.generator.generate_chunks(params, chunk_samples)))
+        return np.concatenate(list(self.generator._recorded_chunks(params, chunk_samples)))
 
     def test_white_noise_needs_a_seed(self):
         """Without a seed the samples would differ on every run, so it is refused"""
@@ -403,6 +405,7 @@ class TestAudioGenerator:
         with pytest.raises(ValueError, match="written before the seed"):
             self.generator.decompress(blob)
 
+    @needs_native
     def test_generate_stereo(self):
         """Test stereo audio generation"""
         params = AudioParams(

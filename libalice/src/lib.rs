@@ -79,6 +79,7 @@ mod python {
 
         // The image law of the core crate
         m.add_function(wrap_pyfunction!(media_image, m)?)?;
+        m.add_class::<MediaAudioStream>()?;
         Ok(())
     }
 
@@ -149,6 +150,67 @@ mod python {
             ..ImageParams::default()
         };
         Ok(ImageGenerator::new().generate_channels(&params, &start, &end))
+    }
+
+    /// `alice_zip::media::AudioStream` for the pattern named by the Python package. Under [`semantics_id`]: its
+    /// bits are folded there.
+    #[pyclass]
+    struct MediaAudioStream {
+        inner: alice_zip::media::AudioStream,
+    }
+
+    #[pymethods]
+    impl MediaAudioStream {
+        #[new]
+        #[pyo3(signature = (pattern, sample_rate, n, components, amplitude, seed, envelope))]
+        fn new(
+            pattern: &str,
+            sample_rate: u32,
+            n: usize,
+            components: Vec<(f32, f32, f32)>,
+            amplitude: f32,
+            seed: u64,
+            envelope: (f32, f32, f32, f32),
+        ) -> PyResult<Self> {
+            use alice_zip::media::{AudioParams, AudioPattern, AudioStream};
+            let pattern = match pattern {
+                "silence" => AudioPattern::Silence,
+                "sine_wave" | "multi_sine" => AudioPattern::MultiSine,
+                "noise_white" => AudioPattern::WhiteNoise,
+                other => {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "no audio law named {other:?}"
+                    )))
+                }
+            };
+            if sample_rate == 0 {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "the sample rate is 0",
+                ));
+            }
+            let params = AudioParams {
+                pattern,
+                sample_rate,
+                amplitude,
+                components,
+                seed,
+                attack: envelope.0,
+                decay: envelope.1,
+                sustain: envelope.2,
+                release: envelope.3,
+                ..AudioParams::default()
+            };
+            Ok(Self {
+                inner: AudioStream::new(&params, n),
+            })
+        }
+
+        /// The next `count` samples or fewer, as little-endian f32 bytes; none at the end
+        fn next_block(&mut self, count: usize) -> Vec<u8> {
+            let mut block = vec![0.0_f32; count.min(self.inner.remaining())];
+            let n = self.inner.fill(&mut block);
+            block[..n].iter().flat_map(|s| s.to_le_bytes()).collect()
+        }
     }
 
     // ============================================================================

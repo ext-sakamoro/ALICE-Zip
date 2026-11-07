@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # (built before 3.0.0) is not used, since the files written with it could not
 # record which arithmetic regenerated their values
 _NATIVE_REQUIRED = ("sine_wave", "fourier_generate", "polynomial_generate", "perlin_2d",
-                    "perlin_advanced", "semantics_id", "media_image")
+                    "perlin_advanced", "semantics_id", "media_image", "MediaAudioStream")
 _HAS_LIBALICE = False
 _native = None
 try:
@@ -156,6 +156,28 @@ def media_image(pattern: str, width: int, height: int, start: Tuple[int, ...], e
     data = _native.media_image(pattern, width, height, bytes(start), bytes(end), angle_degrees,
                                  tuple(center), block_size, seed)
     return np.frombuffer(bytes(data), dtype=np.uint8).reshape(height, width, len(start))
+
+
+def media_audio_blocks(pattern: str, sample_rate: int, n: int, components: List[Tuple[float, float, float]],
+                       amplitude: float, seed: int, envelope: Tuple[float, float, float, float],
+                       block: int):
+    """The samples of the audio law of the Rust crate as float32 arrays of at most ``block`` samples.
+
+    It has no pure Python version, like :func:`media_image`.
+
+    Raises:
+        RuntimeError: the native extension is not installed
+    """
+    if not _HAS_LIBALICE:
+        raise RuntimeError(
+            f"audio pattern {pattern!r} is computed by the native extension (libalice), which is not "
+            f"installed: install it to generate this pattern")
+    stream = _native.MediaAudioStream(pattern, sample_rate, n, components, amplitude, seed, envelope)
+    while True:
+        data = bytes(stream.next_block(block))
+        if not data:
+            return
+        yield np.frombuffer(data, dtype="<f4")
 
 
 def fourier_generate(
