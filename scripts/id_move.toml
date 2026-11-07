@@ -6,6 +6,7 @@ manifest = "Cargo.toml"
 tags = ["v{version}"]
 
 [exempt]
+ZIP_SEMANTICS_ID = "the value of alice_zip::law::SEMANTICS_ID, the row below: the same identifier under the module that folds it"
 DET_MATH_SEMANTICS_ID = "alice-det-math's own identifier, re-exported for reference: this crate stamps law::SEMANTICS_ID, which folds the functions it calls"
 [[id]]
 path = "alice_zip::law::SEMANTICS_ID"

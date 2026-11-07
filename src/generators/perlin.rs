@@ -63,9 +63,10 @@ impl PerlinNoise {
             *p = i as u8;
         }
         // Fisher-Yates shuffle
-        for i in (1..256).rev() {
+        // the range is u64: a usize range draws by pointer width, and wasm32 shuffled another table
+        for i in (1..256_u64).rev() {
             let j = rng.gen_range(0..=i);
-            perm.swap(i, j);
+            perm.swap(i as usize, j as usize);
         }
         // Duplicate for overflow handling
         for i in 0..256 {

@@ -208,6 +208,16 @@ jobs:
             cargo test --target wasm32-wasip1 --test "$t" 2>&1 | tee "wasm-$t.log"
             sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "wasm-$t.log" | grep -E 'test result: ok\. [1-9][0-9]* passed'
           done
+      # the goldens and the identifier read src/ and their expected digests: the tree is mounted
+      - name: Goldens under wasmtime
+        shell: bash
+        run: |
+          set -o pipefail
+          export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$PWD::$PWD"
+          for t in determinism_golden zip_semantics_id; do
+            cargo test --target wasm32-wasip1 --test "$t" 2>&1 | tee "wasm-$t.log"
+            sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "wasm-$t.log" | grep -E 'test result: ok\. [1-9][0-9]* passed'
+          done
 
   wasm-entry:
     name: Browser entry (wasm/, the same results on the host and in Node)

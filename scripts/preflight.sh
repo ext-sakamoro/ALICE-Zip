@@ -603,6 +603,9 @@ grep -q '^wasm32-wasip1$' <<<"$(rustup target list --installed)" || rustup targe
 command -v wasmtime >/dev/null || { echo "wasmtime is required for the wasm32-wasip1 step"; exit 1; }
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma" CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime; set -o pipefail; for t in container_oracle container_known_tags; do cargo test --target wasm32-wasip1 --test "$t" 2>&1 | tee "${CARGO_TARGET_DIR:-target}/wasm-$t.log"; sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "${CARGO_TARGET_DIR:-target}/wasm-$t.log" | grep -E 'test result: ok\. [1-9][0-9]* passed'; done )
 
+step "ci.yml / wasm: Goldens under wasmtime"
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; set -o pipefail; export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=$PWD::$PWD"; for t in determinism_golden zip_semantics_id; do cargo test --target wasm32-wasip1 --test "$t" 2>&1 | tee "${CARGO_TARGET_DIR:-target}/wasm-$t.log"; sed 's/\x1b\[[0-9;]*m//g; s/\x1b(B//g' "${CARGO_TARGET_DIR:-target}/wasm-$t.log" | grep -E 'test result: ok\. [1-9][0-9]* passed'; done )
+
 step "ci.yml / wasm-entry: Browser entry (clippy, tests on the host and in Node, release build)"
 # (a here-string, not a pipe into grep -q: under pipefail grep's early exit can fail the pipe on a match)
 grep -q '^wasm32-unknown-unknown$' <<<"$(rustup target list --installed)" || rustup target add wasm32-unknown-unknown
