@@ -272,6 +272,17 @@ def _check_regenerated_size(width, height, channels, limit: int) -> None:
         raise MemoryError(f"an image of {width} x {height} x {channels} exceeds the limit of {limit} bytes")
 
 
+def _check_regenerated_audio_size(duration, sample_rate, channels, limit: int) -> None:
+    """Refuse audio whose 16-bit samples would pass ``limit``, for the same reason as ``_check_regenerated_size``:
+    ``generate`` holds them all in memory. A value that is not a positive number is left to the generator."""
+    sides = (duration, sample_rate, channels)
+    if not all(isinstance(n, (int, float)) and not isinstance(n, bool) and n > 0 for n in sides):
+        return
+    samples = duration * sample_rate
+    if samples == float("inf") or int(samples) * channels * 2 > limit:
+        raise MemoryError(f"audio of {duration} s x {sample_rate} Hz x {channels} exceeds the limit of {limit} bytes")
+
+
 class ImageGenerator:
     """Generate images from procedural parameters"""
 
@@ -695,11 +706,13 @@ class AudioGenerator:
 
         return chunk * envelope
 
-    def decompress(self, data: bytes, strict: bool = False) -> Tuple[np.ndarray, int]:
+    def decompress(self, data: bytes, strict: bool = False,
+                   max_output_size: int = MAX_REGENERATED_SIZE) -> Tuple[np.ndarray, int]:
         """Decompress ALICE format to audio
 
         The stored ``"semantics"`` is compared with the numpy arithmetic
-        (``semantics.PYTHON_SEMANTICS_ID``); ``strict`` refuses a file without one.
+        (``semantics.PYTHON_SEMANTICS_ID``); ``strict`` refuses a file without one. A file stating more than
+        ``max_output_size`` bytes of samples raises ``MemoryError`` before any is generated.
         """
         parsed = json.loads(data.decode('utf-8'))
 
@@ -708,6 +721,7 @@ class AudioGenerator:
         _semantics.check(parsed.get('semantics'), _semantics.PYTHON_SEMANTICS_ID, "ALICE_AUD", strict)
 
         p = parsed['params']
+        _check_regenerated_audio_size(p['duration'], p['sample_rate'], p['channels'], max_output_size)
         pattern = AudioPattern(p['pattern'])
         if pattern == AudioPattern.NOISE_WHITE and 'seed' not in p:
             raise ValueError(

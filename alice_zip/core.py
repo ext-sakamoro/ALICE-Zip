@@ -691,7 +691,7 @@ class ALICEZip:
             return self.media.image.decompress(data, self.STRICT_SEMANTICS, self.MAX_OUTPUT_SIZE)
 
         elif magic == ALICE_AUDIO_MAGIC.decode():
-            return self.media.audio.decompress(data, self.STRICT_SEMANTICS)
+            return self.media.audio.decompress(data, self.STRICT_SEMANTICS, self.MAX_OUTPUT_SIZE)
 
         elif magic == ALICE_VIDEO_MAGIC.decode():
             if output_path is None:
@@ -806,7 +806,7 @@ class ALICEZip:
             return self.media.image.decompress(payload_data, self.STRICT_SEMANTICS, self.MAX_OUTPUT_SIZE)
 
         elif header.payload_type == AlicePayloadType.MEDIA_AUDIO:
-            return self.media.audio.decompress(payload_data, self.STRICT_SEMANTICS)
+            return self.media.audio.decompress(payload_data, self.STRICT_SEMANTICS, self.MAX_OUTPUT_SIZE)
 
         elif header.payload_type == AlicePayloadType.MEDIA_VIDEO:
             if output_path is None:

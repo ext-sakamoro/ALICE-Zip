@@ -177,6 +177,42 @@ def test_the_zipper_passes_its_limit_when_the_header_names_the_payload(monkeypat
                                json.dumps({"magic": magic, **extra}).encode(), "unused.mp4")
 
 
+def _audio_file(duration, sample_rate=8, channels=1):
+    return json.dumps({"magic": "ALICE_AUD", "semantics": None, "params": {
+        "pattern": "silence", "sample_rate": sample_rate, "duration": duration, "channels": channels}}).encode()
+
+
+@pytest.mark.parametrize("duration", [1e12, 1e300, float("inf")])
+def test_an_audio_file_stating_a_huge_duration_is_refused_before_generating(monkeypatch, duration):
+    def not_reached(*_args, **_kwargs):  # without the bound this would run for hours
+        raise AssertionError("samples were generated")
+    monkeypatch.setattr(AudioGenerator, "generate", not_reached)
+    with pytest.raises(MemoryError, match="exceeds the limit"):
+        AudioGenerator().decompress(_audio_file(duration, 44100, 2))
+
+
+def test_the_audio_limit_counts_the_bytes_of_the_samples_it_would_return():
+    # 8 samples x 2 channels x 2 bytes = 32
+    with pytest.warns(Warning):
+        samples, rate = AudioGenerator().decompress(_audio_file(1, channels=2), max_output_size=32)
+    assert (samples.shape, samples.dtype, rate) == ((8, 2), np.int16, 8)
+    assert samples.nbytes == 32
+    with pytest.raises(MemoryError):
+        AudioGenerator().decompress(_audio_file(1, channels=2), max_output_size=31)
+    # a duration the sample rate cuts down to 8 samples is 8 samples
+    with pytest.warns(Warning):
+        assert AudioGenerator().decompress(_audio_file(1.1), max_output_size=16)[0].nbytes == 16
+
+
+def test_the_zipper_passes_its_limit_to_the_audio_reader():
+    zipper = ALICEZip()
+    zipper.MAX_OUTPUT_SIZE = 8
+    with pytest.raises(MemoryError):
+        zipper._decompress_media_json(_audio_file(1), None)
+    with pytest.raises(MemoryError):
+        zipper._decode_payload(SimpleNamespace(payload_type=AlicePayloadType.MEDIA_AUDIO), _audio_file(1), None)
+
+
 def test_a_video_stating_a_huge_keyframe_is_refused(monkeypatch):
     monkeypatch.setattr(media_generators, "HAS_CV2", True)  # no frame is written
     file = json.dumps({"magic": "ALICE_VID", "pattern": "keyframes", "width": 1, "height": 1, "fps": 1, "duration": 1,
