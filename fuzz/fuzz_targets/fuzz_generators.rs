@@ -9,6 +9,25 @@ use alice_zip::generators::{
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
 
+/// Whether every octave an fBm sum evaluates (up to the first zero amplitude) has a finite
+/// position at each of `points`: the documented refusal of a frequency that left the range
+fn positions_finite(points: &[(f32, f32)], start_frequency: f32, octaves: u32, persistence: f32, lacunarity: f32) -> bool {
+    points.iter().all(|&(x, y)| {
+        let (mut amplitude, mut frequency) = (1.0_f32, start_frequency);
+        for _ in 0..octaves {
+            if amplitude == 0.0 {
+                break;
+            }
+            if !((x * frequency).is_finite() && (y * frequency).is_finite()) {
+                return false;
+            }
+            amplitude *= persistence;
+            frequency *= lacunarity;
+        }
+        true
+    })
+}
+
 #[derive(Arbitrary, Debug)]
 struct Input {
     samples: Vec<f32>,
@@ -63,8 +82,11 @@ fuzz_target!(|input: Input| {
     // Noise: errors only for the documented invalid parameters, output bounded
     let octaves = u32::from(input.octaves % 9);
     let valid = input.scale.is_finite() && input.scale > 0.0 && octaves > 0;
+    #[allow(clippy::cast_precision_loss)]
+    let line: Vec<(f32, f32)> = (0..n).map(|i| (i as f32 * (1.0 / n as f32), 0.0)).collect();
+    let line_ok = positions_finite(&line, input.scale, octaves, input.persistence, input.lacunarity);
     let fbm = generate_fbm_1d(n, input.seed, input.scale, octaves, input.persistence, input.lacunarity);
-    assert_eq!(fbm.is_ok(), valid);
+    assert_eq!(fbm.is_ok(), valid && line_ok);
     if let Ok(v) = &fbm {
         assert_eq!(v.len(), n);
         if input.persistence >= 0.0 && input.persistence.is_finite() && input.lacunarity.is_finite() {
@@ -72,8 +94,14 @@ fuzz_target!(|input: Input| {
         }
     }
     let (w, h) = (usize::from(input.width % 32), usize::from(input.height % 32));
+    let rcp = 1.0 / input.scale;
+    #[allow(clippy::cast_precision_loss)]
+    let grid: Vec<(f32, f32)> = (0..h)
+        .flat_map(|y| (0..w).map(move |x| (x as f32 * rcp, y as f32 * rcp)))
+        .collect();
+    let grid_ok = positions_finite(&grid, 1.0, octaves, input.persistence, input.lacunarity);
     let tex = generate_perlin_advanced(w, h, input.seed, input.scale, octaves, input.persistence, input.lacunarity);
-    assert_eq!(tex.is_ok(), valid);
+    assert_eq!(tex.is_ok(), valid && grid_ok);
     if let Ok(t) = tex {
         assert_eq!(t.len(), w * h);
         assert!(t.iter().all(|x| x.is_nan() || (0.0..=1.0).contains(x)));
