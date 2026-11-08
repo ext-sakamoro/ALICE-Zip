@@ -22,6 +22,14 @@ use rayon::prelude::*;
 use crate::error::ZipError;
 use crate::math::floor_f32;
 
+/// The most noise evaluations one call may make: points × octaves (a 2D texture counts each
+/// pixel). Policy, tied to alice-db's whole-segment read budget: 1 GiB at 24 bytes a point gives
+/// it 44 739 242 points a segment, and 64 octaves each is far above what any writer uses (5 at
+/// most, `media::image`'s fractal pattern). A call over it is refused with
+/// [`ZipError::InvalidParameter`] before anything is computed or allocated: the octave count
+/// is a loop bound, and a stored model with octaves near `u32::MAX` would otherwise spin.
+pub const MAX_FBM_STEPS: u64 = 44_739_242 * 64;
+
 /// Perlin noise gradient vectors (precomputed)
 const GRAD2: [[f32; 2]; 8] = [
     [1.0, 0.0],
