@@ -150,6 +150,7 @@ impl PerlinNoise {
     /// whose frequency left the finite range.
     #[inline]
     #[must_use]
+    #[deprecated(note = "returns 0.0 for what it cannot sum; use `try_fbm`, which says so")]
     pub fn fbm(&self, x: f32, y: f32, octaves: u32, persistence: f32, lacunarity: f32) -> f32 {
         self.try_fbm(x, y, octaves, persistence, lacunarity)
             .unwrap_or(0.0)
@@ -403,7 +404,7 @@ mod tests {
                 assert_eq!(v, 0.0, "lattice ({x}, {y})");
             }
         }
-        assert_eq!(p.fbm(1.0, 2.0, 0, 0.5, 2.0), 0.0);
+        assert_eq!(p.try_fbm(1.0, 2.0, 0, 0.5, 2.0), Ok(0.0));
     }
 
     #[test]

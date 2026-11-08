@@ -41,7 +41,11 @@ fn serial() -> Vec<u32> {
         .flat_map(|y| {
             let noise = &noise;
             (0..W).map(move |x| {
-                let v = (noise.fbm(x as f32 * rcp, y as f32 * rcp, OCTAVES, 0.5, 2.0) + 1.0) * 0.5;
+                let v = (noise
+                    .try_fbm(x as f32 * rcp, y as f32 * rcp, OCTAVES, 0.5, 2.0)
+                    .unwrap()
+                    + 1.0)
+                    * 0.5;
                 v.clamp(0.0, 1.0).to_bits()
             })
         })

@@ -59,11 +59,10 @@ fn a_frequency_past_the_finite_range_is_an_error_not_nan() {
         noise.try_fbm(0.3, 0.4, 200, 0.5, 2.0),
         Err(ZipError::InvalidParameter)
     );
-    // the infallible form is documented to give 0.0 for what the fallible one refuses
-    assert_eq!(
-        noise.fbm(0.3, 0.4, 200, 0.5, 2.0).to_bits(),
-        0.0_f32.to_bits()
-    );
+    // the deprecated infallible form gives 0.0 for what the fallible one refuses
+    #[allow(deprecated)]
+    let infallible = noise.fbm(0.3, 0.4, 200, 0.5, 2.0);
+    assert_eq!(infallible.to_bits(), 0.0_f32.to_bits());
 }
 
 #[test]

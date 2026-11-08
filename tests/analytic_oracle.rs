@@ -492,7 +492,7 @@ fn gradient_noise_is_zero_on_lattice_and_bounded() {
             // 2D gradient noise with unit gradients is bounded by √2 / 2
             assert!(v.abs() <= 0.7072, "({x}, {y}) = {v}");
             for octaves in 1..=6 {
-                assert!(p.fbm(x, y, octaves, 0.5, 2.0).abs() <= 1.0 + 1e-6);
+                assert!(p.try_fbm(x, y, octaves, 0.5, 2.0).unwrap().abs() <= 1.0 + 1e-6);
             }
         }
     }
@@ -616,7 +616,7 @@ fn perlin_matches_libalice_2_2_reference() {
             let a = ours.noise2d(x, y);
             let b = reference.noise2d(x, y);
             assert!((a - b).abs() < 1e-6, "seed={seed} ({x}, {y}): {a} vs {b}");
-            let fa = ours.fbm(x, y, 4, 0.5, 2.0);
+            let fa = ours.try_fbm(x, y, 4, 0.5, 2.0).unwrap();
             let fb = reference.fbm(x, y, 4, 0.5, 2.0);
             assert!(
                 (fa - fb).abs() < 1e-6,
