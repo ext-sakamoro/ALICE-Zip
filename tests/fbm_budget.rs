@@ -79,3 +79,16 @@ fn an_amplitude_that_reached_zero_ends_the_sum() {
         short.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn a_zero_amplitude_stops_before_the_frequency_leaves_the_range() {
+    // persistence 0: every octave after the first adds nothing, and the sum stops there, before
+    // lacunarity 2 takes the frequency past f32 at octave 128
+    let stopped = generate_fbm_1d(4, 7, 1.0, 200, 0.0, 2.0).unwrap();
+    assert_eq!(stopped, generate_fbm_1d(4, 7, 1.0, 1, 0.0, 2.0).unwrap());
+    let noise = PerlinNoise::new(7);
+    assert_eq!(
+        noise.try_fbm(0.3, 0.4, 200, 0.0, 2.0),
+        noise.try_fbm(0.3, 0.4, 1, 0.0, 2.0)
+    );
+}
