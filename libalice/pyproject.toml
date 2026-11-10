@@ -15,7 +15,7 @@ license = "LicenseRef-Proprietary"
 # No `license-files`: maturin finds LICENSE-Proprietary itself (the PEP 639
 # default globs), and listing it makes `maturin sdist` add the root copy
 # twice. scripts/dist_license_check.py checks the built files.
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Rust",

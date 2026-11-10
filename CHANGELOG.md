@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Breaking (Python):** 対応する Python の最小版を 3.9 から 3.10 に上げた (`requires-python = ">=3.10"`、classifier、black / ruff / mypy の対象) 3.9 は 2025-10 に保守が終わり、CI の `ubuntu-latest` (Ubuntu 26.04) の setup-python には 3.9 の build が無い libalice の Python module の CI は 3.10 / 3.12 / 3.13 で試し、PyPI の wheel も 3.10 から作る
 - CI: 追跡する Cargo.lock (compat/v0_10_reader を除く) の alice-* が、この repository 自身の package か git から来るものだけで、alice-det-math が lock ごとに高々 1 つであることを `scripts/lock_sources_check.py` (試験 `scripts/test_lock_sources_check.py`、比較 0 件は exit 2) で検査する `deny.toml` の `allow-git` に ALICE-Codec を足した
 
 - **Breaking:** Python の新しい音声は拡張の Rust 実装 (`alice_zip::media::AudioStream`、`libalice.MediaAudioStream`) だけで作る 拡張が無ければ `RuntimeError` 白色雑音は正規分布でなく Rust の一様分布になる チャンクの切り方で sample は変わらない `PYTHON_SEMANTICS_ID` か識別子無しの `ALICE_AUD` は書かれた時の numpy の式で読む 版は上げない: Python package の 3.0.0 は未公開 (公開済みは py-alice-zip-v2.0.0) で、この変更はその 3.0.0 に含まれる

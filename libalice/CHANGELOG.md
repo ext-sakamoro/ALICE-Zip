@@ -6,6 +6,7 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
 ### Changed
 
+- **Breaking (Python):** 対応する Python の最小版を 3.9 から 3.10 に上げた (`requires-python = ">=3.10"`、classifier、black / ruff / mypy の対象) 3.9 は 2025-10 に保守が終わり、CI の `ubuntu-latest` (Ubuntu 26.04) の setup-python には 3.9 の build が無い libalice の Python module の CI は 3.10 / 3.12 / 3.13 で試し、PyPI の wheel も 3.10 から作る
 - 依存: `alice-codec` (feature `codec`) を crates.io の 0.1.2 から git の main (0.2) に替えた
 - ライセンス: `Apache-2.0` → `LicenseRef-Proprietary` (`publish = false`) crate と wheel には `LICENSE-APACHE` と `NOTICE` に代えて `LICENSE-Proprietary` (repository の root と同じ内容の写し) を入れる
 - `generators::analyze_signal` (core の `analyze_signal_fft`) が rustfft から core の crate 内 f64 FFT に変わった Fourier 係数 (`try_fourier_fit` が `.alice` に書く値と Python binding の解析結果) の bit が変わり、x86_64 と aarch64 で同じ bit になる

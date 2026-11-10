@@ -162,7 +162,7 @@ status = "pass"
 evidence = [
     "alice_zip/media_generators.py: AudioParams.seed, required for AudioPattern.NOISE_WHITE (ValueError without it); generate_chunks draws the noise from one np.random.RandomState(seed) for the whole signal (numpy keeps the RandomState stream fixed across versions); MediaDecompressor reads noise_amplitude and seed from ALICE_AUD and refuses white-noise parameters without a seed",
     "tests/test_media_generators.py: test_white_noise_needs_a_seed, test_white_noise_is_the_same_for_the_same_seed (same seed same samples, another seed other samples, chunk size irrelevant), test_white_noise_samples_are_the_recorded_ones (SHA-256 of the int16 samples for seed 2024), test_decompress_reads_the_seed_and_refuses_noise_without_one",
-    ".github/workflows/ci.yml libalice-python job: pip installs scipy, so the audio tests run (they skip without it) under both the native accelerator and the pure Python fallback, on Python 3.9 and 3.12",
+    ".github/workflows/ci.yml libalice-python job: pip installs scipy, so the audio tests run (they skip without it) under both the native accelerator and the pure Python fallback, on Python 3.10, 3.12 and 3.13",
     "clippy.toml (Instant::now, Instant::elapsed, SystemTime::now, SystemTime::elapsed, RandomState::new and the RandomState type), scripts/entropy_guard.py with scripts/test_entropy_guard.py, scripts/clippy_canary.py for the Rust side",
     "`src/generators/perlin.rs#let mut rng = ChaCha8Rng::seed_from_u64(seed);` (the only Rust randomness: ChaCha8Rng::seed_from_u64(seed), an explicit input); `alice_zip/native_accelerator.py#rng = np.random.RandomState(seed)` (RandomState(seed))",
 ]
