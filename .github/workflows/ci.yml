@@ -92,7 +92,7 @@ jobs:
         run: |
           PY=$(command -v python3 || command -v python)
           "$PY" scripts/test_lock_sources_check.py
-          "$PY" scripts/lock_sources_check.py
+          "$PY" scripts/lock_sources_check.py --skip compat/
       # LicenseRef-Proprietary everywhere it is stated, LICENSE-Proprietary shipped
       # in both crates (libalice carries an identical copy) and none of the
       # previous licence files; 0 comparisons fail

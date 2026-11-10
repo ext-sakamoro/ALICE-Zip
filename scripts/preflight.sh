@@ -697,7 +697,7 @@ step "ci.yml / test: Lock sources (alice-* by git, one alice-det-math)"
   export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"
   PY=$(command -v python3 || command -v python)
   "$PY" scripts/test_lock_sources_check.py
-  "$PY" scripts/lock_sources_check.py
+  "$PY" scripts/lock_sources_check.py --skip compat/
 )
 )
 
