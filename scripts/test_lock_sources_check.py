@@ -35,6 +35,10 @@ class LockSources(unittest.TestCase):
                     f'name = "alice-det-math"\nversion = "0.6.0"\n{GIT.replace("0123", "4567")}')
         self.assertIn("more than one alice-det-math", " ".join(c.findings("Cargo.lock", text, OWN)))
 
+    def test_registry_libasp_fails(self):
+        text = lock('name = "libasp"\nversion = "1.0.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"')
+        self.assertEqual(len(c.findings("Cargo.lock", text, OWN)), 1)
+
     def test_non_alice_ignored(self):
         text = lock('name = "serde"\nversion = "1.0.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"')
         self.assertEqual(c.findings("Cargo.lock", text, OWN), [])

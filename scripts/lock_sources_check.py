@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail when a tracked Cargo.lock takes an alice-* crate by path from outside this repository or
+"""Fail when a tracked Cargo.lock takes an alice-* crate (or libasp) by path from outside this repository or
 from a registry, or links more than one alice-det-math
 
 Every alice-* dependency comes by git (branch main + version): the lock records the commit. This
@@ -32,8 +32,13 @@ def own_packages() -> set[str]:
     return names
 
 
+# ALICE crates whose package name does not start with `alice`
+OTHER_NAMES = {"libasp"}
+
+
 def findings(lock: str, text: str, own: set[str]) -> list[str]:
-    pk = [p for p in tomllib.loads(text).get("package", []) if p["name"].startswith("alice")]
+    pk = [p for p in tomllib.loads(text).get("package", [])
+          if p["name"].startswith("alice") or p["name"] in OTHER_NAMES]
     out = []
     for p in pk:
         src = p.get("source", "")
