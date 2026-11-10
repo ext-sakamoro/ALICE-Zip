@@ -86,6 +86,13 @@ jobs:
           PY=$(command -v python3 || command -v python)
           "$PY" scripts/test_lock_check.py
           "$PY" scripts/lock_check.py
+      # every alice-* in the tracked locks is this repository's own package or comes by git, with at
+      # most one alice-det-math per lock (compat/v0_10_reader reads the published 0.10 on purpose)
+      - name: Lock sources (alice-* by git, one alice-det-math)
+        run: |
+          PY=$(command -v python3 || command -v python)
+          "$PY" scripts/test_lock_sources_check.py
+          "$PY" scripts/lock_sources_check.py
       # LicenseRef-Proprietary everywhere it is stated, LICENSE-Proprietary shipped
       # in both crates (libalice carries an identical copy) and none of the
       # previous licence files; 0 comparisons fail

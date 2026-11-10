@@ -6,6 +6,7 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
 ### Changed
 
+- 依存: `alice-codec` (feature `codec`) を crates.io の 0.1.2 から git の main (0.2) に替えた
 - ライセンス: `Apache-2.0` → `LicenseRef-Proprietary` (`publish = false`) crate と wheel には `LICENSE-APACHE` と `NOTICE` に代えて `LICENSE-Proprietary` (repository の root と同じ内容の写し) を入れる
 - `generators::analyze_signal` (core の `analyze_signal_fft`) が rustfft から core の crate 内 f64 FFT に変わった Fourier 係数 (`try_fourier_fit` が `.alice` に書く値と Python binding の解析結果) の bit が変わり、x86_64 と aarch64 で同じ bit になる
 - **Breaking** ALICE-Law G8: `ResidualData::to_bytes` は生成した値の算術の識別子 (`metadata.semantics`、`compress_residual_delta` / `choose_compression` / `compress_original` は `alice_zip::law::SEMANTICS_ID` を入れる) を `"semantics"` に書き、版を 5 から 7 (layout 2 から 4) にする `from_bytes` は記録された識別子を `check_semantics` で比べ、再現できないものは `ResidualError::SemanticsMismatch` (両方を示す) で拒否する 版 1 から 4 は `semantics: None` で読め、`from_bytes_strict` は `ResidualError::LegacySemantics` で拒否する Python 拡張に `semantics_id()` を足した 3.x 以前の読み手は版 5 から 7 を読まない

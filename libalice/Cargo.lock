@@ -10,10 +10,10 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "alice-codec"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9b9429c09ce1892ba730b8f6e57b987c77ab0f14ea2ec5f0f01f5785bc58725"
+version = "0.2.0"
+source = "git+https://github.com/ext-sakamoro/ALICE-Codec?branch=main#ce42348e1d1d40129950bc271f2979d9a398430d"
 dependencies = [
+ "alice-det-math",
  "libm",
 ]
 

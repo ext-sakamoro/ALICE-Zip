@@ -55,7 +55,7 @@ clap = { version = "4.5", features = ["derive"] }
 # crates.io dependency (0.1.2 = the ALICE-Codec sibling checkout content): a path dep
 # would make `cargo check` fail on any machine without ../../ALICE-Codec even with
 # the `codec` feature off (cargo reads optional path manifests unconditionally)
-alice-codec = { version = "0.1.2", optional = true }
+alice-codec = { git = "https://github.com/ext-sakamoro/ALICE-Codec", branch = "main", version = "0.2", optional = true }
 
 [features]
 default = ["cli"]
