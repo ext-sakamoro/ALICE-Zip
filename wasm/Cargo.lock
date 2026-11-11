@@ -10,7 +10,7 @@ source = "git+https://github.com/ext-sakamoro/ALICE-DetMath?branch=main#3d55df82
 [[package]]
 name = "alice-sign"
 version = "0.1.0"
-source = "git+https://github.com/ext-sakamoro/ALICE-Sign?rev=8a1b00d800082187a8693732a9ffb806c98814e7#8a1b00d800082187a8693732a9ffb806c98814e7"
+source = "git+https://github.com/ext-sakamoro/ALICE-Sign?branch=main#8c8d1eebf4ef9fc4059dae08779f8846e832df5e"
 dependencies = [
  "ed25519-dalek",
  "sha2",
