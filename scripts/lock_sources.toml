@@ -1,0 +1,13 @@
+# Locks that keep another source of an alice-* crate on purpose (read by scripts/lock_sources_check.py)
+
+[[exempt]]
+lock = "compat/v0_10_reader/Cargo.lock"
+crate = "alice-zip"
+reason = "the old-format reader links the released alice-zip 0.10.0 from crates.io beside the current crate to read the containers that release wrote"
+test = "compat/v0_10_reader/tests/residual_containers_across_versions.rs"
+
+[[exempt]]
+lock = "compat/v0_10_reader/Cargo.lock"
+crate = "alice-det-math"
+reason = "alice-zip 0.10.0 from crates.io requires alice-det-math 0.5.1 from crates.io, so this lock links it beside the current 0.6.1 to reproduce that release's arithmetic"
+test = "compat/v0_10_reader/tests/residual_containers_across_versions.rs"

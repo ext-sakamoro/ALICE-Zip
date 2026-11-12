@@ -214,7 +214,7 @@ step "ci.yml / test: Tracked lock files match their manifests"
 ( python3 scripts/test_lock_check.py && python3 scripts/lock_check.py )
 
 step "ci.yml / test: Lock sources (alice-* by git, one alice-det-math)"
-( python3 scripts/test_lock_sources_check.py && python3 scripts/lock_sources_check.py --skip compat/ )
+( python3 scripts/test_lock_sources_check.py && python3 scripts/lock_sources_check.py )
 
 step "ci.yml / test: Licence agrees and its files are packaged"
 (

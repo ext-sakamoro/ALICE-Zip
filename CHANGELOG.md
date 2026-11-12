@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- CI: 共有の `scripts/lock_sources_check.py` と試験を ALICE-Edge と同じ新しい bytes にした 追跡している全ての Cargo.lock の間で git から取る alice-* の source が同じかも見る `--skip compat/` をやめ、`compat/v0_10_reader/Cargo.lock` の alice-zip 0.10.0 と alice-det-math 0.5.1 (crates.io、旧形式の reader が要る) は `scripts/lock_sources.toml` の exempt に理由と試験 `compat/v0_10_reader/tests/residual_containers_across_versions.rs` を書いて外す
 
 - **Breaking (identifier):** `law::SEMANTICS_ID` に `int2d::CAUSAL_PREV_KIND` (因果的な法則 `Prev` の kind tag) を entry として足した (`semantics::ZIP_SEMANTICS_PINS`) 識別子は `65f48962c757ebb619d252f8784f830aca5f3698fbd22f34150f9887863f38dd` から `922b28656da64d8651eae0db86d0070078c4b5dc183c4a4d0219107f73ffca78` に動く 以前の値は `PREVIOUS_SEMANTICS_IDS` の先頭に残し、その値での `law_id` と評価の bits を `tests/determinism_golden.rs` が再現する (以前に固定した出力はすべて同じ bits) `tests/zip_semantics_id.rs` は src の `pub const *_KIND` をすべて entry と照らす (見つからない tag は失敗、見つけた数が 4 未満も失敗)
 - `wasm/`: 依存 `alice-sign` を rev 8a1b00d の固定から ALICE-Sign の `branch = "main"` + version 0.1.0 に替えた (wasm/Cargo.lock は main 8c8d1ee) 同じ crate の 2 つ目の世代を作らない
