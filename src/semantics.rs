@@ -18,7 +18,7 @@
 //! # Hex form
 //!
 //! ```text
-//! 65f48962c757ebb619d252f8784f830aca5f3698fbd22f34150f9887863f38dd
+//! 922b28656da64d8651eae0db86d0070078c4b5dc183c4a4d0219107f73ffca78
 //! ```
 //!
 //! # Fold
@@ -134,6 +134,10 @@ pub const ZIP_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
         hex32("45c0198206340b88811ca3fedd0358ce6663075d6926140e1b4abccc53d38118"),
     ),
     (
+        "tag int2d::CAUSAL_PREV_KIND",
+        hex32("c2abd81ce2b6470fb00adddd482c6861ff94bee635760bbcb1d9af311f143f09"),
+    ),
+    (
         "tag int2d::DOMAIN_DIGEST_DOMAIN",
         hex32("f0f79bbdb5b1c0ff925f94c5f80fb1db90171522fbf9d33772328310288932dd"),
     ),
@@ -226,7 +230,7 @@ const _: () = alice_det_math::assert_function_pins(DET_MATH_PINS);
 /// [`SEMANTICS_ID`](crate::law::SEMANTICS_ID): the fold of [`ZIP_SEMANTICS_PINS`] and
 /// [`DET_MATH_PINS`] (`tests/zip_semantics_id.rs` recomputes it)
 pub const ZIP_SEMANTICS_ID: [u8; 32] =
-    hex32("65f48962c757ebb619d252f8784f830aca5f3698fbd22f34150f9887863f38dd");
+    hex32("922b28656da64d8651eae0db86d0070078c4b5dc183c4a4d0219107f73ffca78");
 
 /// Earlier values of [`SEMANTICS_ID`](crate::law::SEMANTICS_ID) under which every pinned
 /// output has the same bits as in this build, newest first
@@ -235,6 +239,9 @@ pub const ZIP_SEMANTICS_ID: [u8; 32] =
 /// by those releases carries `85e08846…` (det-math 0.5.1) or `135c407d…` (0.5.0); the outputs
 /// they computed are the pinned ones, so they stay reproducible here.
 pub const PREVIOUS_SEMANTICS_IDS: &[[u8; 32]] = &[
+    // before the causal law's kind tag (`int2d::CAUSAL_PREV_KIND`) was an entry: the new entry
+    // covers a law added with it, every output pinned before has the same bits
+    hex32("65f48962c757ebb619d252f8784f830aca5f3698fbd22f34150f9887863f38dd"),
     // folding alice-det-math 0.6.1's whole identifier (`6fc214e9…`): the identifier now folds the
     // functions this crate calls instead; every pinned output has the same bits
     hex32("06c11067caed2f27b3323c25b023b1237fb5f5936bf86624b2dfb33759183461"),

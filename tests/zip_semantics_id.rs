@@ -63,13 +63,17 @@ fn fold(entries: &[(&str, [u8; 32])]) -> [u8; 32] {
 
 #[test]
 fn every_entry_matches_its_source() {
-    let tags: [(&str, &[u8]); 5] = [
+    let tags: [(&str, &[u8]); 6] = [
         ("tag law::LAW_ID_DOMAIN", alice_zip::law::LAW_ID_DOMAIN),
         ("tag law::SIGNAL_LAW_KIND", alice_zip::law::SIGNAL_LAW_KIND),
         ("tag int2d::ZERO_LAW_KIND", alice_zip::int2d::ZERO_LAW_KIND),
         (
             "tag int2d::PLANE_PER_TILE_KIND",
             alice_zip::int2d::PLANE_PER_TILE_KIND,
+        ),
+        (
+            "tag int2d::CAUSAL_PREV_KIND",
+            alice_zip::int2d::CAUSAL_PREV_KIND,
         ),
         (
             "tag int2d::DOMAIN_DIGEST_DOMAIN",
@@ -188,4 +192,86 @@ fn check_semantics_reads_this_and_previous_identifiers() {
         assert!(PREVIOUS_SEMANTICS_IDS.contains(&unhex(old)), "{old}");
     }
     assert_eq!(check_semantics(&[7; 32]), SemanticsCheck::Mismatch);
+}
+
+/// `tag <module>::<NAME>` of every `pub const <NAME>_KIND` in the given sources (file name, text)
+fn kind_tags(sources: &[(String, String)]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (file, text) in sources {
+        let module = file.trim_end_matches(".rs");
+        for line in text.lines() {
+            let Some(rest) = line.trim_start().strip_prefix("pub const ") else {
+                continue;
+            };
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || *c == '_')
+                .collect();
+            if name.ends_with("_KIND") {
+                out.push(format!("tag {module}::{name}"));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// the kind tags that are not an entry of `pins`
+fn missing_kind_tags(sources: &[(String, String)], pins: &[(&str, [u8; 32])]) -> Vec<String> {
+    kind_tags(sources)
+        .into_iter()
+        .filter(|t| !pins.iter().any(|(n, _)| n == t))
+        .collect()
+}
+
+fn src_files() -> Vec<(String, String)> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(dir).unwrap() {
+        let p = e.unwrap().path();
+        if p.extension().is_some_and(|x| x == "rs") {
+            let name = p.file_name().unwrap().to_string_lossy().into_owned();
+            out.push((name, std::fs::read_to_string(&p).unwrap()));
+        }
+    }
+    out
+}
+
+#[test]
+fn every_law_kind_tag_of_the_source_is_an_entry() {
+    // a law kind added to the source without its entry would leave that law outside the identifier
+    let sources = src_files();
+    let tags = kind_tags(&sources);
+    assert!(
+        tags.len() >= 4,
+        "found {} kind tags in src/ (a scan that finds none checks nothing)",
+        tags.len()
+    );
+    assert_eq!(
+        missing_kind_tags(&sources, ZIP_SEMANTICS_PINS),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_kind_tag_without_its_entry_is_reported() {
+    let mut sources = src_files();
+    sources.push((
+        "planted.rs".to_string(),
+        "pub const MADE_UP_KIND: &[u8] = b\"made-up/v1\";\n".to_string(),
+    ));
+    assert_eq!(
+        missing_kind_tags(&sources, ZIP_SEMANTICS_PINS),
+        vec!["tag planted::MADE_UP_KIND".to_string()]
+    );
+    // and one taken out of the pins is reported too
+    let pins: Vec<(&str, [u8; 32])> = ZIP_SEMANTICS_PINS
+        .iter()
+        .copied()
+        .filter(|(n, _)| *n != "tag int2d::CAUSAL_PREV_KIND")
+        .collect();
+    assert_eq!(
+        missing_kind_tags(&src_files(), &pins),
+        vec!["tag int2d::CAUSAL_PREV_KIND".to_string()]
+    );
 }

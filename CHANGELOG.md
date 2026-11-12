@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Breaking (identifier):** `law::SEMANTICS_ID` に `int2d::CAUSAL_PREV_KIND` (因果的な法則 `Prev` の kind tag) を entry として足した (`semantics::ZIP_SEMANTICS_PINS`) 識別子は `65f48962c757ebb619d252f8784f830aca5f3698fbd22f34150f9887863f38dd` から `922b28656da64d8651eae0db86d0070078c4b5dc183c4a4d0219107f73ffca78` に動く 以前の値は `PREVIOUS_SEMANTICS_IDS` の先頭に残し、その値での `law_id` と評価の bits を `tests/determinism_golden.rs` が再現する (以前に固定した出力はすべて同じ bits) `tests/zip_semantics_id.rs` は src の `pub const *_KIND` をすべて entry と照らす (見つからない tag は失敗、見つけた数が 4 未満も失敗)
 - `wasm/`: 依存 `alice-sign` を rev 8a1b00d の固定から ALICE-Sign の `branch = "main"` + version 0.1.0 に替えた (wasm/Cargo.lock は main 8c8d1ee) 同じ crate の 2 つ目の世代を作らない
 - CI: `scripts/lock_sources_check.py` が libasp (名前が `alice` で始まらない ALICE の crate) も検査する (ALICE-Edge / ALICE-SDF と同じ bytes)
 - **Breaking (Python):** 対応する Python の最小版を 3.9 から 3.10 に上げた (`requires-python = ">=3.10"`、classifier、black / ruff / mypy の対象) 3.9 は 2025-10 に保守が終わり、CI の `ubuntu-latest` (Ubuntu 26.04) の setup-python には 3.9 の build が無い libalice の Python module の CI は 3.10 / 3.12 / 3.13 で試し、PyPI の wheel も 3.10 から作る

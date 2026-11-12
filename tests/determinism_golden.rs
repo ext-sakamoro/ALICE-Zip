@@ -116,7 +116,7 @@ fn integer_signal(n: usize) -> Vec<f32> {
 fn semantics_id_is_the_recorded_value() {
     assert_eq!(
         hex(&SEMANTICS_ID),
-        "65f48962c757ebb619d252f8784f830aca5f3698fbd22f34150f9887863f38dd",
+        "922b28656da64d8651eae0db86d0070078c4b5dc183c4a4d0219107f73ffca78",
         "the semantics changed: every law identifier published under \
          the old value now describes something else"
     );
@@ -153,6 +153,32 @@ fn law_id_and_evaluation_are_the_recorded_bits() {
     }
     assert_golden(
         "law_id and evaluate",
+        bits,
+        32 + 41 * 8,
+        "2d13fb80caf86f99caad058c0fd7b2bb7701b6259dc26169b5ba8127ed63b1ca",
+    );
+}
+
+/// The digest recorded before the causal law's kind tag was an entry (`65f48962…`, now in
+/// `PREVIOUS_SEMANTICS_IDS`): passing that identifier to `law_id` still gives it, so adding the entry
+/// changed the identifier input only (the evaluated bits did not move)
+#[test]
+fn law_id_digest_under_the_identifier_before_the_causal_kind_is_unchanged() {
+    let previous = alice_zip::law::PREVIOUS_SEMANTICS_IDS
+        .iter()
+        .find(|id| {
+            hex(&id[..]) == "65f48962c757ebb619d252f8784f830aca5f3698fbd22f34150f9887863f38dd"
+        })
+        .expect("alice-zip keeps the identifier before the causal kind as a previous one");
+    let law = line_law();
+    let mut bits = Bits::default();
+    bits.raw(&law.law_id(previous));
+    for i in 0..=40_u32 {
+        let x = f64::from(i) / 10.0;
+        bits.f64(law.evaluate(x).expect("inside the domain"));
+    }
+    assert_golden(
+        "law_id and evaluate under the identifier before the causal kind",
         bits,
         32 + 41 * 8,
         "8f77c25edb772b19a02d6cc637aca43c2c3e3a22e41f5605108411f5fba43c14",

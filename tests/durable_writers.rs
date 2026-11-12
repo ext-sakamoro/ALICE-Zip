@@ -36,7 +36,7 @@ enum Decision {
 use Decision::{FormatAndSemanticsId, IntegerOnly, LawReference, NoLaw, SemanticsId};
 
 /// (source file under src/, function, decision)
-const WRITERS: [(&str, &str, Decision); 15] = [
+const WRITERS: [(&str, &str, Decision); 16] = [
     ("container.rs", "to_bytes", FormatAndSemanticsId),
     ("container/stream.rs", "write_section", FormatAndSemanticsId),
     ("compression.rs", "compress_residual_quantized", SemanticsId),
@@ -56,6 +56,7 @@ const WRITERS: [(&str, &str, Decision); 15] = [
     ("int2d.rs", "to_bytes", IntegerOnly),
     ("int2d.rs", "encode", IntegerOnly),
     ("int2d.rs", "encode_with", IntegerOnly),
+    ("int2d.rs", "encode_causal", IntegerOnly),
     ("compression.rs", "zlib_compress", NoLaw),
     ("compression.rs", "lzma_compress", NoLaw),
     ("lz77.rs", "lz77_encode", NoLaw),
@@ -129,7 +130,7 @@ fn the_writer_list_is_every_writer_in_the_source() {
         unlisted.is_empty() && gone.is_empty(),
         "writers without an identifier decision: {unlisted:?}; listed but not in the source: {gone:?}"
     );
-    assert_eq!(found.len(), 15);
+    assert_eq!(found.len(), 16);
 }
 
 #[test]
