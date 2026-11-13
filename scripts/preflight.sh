@@ -57,6 +57,11 @@ has_toolchain() { grep -q "^$1" <<<"$(rustup toolchain list)"; }
 #   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_xz_bounded] (needs nightly + cargo-fuzz; runner-only)
 #   - fuzz.yml:fuzz:Check the runs (crash or 0 runs = fail) [target=fuzz_xz_bounded] (reads the run log)
 #   - fuzz.yml:fuzz:Report crash [target=fuzz_xz_bounded] (no cargo / grep)
+#   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_pkzip_bounded] (needs network / runner-only)
+#   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_pkzip_bounded] (no cargo / grep)
+#   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_pkzip_bounded] (needs nightly + cargo-fuzz; runner-only)
+#   - fuzz.yml:fuzz:Check the runs (crash or 0 runs = fail) [target=fuzz_pkzip_bounded] (reads the run log)
+#   - fuzz.yml:fuzz:Report crash [target=fuzz_pkzip_bounded] (no cargo / grep)
 #   - fuzz.yml:fuzz:Install cargo-fuzz [target=fuzz_generators] (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_generators] (no cargo / grep)
 #   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_generators] (needs nightly + cargo-fuzz; runner-only)
@@ -519,6 +524,36 @@ if has_toolchain nightly && cargo +nightly fuzz --version >/dev/null 2>&1; then
       done
     else
       echo "no committed seeds for fuzz_xz_bounded"
+    fi
+  )
+else
+  echo "skip: nightly / cargo-fuzz not installed" >&2
+fi
+
+step "fuzz.yml / fuzz: Build fuzz target [target=fuzz_pkzip_bounded]"
+if has_toolchain nightly && cargo +nightly fuzz --version >/dev/null 2>&1; then
+  (
+    export CARGO_TERM_COLOR="always"
+    cd fuzz
+    cargo +nightly fuzz build "fuzz_pkzip_bounded"
+  )
+else
+  echo "skip: nightly / cargo-fuzz not installed" >&2
+fi
+
+step "fuzz.yml / fuzz: Replay committed seeds (blocking) [target=fuzz_pkzip_bounded]"
+if has_toolchain nightly && cargo +nightly fuzz --version >/dev/null 2>&1; then
+  (
+    export CARGO_TERM_COLOR="always"
+    cd fuzz
+    seeds="seeds/fuzz_pkzip_bounded"
+    if [ -d "$seeds" ] && [ -n "$(ls -A "$seeds")" ]; then
+      for f in "$seeds"/*; do
+        echo "replay: $f"
+        cargo +nightly fuzz run "fuzz_pkzip_bounded" "$f"
+      done
+    else
+      echo "no committed seeds for fuzz_pkzip_bounded"
     fi
   )
 else

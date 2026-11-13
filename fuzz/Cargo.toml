@@ -75,3 +75,10 @@ path = "fuzz_targets/fuzz_xz_bounded.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_pkzip_bounded"
+path = "fuzz_targets/fuzz_pkzip_bounded.rs"
+test = false
+doc = false
+bench = false
