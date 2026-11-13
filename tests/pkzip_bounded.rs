@@ -334,3 +334,16 @@ fn a_missing_name_is_not_found() {
         io::ErrorKind::NotFound
     );
 }
+
+#[test]
+fn an_entry_whose_data_runs_into_the_central_directory_is_refused_when_the_archive_is_opened() {
+    // both sizes of a stored entry raised past the archive's end: the record would have the read slice bytes the
+    // archive does not hold
+    let mut b = data("basic.zip");
+    let (r, l) = (central_of(&b, "a.bin"), local_of(&b, "a.bin"));
+    for (rec, at) in [(r, 20), (r, 24), (l, 18), (l, 22)] {
+        b[rec + at..rec + at + 4].copy_from_slice(&0x0010_0000u32.to_le_bytes());
+    }
+    let e = Archive::new(b, Limits::new(BIG, BIG)).err().unwrap();
+    assert!(matches!(pkzip_error(&e), PkzipError::Malformed(_)), "{e}");
+}
