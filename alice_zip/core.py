@@ -928,7 +928,7 @@ class ALICEZip:
         dtype = metadata.get('dtype', 'float32')
         shape = metadata.get('shape')
 
-        return decompress_from_lzma(compressed_bytes, shape, dtype)
+        return decompress_from_lzma(compressed_bytes, shape, dtype, max_output=self.MAX_OUTPUT_SIZE)
 
     def _decompress_lzma_fallback(self, payload_data: bytes, original_size: int) -> np.ndarray:
         """

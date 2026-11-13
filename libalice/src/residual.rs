@@ -36,6 +36,9 @@ const MAX_HEADER_SIZE: usize = 10 * 1024 * 1024;
 /// Errors produced by the residual compression subsystem.
 #[derive(Debug)]
 pub enum ResidualError {
+    /// The residual holds more values than the caller accepts (`limit`); refused
+    /// before anything is decoded
+    TooManyValues { stated: usize, limit: usize },
     /// The byte slice is shorter than the minimum expected size.
     DataTooShort { got: usize, expected: usize },
     /// The JSON header is not valid UTF-8 or cannot be parsed.
@@ -105,6 +108,10 @@ impl std::fmt::Display for ResidualError {
                 )
             }
             Self::InvalidHeader(msg) => write!(f, "invalid header: {msg}"),
+            Self::TooManyValues { stated, limit } => write!(
+                f,
+                "the residual states {stated} values, more than the limit of {limit}"
+            ),
             Self::MissingField(field) => {
                 write!(f, "missing required header field: '{field}'")
             }
@@ -589,8 +596,8 @@ impl ResidualData {
     /// # Errors
     ///
     /// As [`Self::from_bytes`], and [`ResidualError::LegacySemantics`].
-    pub fn from_bytes_strict(data: &[u8]) -> Result<Self, ResidualError> {
-        let rd = Self::from_bytes(data)?;
+    pub fn from_bytes_strict(data: &[u8], max_values: usize) -> Result<Self, ResidualError> {
+        let rd = Self::from_bytes(data, max_values)?;
         if rd.metadata.semantics.is_none() {
             return Err(ResidualError::LegacySemantics);
         }
@@ -613,7 +620,11 @@ impl ResidualData {
     /// in the parsed JSON after a successful v2 parse attempt. Versions 2 to 4
     /// are read with the 4-byte length; any other `"version"` (0, or later
     /// than 4) is refused with [`ResidualError::UnsupportedVersion`].
-    pub fn from_bytes(data: &[u8]) -> Result<Self, ResidualError> {
+    ///
+    /// `max_values` is the most values the caller accepts: a header stating more
+    /// is refused with [`ResidualError::TooManyValues`] before any payload is
+    /// decompressed (the header's own length then bounds the decompression).
+    pub fn from_bytes(data: &[u8], max_values: usize) -> Result<Self, ResidualError> {
         if data.len() < 4 {
             return Err(ResidualError::DataTooShort {
                 got: data.len(),
@@ -663,7 +674,8 @@ impl ResidualData {
                             let mut base = parsed.clone();
                             base.remove("semantics");
                             let compressed = data[v2_end..].to_vec();
-                            let mut rd = Self::from_header_map(&base, compressed, layout)?;
+                            let mut rd =
+                                Self::from_header_map(&base, compressed, layout, max_values)?;
                             rd.metadata.semantics = semantics;
                             return Ok(rd);
                         }
@@ -709,7 +721,7 @@ impl ResidualData {
         Self::header_semantics(&parsed, 1)?;
 
         let compressed = data[v1_payload_start..].to_vec();
-        Self::from_header_map(&parsed, compressed, 1)
+        Self::from_header_map(&parsed, compressed, 1, max_values)
     }
 
     // -------------------------------------------------------------------------
@@ -809,6 +821,7 @@ impl ResidualData {
     fn from_header_map_v4(
         map: &BTreeMap<String, Json>,
         compressed: Vec<u8>,
+        max_values: usize,
     ) -> Result<Self, ResidualError> {
         let residual_f64 = match map.get("residual_dtype") {
             Some(Json::Str(d)) if d == "float32" => false,
@@ -831,7 +844,7 @@ impl ResidualData {
         let mut base: BTreeMap<String, Json> = map.clone();
         base.remove("residual_dtype");
         base.remove("exceptions");
-        let mut rd = Self::from_header_map(&base, Vec::new(), 2)?;
+        let mut rd = Self::from_header_map(&base, Vec::new(), 2, max_values)?;
         if !matches!(
             rd.method,
             ResidualCompressionMethod::None
@@ -899,11 +912,12 @@ impl ResidualData {
         map: &BTreeMap<String, Json>,
         mut compressed: Vec<u8>,
         version: u32,
+        max_values: usize,
     ) -> Result<Self, ResidualError> {
         // version 4: the residual dtype, the number of exceptions (0 or
         // more), and both compressed together
         if version == 4 {
-            return Self::from_header_map_v4(map, compressed);
+            return Self::from_header_map_v4(map, compressed, max_values);
         }
         if map.contains_key("residual_dtype") {
             return Err(ResidualError::InvalidHeader(
@@ -989,6 +1003,8 @@ impl ResidualData {
             (Some(n), _) | (None, Some(n)) => n,
             (None, None) => return Err(ResidualError::MissingField("shape".to_owned())),
         };
+        // the caller's ceiling: the header's length bounds the decompression only up to it
+        check_values(original_len, max_values)?;
         let shape = shape.unwrap_or_else(|| vec![original_len]);
 
         // the dtype of the original as the writer recorded it
@@ -1170,6 +1186,14 @@ fn lzma_or_xz_decompress(bytes: &[u8], limit: usize) -> Result<Vec<u8>, Residual
     }
 }
 
+/// [`ResidualError::TooManyValues`] when `stated` passes the caller's `limit`
+fn check_values(stated: usize, limit: usize) -> Result<(), ResidualError> {
+    if stated > limit {
+        return Err(ResidualError::TooManyValues { stated, limit });
+    }
+    Ok(())
+}
+
 /// `n * width + extra` bytes, the payload length a header implies, or
 /// `Corrupted` when it does not fit `usize`
 fn implied_len(n: usize, width: usize, extra: usize) -> Result<usize, ResidualError> {
@@ -1263,7 +1287,11 @@ pub fn compress_residual_delta(data: &[f32]) -> ResidualData {
 ///
 /// [`ResidualError::Corrupted`] if the method is not a delta method, the
 /// stream does not decompress, or it does not hold `original_len` values.
-pub fn decompress_residual_delta(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
+pub fn decompress_residual_delta(
+    rd: &ResidualData,
+    max_values: usize,
+) -> Result<Vec<f32>, ResidualError> {
+    check_values(rd.original_len, max_values)?;
     if !matches!(
         rd.method,
         ResidualCompressionMethod::Delta | ResidualCompressionMethod::BitDelta
@@ -1518,7 +1546,8 @@ fn compress_with_method(data: &[f32], method: ResidualCompressionMethod) -> Resi
 ///
 /// Dispatches to the appropriate decompression routine based on
 /// `rd.method`.
-pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
+pub fn decompress(rd: &ResidualData, max_values: usize) -> Result<Vec<f32>, ResidualError> {
+    check_values(rd.original_len, max_values)?;
     if rd.original_len == 0 {
         return Ok(Vec::new());
     }
@@ -1559,7 +1588,7 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
         }
         // the delta methods ignore quant_bits, as the Python reader does
         ResidualCompressionMethod::Delta | ResidualCompressionMethod::BitDelta => {
-            return decompress_residual_delta(rd)
+            return decompress_residual_delta(rd, max_values)
         }
         ResidualCompressionMethod::Quantized if rd.metadata.legacy_container => {
             return Ok(crate::compression::decompress_residual_quantized(
@@ -1608,7 +1637,16 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
 /// for a dtype outside the eleven the writers record.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub fn reconstruct_bytes(generated: &[f64], rd: &ResidualData) -> Result<Vec<u8>, ResidualError> {
-    let residual = decompress_f64(rd)?;
+    // the caller's generated values are the ceiling: a residual stating another count is refused before
+    // anything is decoded (the decoded length is checked again below)
+    if rd.original_len != generated.len() {
+        return Err(ResidualError::Corrupted(format!(
+            "{} generated values for {} residual values",
+            generated.len(),
+            rd.original_len
+        )));
+    }
+    let residual = decompress_f64(rd, generated.len())?;
     if residual.len() != generated.len() {
         return Err(ResidualError::Corrupted(format!(
             "{} generated values for {} residual values",
@@ -1871,7 +1909,8 @@ fn widen(r: f32) -> f64 {
 /// # Errors
 ///
 /// The errors of [`decompress`].
-pub fn decompress_f64(rd: &ResidualData) -> Result<Vec<f64>, ResidualError> {
+pub fn decompress_f64(rd: &ResidualData, max_values: usize) -> Result<Vec<f64>, ResidualError> {
+    check_values(rd.original_len, max_values)?;
     if rd.metadata.layout == 4 && rd.metadata.residual_f64 {
         let s = &rd.metadata.residual_stream;
         let words = s
@@ -1889,7 +1928,7 @@ pub fn decompress_f64(rd: &ResidualData) -> Result<Vec<f64>, ResidualError> {
             words.map(f64::from_bits).collect()
         });
     }
-    Ok(decompress(rd)?.into_iter().map(widen).collect())
+    Ok(decompress(rd, max_values)?.into_iter().map(widen).collect())
 }
 
 /// `x` rounded once to `f32`; a NaN keeps its sign, the quiet bit and the top
@@ -2021,6 +2060,62 @@ mod tests {
     // whole stream is held; zlib, LZMA alone and xz (delta, quantised) alike
     // oracle: a version 4 file states its value and exception counts, so its payload length is fixed;
     // a header one value short of the stream is refused at that length while decoding
+    // oracle: the header is the attacker's, so its length is never the only bound; the caller's ceiling refuses
+    // a residual stating more values before any payload is decompressed, in every reader and layout
+    #[test]
+    fn a_header_stating_more_values_than_the_caller_accepts_is_refused() {
+        let n = 4096;
+        let data = vec![0.5f32; n];
+        let original: Vec<u8> = (0..n).flat_map(|_| 2.5f32.to_le_bytes()).collect();
+        let generated: Vec<f64> = (0..n)
+            .map(|i| if i % 512 == 0 { 1e10 } else { 2.0 })
+            .collect();
+        let v4 = compress_original(
+            &original,
+            "float32",
+            &generated,
+            ResidualCompressionMethod::Lzma,
+        )
+        .unwrap();
+        assert_eq!(v4.metadata.layout, 4);
+        let files = [
+            compress_with_method(&data, ResidualCompressionMethod::Lzma).to_bytes(),
+            compress_with_method(&data, ResidualCompressionMethod::Quantized).to_bytes(),
+            compress_residual_delta(&data).to_bytes(),
+            v4.to_bytes(),
+        ];
+        for bytes in &files {
+            assert!(ResidualData::from_bytes(bytes, n).is_ok());
+            assert!(matches!(
+                ResidualData::from_bytes(bytes, n - 1),
+                Err(ResidualError::TooManyValues { stated, limit }) if stated == n && limit == n - 1
+            ));
+            assert!(matches!(
+                ResidualData::from_bytes_strict(bytes, n - 1),
+                Err(ResidualError::TooManyValues { .. })
+            ));
+        }
+        let rd = compress_with_method(&data, ResidualCompressionMethod::Lzma);
+        assert!(matches!(
+            decompress(&rd, n - 1),
+            Err(ResidualError::TooManyValues { .. })
+        ));
+        assert!(matches!(
+            decompress_f64(&rd, n - 1),
+            Err(ResidualError::TooManyValues { .. })
+        ));
+        let delta = compress_residual_delta(&data);
+        assert!(matches!(
+            decompress_residual_delta(&delta, n - 1),
+            Err(ResidualError::TooManyValues { .. })
+        ));
+        // the generated values are the caller's ceiling when rebuilding
+        assert!(matches!(
+            reconstruct_bytes(&generated[..n - 1], &v4),
+            Err(ResidualError::Corrupted(_))
+        ));
+    }
+
     #[test]
     fn a_version_4_payload_past_its_stated_length_is_refused_while_decoding() {
         let n = 4096;
@@ -2043,10 +2138,10 @@ mod tests {
             ResidualCompressionMethod::None,
             "fell back to raw bytes"
         );
-        assert!(ResidualData::from_bytes(&rd.to_bytes()).is_ok());
+        assert!(ResidualData::from_bytes(&rd.to_bytes(), usize::MAX).is_ok());
         rd.original_len = n - 1;
         rd.shape = vec![n - 1];
-        let err = ResidualData::from_bytes(&rd.to_bytes())
+        let err = ResidualData::from_bytes(&rd.to_bytes(), usize::MAX)
             .expect_err("a payload past its stated length was read");
         assert!(err.to_string().contains("limit"), "{err}");
     }
@@ -2068,9 +2163,10 @@ mod tests {
                 ..ResidualMetadata::default()
             },
         };
-        assert_eq!(decompress(&rd).unwrap().len(), data.len());
+        assert_eq!(decompress(&rd, usize::MAX).unwrap().len(), data.len());
         rd.original_len -= 1;
-        let err = decompress(&rd).expect_err("a payload past its stated length was read");
+        let err =
+            decompress(&rd, usize::MAX).expect_err("a payload past its stated length was read");
         assert!(err.to_string().contains("limit"), "{err}");
     }
 
@@ -2085,9 +2181,14 @@ mod tests {
         ] {
             let mut rd = compress_with_method(&data, method);
             assert_eq!(rd.method, method, "fell back to another encoding");
-            assert_eq!(decompress(&rd).unwrap().len(), data.len(), "{method:?}");
+            assert_eq!(
+                decompress(&rd, usize::MAX).unwrap().len(),
+                data.len(),
+                "{method:?}"
+            );
             rd.original_len -= 1;
-            let err = decompress(&rd).expect_err("a payload past its stated length was read");
+            let err =
+                decompress(&rd, usize::MAX).expect_err("a payload past its stated length was read");
             assert!(err.to_string().contains("limit"), "{method:?}: {err}");
         }
     }
@@ -2321,7 +2422,11 @@ mod tests {
             // a writer asked to quantize keeps such values bit for bit instead
             let rd = compress_with_method(&data, ResidualCompressionMethod::Quantized);
             assert_ne!(rd.method, ResidualCompressionMethod::Quantized);
-            let back = decompress(&ResidualData::from_bytes(&rd.to_bytes()).unwrap()).unwrap();
+            let back = decompress(
+                &ResidualData::from_bytes(&rd.to_bytes(), usize::MAX).unwrap(),
+                usize::MAX,
+            )
+            .unwrap();
             let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
             assert_eq!(bits(&back), bits(&data));
         }
@@ -2386,7 +2491,7 @@ mod tests {
         assert_eq!(rd.method, ResidualCompressionMethod::BitDelta);
         assert_eq!(rd.original_len, 1000);
 
-        let restored = decompress_residual_delta(&rd).expect("delta round trip");
+        let restored = decompress_residual_delta(&rd, usize::MAX).expect("delta round trip");
 
         assert_eq!(restored.len(), data.len());
         for (a, b) in data.iter().zip(restored.iter()) {
@@ -2403,7 +2508,7 @@ mod tests {
     fn test_delta_roundtrip_empty() {
         let data: Vec<f32> = Vec::new();
         let rd = compress_residual_delta(&data);
-        let restored = decompress_residual_delta(&rd).expect("delta round trip");
+        let restored = decompress_residual_delta(&rd, usize::MAX).expect("delta round trip");
         assert!(restored.is_empty());
     }
 
@@ -2411,7 +2516,7 @@ mod tests {
     fn test_delta_roundtrip_single() {
         let data = vec![42.5f32];
         let rd = compress_residual_delta(&data);
-        let restored = decompress_residual_delta(&rd).expect("delta round trip");
+        let restored = decompress_residual_delta(&rd, usize::MAX).expect("delta round trip");
         assert_eq!(restored.len(), 1);
         assert!((restored[0] - 42.5).abs() < 1e-4);
     }
@@ -2426,7 +2531,7 @@ mod tests {
         let rd = compress_with_method(&data, ResidualCompressionMethod::Lzma);
 
         let bytes = rd.to_bytes();
-        let recovered = ResidualData::from_bytes(&bytes).expect("from_bytes failed");
+        let recovered = ResidualData::from_bytes(&bytes, usize::MAX).expect("from_bytes failed");
 
         assert_eq!(recovered.method, ResidualCompressionMethod::Lzma);
         assert_eq!(recovered.original_len, 500);
@@ -2439,15 +2544,15 @@ mod tests {
         let rd = compress_residual_delta(&data);
 
         let bytes = rd.to_bytes();
-        let recovered = ResidualData::from_bytes(&bytes).expect("from_bytes failed");
+        let recovered = ResidualData::from_bytes(&bytes, usize::MAX).expect("from_bytes failed");
 
         // bitdelta keeps every value inside the stream (no base_value key,
         // as the Python writer emits it)
         assert_eq!(recovered.method, ResidualCompressionMethod::BitDelta);
         assert_eq!(recovered.original_len, 200);
         assert_eq!(
-            decompress(&recovered).expect("decode"),
-            decompress(&rd).expect("decode")
+            decompress(&recovered, usize::MAX).expect("decode"),
+            decompress(&rd, usize::MAX).expect("decode")
         );
     }
 
@@ -2457,7 +2562,7 @@ mod tests {
         let rd = compress_with_method(&data, ResidualCompressionMethod::Quantized);
 
         let bytes = rd.to_bytes();
-        let recovered = ResidualData::from_bytes(&bytes).expect("from_bytes failed");
+        let recovered = ResidualData::from_bytes(&bytes, usize::MAX).expect("from_bytes failed");
 
         assert_eq!(recovered.method, ResidualCompressionMethod::Quantized);
         assert_eq!(recovered.original_len, 300);
@@ -2473,7 +2578,7 @@ mod tests {
         let rd = compress_with_method(&data, ResidualCompressionMethod::None);
 
         let bytes = rd.to_bytes();
-        let recovered = ResidualData::from_bytes(&bytes).expect("from_bytes failed");
+        let recovered = ResidualData::from_bytes(&bytes, usize::MAX).expect("from_bytes failed");
 
         assert_eq!(recovered.method, ResidualCompressionMethod::None);
         assert_eq!(recovered.original_len, 3);
@@ -2481,7 +2586,7 @@ mod tests {
 
     #[test]
     fn test_from_bytes_too_short() {
-        let result = ResidualData::from_bytes(&[0u8, 1, 2]);
+        let result = ResidualData::from_bytes(&[0u8, 1, 2], usize::MAX);
         assert!(result.is_err());
     }
 
@@ -2598,7 +2703,7 @@ mod tests {
     fn test_choose_compression_roundtrip() {
         let data = test_signal(200);
         let rd = choose_compression(&data, false);
-        let restored = decompress(&rd).expect("decompress failed");
+        let restored = decompress(&rd, usize::MAX).expect("decompress failed");
 
         assert_eq!(restored.len(), data.len());
 

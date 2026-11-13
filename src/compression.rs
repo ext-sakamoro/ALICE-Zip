@@ -118,10 +118,31 @@ fn too_large(limit: usize) -> io::Error {
 
 /// Read `reader` to its end, producing at most `limit` bytes: one byte more is
 /// [`DecompressError::TooLarge`] (the reader is never asked for more than `limit + 1` bytes)
-fn read_bounded(reader: impl Read, limit: usize) -> io::Result<Vec<u8>> {
-    let cap = u64::try_from(limit).unwrap_or(u64::MAX).saturating_add(1);
-    let mut out = Vec::new();
-    reader.take(cap).read_to_end(&mut out)?;
+fn read_bounded(mut reader: impl Read, limit: usize) -> io::Result<Vec<u8>> {
+    // The output grows by doubling, but never past `limit + 1` bytes of capacity, so a reallocation holds at
+    // most about twice the limit (the old and the new buffer); `read_to_end` would double past it
+    let ceiling = limit.saturating_add(1);
+    let mut out: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 16 * 1024];
+    loop {
+        let room = ceiling - out.len();
+        if room == 0 {
+            return Err(too_large(limit));
+        }
+        let take = room.min(chunk.len());
+        let n = match reader.read(&mut chunk[..take]) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        if out.capacity() - out.len() < n {
+            let want = out.len() + n;
+            let grown = out.capacity().saturating_mul(2).max(want).min(ceiling);
+            out.reserve_exact(grown - out.len());
+        }
+        out.extend_from_slice(&chunk[..n]);
+    }
     if out.len() > limit {
         return Err(too_large(limit));
     }

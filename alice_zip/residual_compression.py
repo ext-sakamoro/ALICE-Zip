@@ -140,7 +140,7 @@ class ResidualData:
         return header_len + header_json + self.compressed_data + block
 
     @classmethod
-    def from_bytes(cls, data: bytes, strict: bool = False) -> 'ResidualData':
+    def from_bytes(cls, data: bytes, max_values: int, strict: bool = False) -> 'ResidualData':
         """
         Deserialize from bytes.
 
@@ -155,6 +155,9 @@ class ResidualData:
 
         Args:
             data: Serialized bytes
+            max_values: the most values the caller accepts; a header stating more
+                raises ``TooManyValues`` before any payload is decompressed (the
+                header is the data's own claim, so its length is never the only bound)
 
         Returns:
             ResidualData instance
@@ -222,7 +225,7 @@ class ResidualData:
                                          "residual", strict)
                     if version in (2, 3, 4):
                         compressed_data = data[4+header_len_v2:]
-                        rd = cls._create_from_header(header, compressed_data, version)
+                        rd = cls._create_from_header(header, compressed_data, version, max_values=max_values)
                         if stored is not None:
                             rd.semantics = bytes.fromhex(stored)
                         return rd
@@ -266,11 +269,11 @@ class ResidualData:
             raise ValueError("'semantics' is only read with versions 5 to 7")
         _semantics.check(None, _semantics.procedural_semantics_id(), "residual", strict)
 
-        return cls._create_from_header(header, compressed_data)
+        return cls._create_from_header(header, compressed_data, max_values=max_values)
 
     @classmethod
     def _create_from_header(cls, header: Dict[str, Any], compressed_data: bytes,
-                            version: int = 2) -> 'ResidualData':
+                            version: int = 2, *, max_values: int) -> 'ResidualData':
         """Create instance from parsed header."""
         # version 3 is a file with exceptions; version 4 records its residual
         # dtype and its number of exceptions (0 or more)
@@ -349,6 +352,7 @@ class ResidualData:
             raise ValueError(f"Invalid shape type: {type(shape)}")
         if not all(is_int(d) and d > 0 for d in shape):
             raise ValueError(f"Invalid shape values: {shape}")
+        _bounded.check_values(int(np.prod(shape, dtype=object)), max_values)
 
         positions = np.zeros(0, dtype=np.uint64)
         exception_bytes = b""
@@ -549,7 +553,7 @@ class ResidualCompressor:
             semantics=semantics if semantics is not None else _semantics.procedural_semantics_id(),
         )
 
-    def decompress_residual(self, residual_data: ResidualData) -> np.ndarray:
+    def decompress_residual(self, residual_data: ResidualData, max_values: int) -> np.ndarray:
         """
         Decompress residual data.
 
@@ -565,6 +569,7 @@ class ResidualCompressor:
         Returns:
             Decompressed residual array (float32)
         """
+        _bounded.check_values(int(np.prod(residual_data.original_shape, dtype=object)), max_values)
         out = np.asarray(self._decode_residual(residual_data))
         return out.astype(np.dtype(residual_data.residual_dtype), copy=False)
 
@@ -642,7 +647,11 @@ class ResidualCompressor:
         Returns:
             Reconstructed original data
         """
-        residual = self.decompress_residual(residual_data)
+        # the caller's generated values are the ceiling: a residual of another count is refused
+        # before anything is decoded
+        if int(np.prod(residual_data.original_shape, dtype=object)) != np.asarray(generated).size:
+            raise ValueError(f"Shape mismatch: {np.asarray(generated).shape} vs {residual_data.original_shape}")
+        residual = self.decompress_residual(residual_data, np.asarray(generated).size)
 
         # Ensure shapes match
         if generated.shape != residual.shape:
@@ -852,7 +861,7 @@ class ResidualCompressor:
         except ImportError:
             # Might be LZMA fallback
             return _bounded.lzma_decompress(data, limit)
-        if _bounded.zstd_content_size(data) > limit:
+        if _bounded.zstd_single_frame_size(data) > limit:
             raise _bounded.OutputTooLarge(limit)
         out = zstd.decompress(data)
         if len(out) > limit:
@@ -961,8 +970,9 @@ def estimate_total_compression(
     }
 
 
-def decompress_delta_differences(residual_data: "ResidualData") -> np.ndarray:
-    """The stored differences of a delta residual, without reconstructing it."""
+def decompress_delta_differences(residual_data: "ResidualData", max_values: int) -> np.ndarray:
+    """The stored differences of a delta residual, without reconstructing it (at most ``max_values``)."""
+    _bounded.check_values(int(np.prod(residual_data.original_shape, dtype=object)), max_values)
     if residual_data.method not in (ResidualCompressionMethod.DELTA, ResidualCompressionMethod.BITDELTA):
         raise ValueError(f"Not a delta residual: {residual_data.method.value}")
     raw = _bounded.lzma_decompress(residual_data.compressed_data,

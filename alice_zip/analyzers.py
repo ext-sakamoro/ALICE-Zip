@@ -386,6 +386,10 @@ class ProceduralCompressionDesigner:
         reconstructed = designer.decompress(result)
     """
 
+    # Largest result a stored CompressionResult may state, in bytes (its metadata is the data's own claim);
+    # as ALICEZip.MAX_OUTPUT_SIZE, lower it on an instance
+    MAX_OUTPUT_SIZE = 4 * 1024 * 1024 * 1024
+
     def __init__(self, max_error: float = MAX_ACCEPTABLE_ERROR):
         """
         Initialize the compression designer.
@@ -515,7 +519,8 @@ class ProceduralCompressionDesigner:
             residual_format = result.metadata.get('residual_format') if result.metadata else None
             if result.has_residual and residual_format == RESIDUAL_FORMAT:
                 from .residual_compression import ResidualCompressor, ResidualData
-                rd = ResidualData.from_bytes(result.residual_data)
+                # the generated values are the ceiling for the residual's count
+                rd = ResidualData.from_bytes(result.residual_data, data.size)
                 return ResidualCompressor().reconstruct(data.astype(np.float64), rd)
             if result.has_residual and residual_format is not None:
                 raise ValueError(f"Unknown residual_format {residual_format!r}")
@@ -554,7 +559,8 @@ class ProceduralCompressionDesigner:
             # Decompress LZMA data
             if shape is None:
                 raise ValueError("Shape not found in metadata for LZMA decompression")
-            data = decompress_from_lzma(result.compressed_data, shape, dtype)
+            data = decompress_from_lzma(result.compressed_data, shape, dtype,
+                                        max_output=self.MAX_OUTPUT_SIZE)
 
         else:
             raise ValueError(f"Unknown compression engine: {result.engine_used}")

@@ -68,6 +68,11 @@ enum Commands {
         /// Output file path
         #[arg(short, long)]
         output: PathBuf,
+
+        /// Largest decompressed size accepted, in bytes; a file stating more is refused before anything is
+        /// decoded (the header is the file's own claim, so it is never the only bound)
+        #[arg(long, default_value_t = DEFAULT_MAX_OUTPUT)]
+        max_output: u64,
     },
 
     /// Show file information
@@ -325,7 +330,14 @@ fn cmd_compress(
     Ok(())
 }
 
-fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+/// Default of `alice decompress --max-output`: 1 GiB
+const DEFAULT_MAX_OUTPUT: u64 = 1 << 30;
+
+fn cmd_decompress(
+    input: PathBuf,
+    output: PathBuf,
+    max_output: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("ALICE-Zip Decompressor v0.1.0");
     println!("=============================");
 
@@ -346,7 +358,15 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
     )]
     let start = Instant::now();
 
-    // The header states the original size; no payload may expand past it
+    // The header states the original size; no payload may expand past it, and the header (the file's own
+    // claim) may not state more than the caller accepts
+    if header.original_size > max_output {
+        return Err(format!(
+            "the file states {} bytes, more than the limit of {max_output} bytes (--max-output)",
+            header.original_size
+        )
+        .into());
+    }
     let original_size = usize::try_from(header.original_size)
         .map_err(|_| "original size does not fit this platform")?;
 
@@ -397,6 +417,15 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
         reason = "CLI timing diagnostic only, printed not stored, not part of library output"
     )]
     let elapsed = start.elapsed();
+
+    // the file must decode to exactly the size it states (shorter is as wrong as longer)
+    if decompressed.len() != original_size {
+        return Err(format!(
+            "the file decodes to {} bytes but states {original_size}",
+            decompressed.len()
+        )
+        .into());
+    }
 
     // Write output
     let mut out_file = BufWriter::new(File::create(&output)?);
@@ -564,7 +593,11 @@ fn main() {
             level,
             raw,
         } => cmd_compress(input, output, quality, bits, level, raw),
-        Commands::Decompress { input, output } => cmd_decompress(input, output),
+        Commands::Decompress {
+            input,
+            output,
+            max_output,
+        } => cmd_decompress(input, output, max_output),
         Commands::Info { file } => cmd_info(file),
         Commands::Benchmark {
             input,

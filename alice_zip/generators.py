@@ -335,13 +335,18 @@ def decompress_from_params(params: GeneratorParameters) -> np.ndarray:
     return generator.generate(params)
 
 
-def decompress_from_lzma(compressed_data: bytes, shape: Tuple, dtype: str = 'float32') -> np.ndarray:
+def decompress_from_lzma(compressed_data: bytes, shape: Tuple, dtype: str = 'float32', *,
+                         max_output: int) -> np.ndarray:
     """
     Decompress LZMA-compressed raw data.
 
     This is the fallback decompression.
     """
-    from ._bounded import lzma_decompress
-    # the shape and dtype fix the length, so no stream may expand past it
-    raw = lzma_decompress(compressed_data, int(np.prod(shape)) * np.dtype(dtype).itemsize)
+    from ._bounded import lzma_decompress, OutputTooLarge
+    # the shape and dtype fix the length, so no stream may expand past it; the shape is the data's own claim,
+    # so the caller's ``max_output`` (bytes) is the ceiling
+    stated = int(np.prod(shape, dtype=object)) * np.dtype(dtype).itemsize
+    if stated > max_output:
+        raise OutputTooLarge(max_output)
+    raw = lzma_decompress(compressed_data, stated)
     return np.frombuffer(raw, dtype=dtype).reshape(shape)

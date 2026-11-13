@@ -22,6 +22,22 @@ class OutputTooLarge(ValueError):
         self.limit = limit
 
 
+class TooManyValues(ValueError):
+    """A header states more values than the caller accepts"""
+
+    def __init__(self, stated: int, limit: int):
+        super().__init__(f"the data states {stated} values, more than the limit of {limit}")
+        self.stated = stated
+        self.limit = limit
+
+
+def check_values(stated: int, limit: int) -> None:
+    """TooManyValues when ``stated`` passes the caller's ``limit`` (the header is the data's own claim)"""
+    _check_limit(limit)
+    if stated > limit:
+        raise TooManyValues(stated, limit)
+
+
 def _check_limit(limit: int) -> None:
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 0:
         raise ValueError(f"limit must be an integer >= 0, got {limit!r}")
@@ -67,6 +83,31 @@ def zlib_decompress(data: bytes, limit: int, wbits: int = zlib.MAX_WBITS) -> byt
     if not decoder.eof:
         raise zlib.error("Error -5 while decompressing data: incomplete or truncated stream")
     return out
+
+
+def zstd_single_frame_size(data: bytes) -> int:
+    """The content size of ``data`` when it is exactly one zstd frame (RFC 8878 3.1.1): the header must state
+    the size, and the blocks (3-byte headers) and the optional checksum must end where ``data`` ends; a
+    second frame or trailing bytes raise ValueError (libzstd refuses a frame whose blocks do not decode to
+    the stated size)"""
+    size = zstd_content_size(data)
+    fhd = data[4]
+    single = (fhd >> 5) & 1
+    at = 5 + (0 if single else 1) + (0, 1, 2, 4)[fhd & 3] + (1 if single else 0, 2, 4, 8)[fhd >> 6]
+    while True:
+        if len(data) < at + 3:
+            raise ValueError("zstd frame truncated")
+        header = int.from_bytes(data[at:at + 3], "little")
+        last, kind, block = header & 1, (header >> 1) & 3, header >> 3
+        if kind == 3:
+            raise ValueError("reserved zstd block type")
+        at += 3 + (1 if kind == 1 else block)  # an RLE block stores one byte
+        if last:
+            break
+    at += 4 if fhd & 0x04 else 0
+    if at != len(data):
+        raise ValueError("bytes after the zstd frame (one frame is read)")
+    return size
 
 
 def zstd_content_size(data: bytes) -> int:
