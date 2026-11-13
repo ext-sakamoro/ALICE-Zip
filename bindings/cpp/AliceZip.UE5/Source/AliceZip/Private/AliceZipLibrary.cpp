@@ -235,9 +235,10 @@ bool UAliceZipLibrary::LzmaCompress(
 
 bool UAliceZipLibrary::LzmaDecompress(
 	const TArray<uint8>& CompressedData,
+	int32 MaxOutput,
 	TArray<uint8>& OutData)
 {
-	if (CompressedData.Num() == 0)
+	if (CompressedData.Num() == 0 || MaxOutput < 0)
 	{
 		return false;
 	}
@@ -246,6 +247,7 @@ bool UAliceZipLibrary::LzmaDecompress(
 	AliceError Error = alice_lzma_decompress(
 		CompressedData.GetData(),
 		static_cast<size_t>(CompressedData.Num()),
+		static_cast<size_t>(MaxOutput),
 		&Buffer);
 
 	if (Error != ALICE_SUCCESS)
@@ -291,9 +293,10 @@ bool UAliceZipLibrary::ZlibCompress(
 
 bool UAliceZipLibrary::ZlibDecompress(
 	const TArray<uint8>& CompressedData,
+	int32 MaxOutput,
 	TArray<uint8>& OutData)
 {
-	if (CompressedData.Num() == 0)
+	if (CompressedData.Num() == 0 || MaxOutput < 0)
 	{
 		return false;
 	}
@@ -302,6 +305,7 @@ bool UAliceZipLibrary::ZlibDecompress(
 	AliceError Error = alice_zlib_decompress(
 		CompressedData.GetData(),
 		static_cast<size_t>(CompressedData.Num()),
+		static_cast<size_t>(MaxOutput),
 		&Buffer);
 
 	if (Error != ALICE_SUCCESS)
@@ -349,9 +353,10 @@ bool UAliceZipLibrary::ResidualCompress(
 
 bool UAliceZipLibrary::ResidualDecompress(
 	const TArray<uint8>& CompressedData,
+	int32 MaxSamples,
 	TArray<float>& OutResidual)
 {
-	if (CompressedData.Num() == 0)
+	if (CompressedData.Num() == 0 || MaxSamples < 0)
 	{
 		return false;
 	}
@@ -360,6 +365,7 @@ bool UAliceZipLibrary::ResidualDecompress(
 	AliceError Error = alice_residual_decompress(
 		CompressedData.GetData(),
 		static_cast<size_t>(CompressedData.Num()),
+		static_cast<size_t>(MaxSamples),
 		&Buffer);
 
 	if (Error != ALICE_SUCCESS)

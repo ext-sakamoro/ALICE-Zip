@@ -12,7 +12,7 @@
  *
  *   // Compress data
  *   byte[] compressed = AliceZip.LzmaCompress(data);
- *   byte[] decompressed = AliceZip.LzmaDecompress(compressed);
+ *   byte[] decompressed = AliceZip.LzmaDecompress(compressed, original.Length);
  */
 
 using System;
@@ -33,7 +33,8 @@ namespace AliceZip
         AllocationError = 5,
         InvalidData = 6,
         /// <summary>Rust panic caught at the FFI boundary (libalice 2.3.0+); see GetLastError()</summary>
-        InternalPanic = 7
+        InternalPanic = 7,
+        OutputTooLarge = 8
     }
 
     /// <summary>
@@ -149,7 +150,7 @@ namespace AliceZip
 
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
         public static extern AliceError alice_lzma_decompress(
-            [In] byte[] data, UIntPtr len, out AliceBuffer buffer);
+            [In] byte[] data, UIntPtr len, UIntPtr maxOutput, out AliceBuffer buffer);
 
         // zlib compression
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -158,7 +159,7 @@ namespace AliceZip
 
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
         public static extern AliceError alice_zlib_decompress(
-            [In] byte[] data, UIntPtr len, out AliceBuffer buffer);
+            [In] byte[] data, UIntPtr len, UIntPtr maxOutput, out AliceBuffer buffer);
 
         // Residual compression
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -168,7 +169,7 @@ namespace AliceZip
 
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
         public static extern AliceError alice_residual_decompress(
-            [In] byte[] data, UIntPtr len, out AliceFloatBuffer buffer);
+            [In] byte[] data, UIntPtr len, UIntPtr maxSamples, out AliceFloatBuffer buffer);
     }
 
     /// <summary>
@@ -195,6 +196,7 @@ namespace AliceZip
                 AliceError.AllocationError => "Memory allocation failed",
                 AliceError.InvalidData => "Input data is invalid or corrupted",
                 AliceError.InternalPanic => "Internal error (Rust panic caught at the FFI boundary)",
+                AliceError.OutputTooLarge => "Decompressed output exceeds the caller's limit",
                 _ => $"Unknown error: {error}"
             };
         }
@@ -407,12 +409,17 @@ namespace AliceZip
         }
 
         /// <summary>
-        /// Decompress LZMA data
+        /// Decompress LZMA data, refusing more than <paramref name="maxOutput"/> bytes
+        /// (<see cref="AliceError.OutputTooLarge"/>)
         /// </summary>
-        public static byte[] LzmaDecompress(byte[] data)
+        public static byte[] LzmaDecompress(byte[] data, int maxOutput)
         {
+            if (maxOutput < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxOutput));
+            }
             AliceError error = NativeMethods.alice_lzma_decompress(
-                data, (UIntPtr)data.Length, out AliceBuffer buffer);
+                data, (UIntPtr)data.Length, (UIntPtr)maxOutput, out AliceBuffer buffer);
             CheckError(error);
 
             try
@@ -451,12 +458,17 @@ namespace AliceZip
         }
 
         /// <summary>
-        /// Decompress zlib data
+        /// Decompress zlib data, refusing more than <paramref name="maxOutput"/> bytes
+        /// (<see cref="AliceError.OutputTooLarge"/>)
         /// </summary>
-        public static byte[] ZlibDecompress(byte[] data)
+        public static byte[] ZlibDecompress(byte[] data, int maxOutput)
         {
+            if (maxOutput < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxOutput));
+            }
             AliceError error = NativeMethods.alice_zlib_decompress(
-                data, (UIntPtr)data.Length, out AliceBuffer buffer);
+                data, (UIntPtr)data.Length, (UIntPtr)maxOutput, out AliceBuffer buffer);
             CheckError(error);
 
             try
@@ -498,12 +510,17 @@ namespace AliceZip
         }
 
         /// <summary>
-        /// Decompress quantized residuals
+        /// Decompress quantized residuals, refusing more than <paramref name="maxSamples"/> floats
+        /// (<see cref="AliceError.OutputTooLarge"/>)
         /// </summary>
-        public static float[] ResidualDecompress(byte[] data)
+        public static float[] ResidualDecompress(byte[] data, int maxSamples)
         {
+            if (maxSamples < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maxSamples));
+            }
             AliceError error = NativeMethods.alice_residual_decompress(
-                data, (UIntPtr)data.Length, out AliceFloatBuffer buffer);
+                data, (UIntPtr)data.Length, (UIntPtr)maxSamples, out AliceFloatBuffer buffer);
             CheckError(error);
 
             try

@@ -28,7 +28,8 @@ Texture2D noise = AliceTextureGenerator.GeneratePerlinTexture(256, 256, seed: 42
 
 // Compress save data
 byte[] compressed = Alice.LzmaCompress(saveData);
-byte[] decompressed = Alice.LzmaDecompress(compressed);
+// the caller states the largest size it accepts; a larger output is refused
+byte[] decompressed = Alice.LzmaDecompress(compressed, saveData.Length);
 ```
 
 ### C++ / Unreal Engine 5
@@ -51,7 +52,8 @@ auto noise = alice::perlin_2d(256, 256, 42, 10.0f, 4);
 
 // Compress data
 auto compressed = alice::lzma_compress(data);
-auto decompressed = alice::lzma_decompress(compressed);
+// the caller states the largest size it accepts; a larger output is refused
+auto decompressed = alice::lzma_decompress(compressed, data.size());
 ```
 
 **Quick Start (UE5):**
@@ -126,11 +128,11 @@ cargo build --release --target aarch64-linux-android
 | Function | Description |
 |----------|-------------|
 | `lzma_compress` | LZMA compression (best ratio) |
-| `lzma_decompress` | LZMA decompression |
+| `lzma_decompress` | LZMA decompression up to a caller-given size |
 | `zlib_compress` | zlib compression (faster) |
-| `zlib_decompress` | zlib decompression |
+| `zlib_decompress` | zlib decompression up to a caller-given size |
 | `residual_compress` | Lossy float compression |
-| `residual_decompress` | Lossy float decompression |
+| `residual_decompress` | Lossy float decompression up to a caller-given count |
 
 ## Platform Support
 

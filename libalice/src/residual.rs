@@ -845,11 +845,6 @@ impl ResidualData {
                 rd.method.as_str()
             )));
         }
-        let plain = match rd.method {
-            ResidualCompressionMethod::None => compressed.clone(),
-            ResidualCompressionMethod::Zlib => crate::compression::zlib_decompress(&compressed)?,
-            _ => lzma_or_xz_decompress(&compressed)?,
-        };
         let n = rd.original_len;
         let rw = if residual_f64 { 8 } else { 4 };
         let width = dtype_width(&rd.dtype).ok_or_else(|| {
@@ -858,6 +853,19 @@ impl ResidualData {
         let expected = n
             .checked_mul(rw)
             .and_then(|a| k.checked_mul(8 + width).and_then(|b| a.checked_add(b)));
+        // the header fixes the payload length, so no stream may expand past it
+        let limit = expected.ok_or_else(|| {
+            ResidualError::Corrupted(format!(
+                "{n} values and {k} exceptions do not fit in memory"
+            ))
+        })?;
+        let plain = match rd.method {
+            ResidualCompressionMethod::None => compressed.clone(),
+            ResidualCompressionMethod::Zlib => {
+                crate::compression::zlib_decompress(&compressed, limit)?
+            }
+            _ => lzma_or_xz_decompress(&compressed, limit)?,
+        };
         if expected != Some(plain.len()) {
             return Err(ResidualError::Corrupted(format!(
                 "version 4 payload holds {} bytes, expected {expected:?}",
@@ -1147,16 +1155,59 @@ const XZ_MAGIC: [u8; 6] = [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00];
 /// Decompresses an xz stream (what the Python writer emits) or an LZMA
 /// "alone" stream (what the earlier Rust writer emitted), told apart by the
 /// xz magic.
-fn lzma_or_xz_decompress(bytes: &[u8]) -> Result<Vec<u8>, ResidualError> {
+///
+/// `limit` is the payload length the header implies; a stream that expands
+/// past it is refused as `Corrupted` before more than `limit + 1` bytes are
+/// held.
+fn lzma_or_xz_decompress(bytes: &[u8], limit: usize) -> Result<Vec<u8>, ResidualError> {
     if bytes.starts_with(&XZ_MAGIC) {
-        let mut out = Vec::new();
+        let mut out = CappedWriter {
+            out: Vec::new(),
+            limit,
+        };
         lzma_rs::xz_decompress(&mut std::io::Cursor::new(bytes), &mut out)
             .map_err(|e| ResidualError::Corrupted(format!("xz: {e}")))?;
-        Ok(out)
+        Ok(out.out)
     } else {
-        crate::compression::lzma_decompress(bytes)
+        crate::compression::lzma_decompress(bytes, limit)
             .map_err(|e| ResidualError::Corrupted(format!("lzma: {e}")))
     }
+}
+
+/// A `Write` that refuses to hold more than `limit` bytes
+struct CappedWriter {
+    out: Vec<u8>,
+    limit: usize,
+}
+
+impl std::io::Write for CappedWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if buf.len() > self.limit - self.out.len() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "decompressed output exceeds the limit of {} bytes",
+                    self.limit
+                ),
+            ));
+        }
+        self.out.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// `n * width + extra` bytes, the payload length a header implies, or
+/// `Corrupted` when it does not fit `usize`
+fn implied_len(n: usize, width: usize, extra: usize) -> Result<usize, ResidualError> {
+    n.checked_mul(width)
+        .and_then(|a| a.checked_add(extra))
+        .ok_or_else(|| {
+            ResidualError::Corrupted(format!("{n} values of {width} bytes do not fit in memory"))
+        })
 }
 
 /// Compresses with xz, the format the Python writer emits.
@@ -1252,7 +1303,7 @@ pub fn decompress_residual_delta(rd: &ResidualData) -> Result<Vec<f32>, Residual
             rd.method.as_str()
         )));
     }
-    let raw = lzma_or_xz_decompress(&rd.compressed)?;
+    let raw = lzma_or_xz_decompress(&rd.compressed, implied_len(rd.original_len, 4, 0)?)?;
     if raw.len() != rd.original_len * 4 {
         return Err(ResidualError::Corrupted(format!(
             "delta stream holds {} bytes, expected {}",
@@ -1524,10 +1575,18 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
         });
     }
 
+    // the payload length the header implies: 16 bytes of range then one code
+    // per value when quantised, one f32 per value otherwise
+    let limit = match rd.metadata.quant_bits {
+        Some(bits) => implied_len(rd.original_len, usize::from(bits / 8), 16)?,
+        None => implied_len(rd.original_len, 4, 0)?,
+    };
     let raw = match rd.method {
         ResidualCompressionMethod::None => rd.compressed.clone(),
-        ResidualCompressionMethod::Lzma => lzma_or_xz_decompress(&rd.compressed)?,
-        ResidualCompressionMethod::Zlib => crate::compression::zlib_decompress(&rd.compressed)?,
+        ResidualCompressionMethod::Lzma => lzma_or_xz_decompress(&rd.compressed, limit)?,
+        ResidualCompressionMethod::Zlib => {
+            crate::compression::zlib_decompress(&rd.compressed, limit)?
+        }
         // the delta methods ignore quant_bits, as the Python reader does
         ResidualCompressionMethod::Delta | ResidualCompressionMethod::BitDelta => {
             return decompress_residual_delta(rd)
@@ -1535,9 +1594,10 @@ pub fn decompress(rd: &ResidualData) -> Result<Vec<f32>, ResidualError> {
         ResidualCompressionMethod::Quantized if rd.metadata.legacy_container => {
             return Ok(crate::compression::decompress_residual_quantized(
                 &rd.compressed,
+                rd.original_len,
             )?)
         }
-        ResidualCompressionMethod::Quantized => lzma_or_xz_decompress(&rd.compressed)?,
+        ResidualCompressionMethod::Quantized => lzma_or_xz_decompress(&rd.compressed, limit)?,
     };
     match rd.metadata.quant_bits {
         Some(bits) => dequantize_python(&raw, bits, rd.original_len),
@@ -1985,6 +2045,82 @@ fn dequantize_python(raw: &[u8], bits: u8, len: usize) -> Result<Vec<f32>, Resid
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // oracle: the header's length bounds the payload, so a file whose length is one value short of its
+    // stream is refused at the limit while decoding (the message names the limit), not after the
+    // whole stream is held; zlib, LZMA alone and xz (delta, quantised) alike
+    // oracle: a version 4 file states its value and exception counts, so its payload length is fixed;
+    // a header one value short of the stream is refused at that length while decoding
+    #[test]
+    fn a_version_4_payload_past_its_stated_length_is_refused_while_decoding() {
+        let n = 4096;
+        let original: Vec<u8> = (0..n).flat_map(|_| 2.5f32.to_le_bytes()).collect();
+        // every 512th generated value is far from the original, so its f32 residual cannot give the
+        // original back and it is kept as an exception (a version 4 file)
+        let generated: Vec<f64> = (0..n)
+            .map(|i| if i % 512 == 0 { 1e10 } else { 2.0 })
+            .collect();
+        let mut rd = compress_original(
+            &original,
+            "float32",
+            &generated,
+            ResidualCompressionMethod::Lzma,
+        )
+        .unwrap();
+        assert_eq!(rd.metadata.layout, 4);
+        assert_ne!(
+            rd.method,
+            ResidualCompressionMethod::None,
+            "fell back to raw bytes"
+        );
+        assert!(ResidualData::from_bytes(&rd.to_bytes()).is_ok());
+        rd.original_len = n - 1;
+        rd.shape = vec![n - 1];
+        let err = ResidualData::from_bytes(&rd.to_bytes())
+            .expect_err("a payload past its stated length was read");
+        assert!(err.to_string().contains("limit"), "{err}");
+    }
+
+    // oracle: the legacy quantised container holds one sample per value, so its sample count is
+    // bounded by the header's length as well
+    #[test]
+    fn a_legacy_quantised_payload_past_its_stated_length_is_refused() {
+        let data = vec![0.5f32; 4096];
+        let compressed = crate::compression::compress_residual_quantized(&data, 8, 6).unwrap();
+        let mut rd = ResidualData {
+            method: ResidualCompressionMethod::Quantized,
+            compressed,
+            original_len: data.len(),
+            shape: vec![data.len()],
+            dtype: "float32".to_owned(),
+            metadata: ResidualMetadata {
+                legacy_container: true,
+                ..ResidualMetadata::default()
+            },
+        };
+        assert_eq!(decompress(&rd).unwrap().len(), data.len());
+        rd.original_len -= 1;
+        let err = decompress(&rd).expect_err("a payload past its stated length was read");
+        assert!(err.to_string().contains("limit"), "{err}");
+    }
+
+    #[test]
+    fn a_payload_past_the_length_its_header_states_is_refused_while_decoding() {
+        let data = vec![0.5f32; 4096];
+        for method in [
+            ResidualCompressionMethod::Zlib,
+            ResidualCompressionMethod::Lzma,
+            ResidualCompressionMethod::BitDelta,
+            ResidualCompressionMethod::Quantized,
+        ] {
+            let mut rd = compress_with_method(&data, method);
+            assert_eq!(rd.method, method, "fell back to another encoding");
+            assert_eq!(decompress(&rd).unwrap().len(), data.len(), "{method:?}");
+            rd.original_len -= 1;
+            let err = decompress(&rd).expect_err("a payload past its stated length was read");
+            assert!(err.to_string().contains("limit"), "{method:?}: {err}");
+        }
+    }
 
     /// Build a deterministic test signal (sine wave, 1000 samples).
     fn test_signal(n: usize) -> Vec<f32> {

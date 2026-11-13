@@ -637,7 +637,7 @@ impl ProceduralCompressionDesigner {
         if payload.fit_result.method == FitMethod::LzmaFallback {
             // Decompress raw LZMA bytes back to f32
             if let Some(ref compressed) = payload.residual {
-                if let Ok(raw) = lzma_decompress(compressed) {
+                if let Ok(raw) = lzma_decompress(compressed, n.saturating_mul(4)) {
                     return raw
                         .chunks_exact(4)
                         .map(|c| f32::from_le_bytes(c.try_into().unwrap_or([0; 4])))
@@ -650,7 +650,7 @@ impl ProceduralCompressionDesigner {
 
             // Add residual if present
             if let Some(ref compressed_residual) = payload.residual {
-                if let Ok(raw) = lzma_decompress(compressed_residual) {
+                if let Ok(raw) = lzma_decompress(compressed_residual, n.saturating_mul(4)) {
                     let residual: Vec<f32> = raw
                         .chunks_exact(4)
                         .map(|c| f32::from_le_bytes(c.try_into().unwrap_or([0; 4])))

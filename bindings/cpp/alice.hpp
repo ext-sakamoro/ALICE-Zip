@@ -276,12 +276,13 @@ inline std::vector<uint8_t> lzma_compress(
 }
 
 /**
- * @brief Decompress LZMA data
+ * @brief Decompress LZMA data, refusing output past max_output bytes
+ * (throws with ALICE_ERROR_OUTPUT_TOO_LARGE)
  */
-inline std::vector<uint8_t> lzma_decompress(const std::vector<uint8_t>& data)
+inline std::vector<uint8_t> lzma_decompress(const std::vector<uint8_t>& data, size_t max_output)
 {
     detail::BufferGuard guard;
-    detail::check_error(alice_lzma_decompress(data.data(), data.size(), &guard.buffer));
+    detail::check_error(alice_lzma_decompress(data.data(), data.size(), max_output, &guard.buffer));
     return guard.to_vector();
 }
 
@@ -298,12 +299,13 @@ inline std::vector<uint8_t> zlib_compress(
 }
 
 /**
- * @brief Decompress zlib data
+ * @brief Decompress zlib data, refusing output past max_output bytes
+ * (throws with ALICE_ERROR_OUTPUT_TOO_LARGE)
  */
-inline std::vector<uint8_t> zlib_decompress(const std::vector<uint8_t>& data)
+inline std::vector<uint8_t> zlib_decompress(const std::vector<uint8_t>& data, size_t max_output)
 {
     detail::BufferGuard guard;
-    detail::check_error(alice_zlib_decompress(data.data(), data.size(), &guard.buffer));
+    detail::check_error(alice_zlib_decompress(data.data(), data.size(), max_output, &guard.buffer));
     return guard.to_vector();
 }
 
@@ -322,12 +324,13 @@ inline std::vector<uint8_t> residual_compress(
 }
 
 /**
- * @brief Decompress quantized residuals
+ * @brief Decompress quantized residuals, refusing more than max_samples floats
+ * (throws with ALICE_ERROR_OUTPUT_TOO_LARGE)
  */
-inline std::vector<float> residual_decompress(const std::vector<uint8_t>& data)
+inline std::vector<float> residual_decompress(const std::vector<uint8_t>& data, size_t max_samples)
 {
     detail::FloatBufferGuard guard;
-    detail::check_error(alice_residual_decompress(data.data(), data.size(), &guard.buffer));
+    detail::check_error(alice_residual_decompress(data.data(), data.size(), max_samples, &guard.buffer));
     return guard.to_vector();
 }
 
