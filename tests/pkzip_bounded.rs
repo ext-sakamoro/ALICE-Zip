@@ -156,7 +156,6 @@ fn an_entry_that_declares_more_than_the_entry_limit_is_refused_before_it_is_read
             limit: 49_999
         }
     );
-    assert_eq!(archive.spent(), 0, "nothing was decoded");
     assert_eq!(
         archive.read("a.bin").unwrap(),
         content(0, 1000),
@@ -168,17 +167,52 @@ fn an_entry_that_declares_more_than_the_entry_limit_is_refused_before_it_is_read
 }
 
 #[test]
-fn reads_past_the_archive_total_are_refused_and_a_second_read_counts_again() {
-    let archive = Archive::new(data("basic.zip"), Limits::new(BIG, 51_000)).unwrap();
-    archive.read("a.bin").unwrap();
-    archive.read("b.bin").unwrap();
-    assert_eq!(archive.spent(), 51_000);
-    archive.read("empty.bin").unwrap();
-    let e = archive.read("dir/c.txt").unwrap_err();
-    assert_eq!(pkzip_error(&e), PkzipError::TotalTooLarge { limit: 51_000 });
-    let e = archive.read("a.bin").unwrap_err();
-    assert_eq!(pkzip_error(&e), PkzipError::TotalTooLarge { limit: 51_000 });
-    assert_eq!(archive.spent(), 51_000, "a refused read spends nothing");
+fn an_archive_whose_deflated_entries_declare_more_than_the_total_is_refused_when_it_is_opened() {
+    // basic.zip's deflated entries declare 50 000 + 1 + 0 bytes; its stored entries (1 000 + 0 + 0) are bounded by
+    // the archive itself and do not count
+    let e = Archive::new(data("basic.zip"), Limits::new(BIG, 50_000))
+        .err()
+        .unwrap();
+    assert_eq!(
+        pkzip_error(&e),
+        PkzipError::TotalTooLarge {
+            declared: 50_001,
+            limit: 50_000
+        }
+    );
+    let archive = Archive::new(data("basic.zip"), Limits::new(BIG, 50_001)).unwrap();
+    // every read succeeds, in any order and any number of times: the limit does not depend on what was read
+    for _ in 0..2 {
+        for name in ["dir/c.txt", "b.bin", "a.bin", "empty.z"] {
+            archive.read(name).unwrap();
+        }
+    }
+}
+
+#[test]
+fn a_stored_entry_is_not_held_to_the_limits_and_is_read_in_place() {
+    // stored data is bounded by the input the caller supplies, so a limit of 0 does not refuse it
+    let archive = Archive::new(data("basic.zip"), Limits::new(0, 0)).err();
+    assert!(
+        archive.is_some(),
+        "the deflated b.bin still counts against the total of 0"
+    );
+    let archive = Archive::new(data("aligned.zip"), Limits::new(0, 0)).unwrap();
+    assert_eq!(archive.read("archive/data.pkl").unwrap(), content(0, 300));
+    assert_eq!(
+        archive.stored("archive/data/0").unwrap(),
+        content(1, 40).as_slice()
+    );
+    let basic = Archive::new(data("basic.zip"), Limits::new(BIG, BIG)).unwrap();
+    assert_eq!(
+        basic.stored("b.bin").unwrap_err().kind(),
+        io::ErrorKind::InvalidInput,
+        "deflated: use read"
+    );
+    assert_eq!(
+        basic.stored("nope").unwrap_err().kind(),
+        io::ErrorKind::NotFound
+    );
 }
 
 #[test]
@@ -196,7 +230,6 @@ fn a_deflated_entry_that_expands_past_its_declared_size_is_refused() {
         PkzipError::ExpandsPastDeclared { declared: 1000 }
     );
     assert!(e.to_string().contains("expands past"), "{e}");
-    assert_eq!(archive.spent(), 0);
 }
 
 #[test]
@@ -244,6 +277,11 @@ fn an_entry_whose_bytes_do_not_match_its_crc_is_refused() {
     assert!(
         matches!(pkzip_error(&e), PkzipError::CrcMismatch { .. }),
         "{e}"
+    );
+    let e = archive.stored("a.bin").unwrap_err();
+    assert!(
+        matches!(pkzip_error(&e), PkzipError::CrcMismatch { .. }),
+        "in place too: {e}"
     );
 }
 
@@ -336,7 +374,7 @@ fn a_missing_name_is_not_found() {
 }
 
 #[test]
-fn an_entry_whose_data_runs_into_the_central_directory_is_refused_when_the_archive_is_opened() {
+fn a_stored_entry_whose_range_runs_past_the_archive_is_refused_when_the_archive_is_opened() {
     // both sizes of a stored entry raised past the archive's end: the record would have the read slice bytes the
     // archive does not hold
     let mut b = data("basic.zip");
