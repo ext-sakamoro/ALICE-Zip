@@ -115,3 +115,18 @@ def test_the_dictionary_size_is_bounded_at_64_mib():
         finally:
             tracemalloc.stop()
         assert peak < 16 * 1024 * 1024, f"dict byte {b}: peak {peak}"
+
+
+ORIGINAL_SIZE_AT = 14
+
+
+def test_every_python_edge_refuses_more_than_1_gib_by_default():
+    # oracle: one documented default at every edge, the same as the CLI's --max-output (1 GiB)
+    from alice_zip.analyzers import ProceduralCompressionDesigner
+    from alice_zip.media_generators import MAX_REGENERATED_SIZE
+    assert ALICEZip.MAX_OUTPUT_SIZE == ProceduralCompressionDesigner.MAX_OUTPUT_SIZE == MAX_REGENERATED_SIZE == 1 << 30
+    # a header stating one byte more than 1 GiB is refused by a default instance before anything is decoded
+    v = bytearray(read("legacy_lzma_u8", "alice"))
+    v[ORIGINAL_SIZE_AT:ORIGINAL_SIZE_AT + 8] = struct.pack("<Q", (1 << 30) + 1)
+    with pytest.raises(MemoryError, match="exceeds MAX_OUTPUT_SIZE"):
+        ALICEZip().decompress(bytes(v))

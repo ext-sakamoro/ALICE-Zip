@@ -266,3 +266,20 @@ def test_zstd_input_must_be_exactly_one_frame():
     # an RLE block stores one byte for its run
     rle = ((5 << 3) | (1 << 1) | 1).to_bytes(3, "little")
     assert _bounded.zstd_single_frame_size(magic + bytes([0x20, 5]) + rle + b"x") == 5
+
+
+def test_a_zstd_block_over_128_kib_is_refused():
+    # oracle (RFC 8878 Block_Maximum_Size): a block of 128 KiB is the most a frame may hold
+    magic = (0xFD2FB528).to_bytes(4, "little")
+    size = 128 * 1024
+    ok_block = ((size << 3) | (0 << 1) | 1).to_bytes(3, "little")
+    ok = magic + bytes([0xA0]) + size.to_bytes(4, "little") + ok_block + bytes(size)
+    assert _bounded.zstd_single_frame_size(ok) == size
+    big = size + 1
+    big_block = ((big << 3) | (0 << 1) | 1).to_bytes(3, "little")
+    with pytest.raises(ValueError, match="128"):
+        _bounded.zstd_single_frame_size(magic + bytes([0xA0]) + big.to_bytes(4, "little") + big_block + bytes(big))
+    # an RLE block regenerating more than 128 KiB is refused the same way
+    rle = ((big << 3) | (1 << 1) | 1).to_bytes(3, "little")
+    with pytest.raises(ValueError, match="128"):
+        _bounded.zstd_single_frame_size(magic + bytes([0xA0]) + big.to_bytes(4, "little") + rle + b"x")
