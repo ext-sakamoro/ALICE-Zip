@@ -88,6 +88,10 @@ relint
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; cargo clippy --all-targets --no-default-features -- -D warnings )
 
 step "ci.yml / clippy: Clippy canary data (generator tests)"
+step "ci.yml / clippy: Upstream previous identifiers (test, then whole-list uses only)"
+python3 scripts/test_upstream_previous_ids_check.py
+python3 scripts/upstream_previous_ids_check.py
+
 step "eol.yml / line endings (tests, then check)"
 # text files are LF in the index and the working tree (.github/workflows/eol.yml, shared by the ALICE crates)
 python3 scripts/test_check_eol.py
