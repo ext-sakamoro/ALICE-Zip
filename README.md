@@ -87,7 +87,7 @@ let regenerated = generate_from_coefficients(32, &bins, dc);
 
 | Feature | Adds | Default |
 |---------|------|---------|
-| `std` | `compression` (zlib via flate2), `std::error::Error` for `ZipError` | ✓ |
+| `std` | `compression` (zlib via flate2), `pkzip` (a PKZIP reader held to a per-entry and an archive-wide limit), `std::error::Error` for `ZipError` | ✓ |
 | `fft` | `generators::analyze_signal_fft` (in-crate f64 FFT, same contract as the naive DFT, same bits on every target) | |
 | `parallel` | rayon row parallelism for `generate_perlin_2d` / `_advanced` | |
 | `lzma` | `compression::{lzma_compress, lzma_decompress}` + the `.alice` quantised / lossless residual containers (lzma-rs) | |

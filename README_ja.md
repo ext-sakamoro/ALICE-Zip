@@ -84,7 +84,7 @@ let regenerated = generate_from_coefficients(32, &bins, dc);
 
 | feature | 追加されるもの | default |
 |---------|----------------|---------|
-| `std` | `compression` (flate2 zlib)、`ZipError` の `std::error::Error` | ✓ |
+| `std` | `compression` (flate2 zlib)、`pkzip` (entry ごとと archive 全体の上限付きの PKZIP reader)、`ZipError` の `std::error::Error` | ✓ |
 | `fft` | `generators::analyze_signal_fft` (crate 内の f64 FFT、naive DFT と同一契約、target によらず同じ bit) | |
 | `parallel` | `generate_perlin_2d` / `_advanced` の rayon 行並列 | |
 | `lzma` | `compression::{lzma_compress, lzma_decompress}` + `.alice` の量子化 / lossless residual container (lzma-rs) | |
