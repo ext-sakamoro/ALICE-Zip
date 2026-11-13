@@ -7,14 +7,23 @@
 //! name, an encrypted entry, a method other than stored or deflate, a stored
 //! entry whose two sizes differ, a record that points outside the archive.
 //!
-//! [`Archive::read`] then decodes one entry within two limits the caller must
-//! give ([`Limits`]): the most bytes one entry may expand to, and the most
-//! bytes all reads through the archive may produce together. The size the
-//! archive declares for an entry is checked against both before anything is
-//! decoded, and the decoder is asked for at most that size and one byte more,
-//! so an entry that expands past what it declares is refused at that byte, and
-//! one that ends short of it is refused too. The effective limit of a read is
-//! therefore `min(declared size, entry limit)`, as for
+//! **Stored data is bounded by the input length you supply; deflated output by
+//! your caps.** A stored entry is its own bytes inside the archive, and no two
+//! entries may cover the same bytes, so the stored entries together are at
+//! most the archive's length: they are checked (two equal sizes, inside the
+//! archive, CRC-32) but not held to the caps, and [`Archive::stored`] returns
+//! them in place. A deflated entry can expand without bound, so two caps the
+//! caller must give ([`Limits`]) hold it: the most bytes one deflated entry
+//! may declare, and the most bytes all deflated entries may declare together.
+//! The total is checked once, when the archive is opened, so whether a read is
+//! allowed does not depend on what was read before or how often.
+//!
+//! [`Archive::read`] decodes one entry: the size it declares is checked against
+//! the entry cap before anything is decoded, and the decoder is asked for at
+//! most that size and one byte more, so an entry that expands past what it
+//! declares is refused at that byte, and one that ends short of it is refused
+//! too. The effective limit of a read is therefore `min(declared size, entry
+//! cap)`, as for
 //! [`compression::zlib_decompress`](crate::compression::zlib_decompress). The
 //! CRC-32 of the result is checked last.
 //!
@@ -29,11 +38,10 @@
 
 use core::fmt;
 use std::io::{self, Read};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use flate2::read::DeflateDecoder;
 
-/// The two limits of every read: both are required.
+/// The two caps on deflated output: both are required (stored entries are bounded by the archive itself).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
     max_entry: u64,
@@ -41,8 +49,8 @@ pub struct Limits {
 }
 
 impl Limits {
-    /// `max_entry`: the most bytes one entry may expand to; `max_total`: the most bytes all reads through one
-    /// [`Archive`] may produce together (a second read of an entry counts again).
+    /// `max_entry`: the most bytes one deflated entry may declare (and so expand to); `max_total`: the most bytes
+    /// all deflated entries of an archive may declare together, checked when the archive is opened.
     #[must_use]
     pub const fn new(max_entry: u64, max_total: u64) -> Self {
         Self {
@@ -51,13 +59,13 @@ impl Limits {
         }
     }
 
-    /// The most bytes one entry may expand to.
+    /// The most bytes one deflated entry may declare.
     #[must_use]
     pub const fn max_entry(&self) -> u64 {
         self.max_entry
     }
 
-    /// The most bytes all reads through one archive may produce together.
+    /// The most bytes all deflated entries of an archive may declare together.
     #[must_use]
     pub const fn max_total(&self) -> u64 {
         self.max_total
@@ -77,16 +85,18 @@ pub enum Method {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PkzipError {
-    /// The entry declares more bytes than the entry limit: refused before decoding.
+    /// The deflated entry declares more bytes than the entry cap: refused before decoding.
     EntryTooLarge {
         /// The size the archive declares.
         declared: u64,
         /// The caller's entry limit.
         limit: u64,
     },
-    /// The read would take the archive's total past the caller's limit: refused before decoding.
+    /// The deflated entries together declare more bytes than the total cap: refused when the archive is opened.
     TotalTooLarge {
-        /// The caller's total limit.
+        /// The sum of the sizes the deflated entries declare (saturated at `u64::MAX`).
+        declared: u64,
+        /// The caller's total cap.
         limit: u64,
     },
     /// The entry expands past the size it declares: decoding stopped one byte past it.
@@ -152,9 +162,10 @@ impl fmt::Display for PkzipError {
                     "ZIP entry declares {declared} bytes, above the entry limit of {limit} bytes"
                 )
             }
-            Self::TotalTooLarge { limit } => {
-                write!(f, "reading the ZIP entry would take the archive past its total limit of {limit} bytes")
-            }
+            Self::TotalTooLarge { declared, limit } => write!(
+                f,
+                "the deflated ZIP entries declare {declared} bytes together, above the total limit of {limit} bytes"
+            ),
             Self::ExpandsPastDeclared { declared } => {
                 write!(f, "ZIP entry expands past the {declared} bytes it declares")
             }
@@ -262,7 +273,6 @@ pub struct Archive<D: AsRef<[u8]>> {
     data: D,
     entries: Vec<Entry>,
     limits: Limits,
-    spent: AtomicU64,
 }
 
 const EOCD: &[u8; 4] = b"PK\x05\x06";
@@ -516,11 +526,20 @@ impl<D: AsRef<[u8]>> Archive<D> {
                 return Err(malformed("a local header names another entry"));
             }
         }
+        let declared = entries
+            .iter()
+            .filter(|e| e.method == Method::Deflated)
+            .fold(0u64, |t, e| t.saturating_add(e.size));
+        if declared > limits.max_total {
+            return Err(refuse(PkzipError::TotalTooLarge {
+                declared,
+                limit: limits.max_total,
+            }));
+        }
         Ok(Self {
             data,
             entries,
             limits,
-            spent: AtomicU64::new(0),
         })
     }
 
@@ -534,12 +553,6 @@ impl<D: AsRef<[u8]>> Archive<D> {
     #[must_use]
     pub fn limits(&self) -> Limits {
         self.limits
-    }
-
-    /// The bytes all reads have produced so far.
-    #[must_use]
-    pub fn spent(&self) -> u64 {
-        self.spent.load(Ordering::SeqCst)
     }
 
     /// The bytes of the entry named `name`, within the limits.
@@ -570,54 +583,68 @@ impl<D: AsRef<[u8]>> Archive<D> {
             .entries
             .get(i)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no ZIP entry at that index"))?;
-        if e.size > self.limits.max_entry {
-            return Err(refuse(PkzipError::EntryTooLarge {
-                declared: e.size,
-                limit: self.limits.max_entry,
-            }));
-        }
-        // reserve the declared size against the total before decoding: a refused read reserves nothing, and every
-        // successful read produces exactly what it reserved
-        let max_total = self.limits.max_total;
-        let mut seen = self.spent.load(Ordering::SeqCst);
-        loop {
-            let next = seen
-                .checked_add(e.size)
-                .filter(|&t| t <= max_total)
-                .ok_or_else(|| refuse(PkzipError::TotalTooLarge { limit: max_total }))?;
-            match self
-                .spent
-                .compare_exchange(seen, next, Ordering::SeqCst, Ordering::SeqCst)
-            {
-                Ok(_) => break,
-                Err(now) => seen = now,
+        match e.method {
+            Method::Stored => self.stored_bytes(e).map(<[u8]>::to_vec),
+            Method::Deflated => {
+                if e.size > self.limits.max_entry {
+                    return Err(refuse(PkzipError::EntryTooLarge {
+                        declared: e.size,
+                        limit: self.limits.max_entry,
+                    }));
+                }
+                let out = read_declared(DeflateDecoder::new(self.raw(e)?), index(e.size)?)?;
+                check_crc(e, &out)?;
+                Ok(out)
             }
         }
-        let out = self.decode(e);
-        if out.is_err() {
-            self.spent.fetch_sub(e.size, Ordering::SeqCst);
-        }
-        out
     }
 
-    fn decode(&self, e: &Entry) -> io::Result<Vec<u8>> {
-        let start = index(e.data_offset)?;
-        let raw = &self.data.as_ref()[start..start + index(e.compressed_size)?];
-        let declared = index(e.size)?;
-        let out = match e.method {
-            Method::Stored => raw.to_vec(),
-            Method::Deflated => read_declared(DeflateDecoder::new(raw), declared)?,
-        };
-        let mut crc = flate2::Crc::new();
-        crc.update(&out);
-        if crc.sum() != e.crc32 {
-            return Err(refuse(PkzipError::CrcMismatch {
-                expected: e.crc32,
-                actual: crc.sum(),
-            }));
+    /// The bytes of the stored entry named `name`, in place (nothing is copied or decoded; the CRC-32 is checked).
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` when no entry has that name; `InvalidInput` when the entry is deflated (read it with
+    /// [`Archive::read`]); [`PkzipError::CrcMismatch`] inside an `InvalidData` error.
+    pub fn stored(&self, name: &str) -> io::Result<&[u8]> {
+        let e = self
+            .entries
+            .iter()
+            .find(|e| e.name == name.as_bytes())
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::NotFound, "no ZIP entry with that name")
+            })?;
+        if e.method != Method::Stored {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the ZIP entry is deflated: read it with Archive::read",
+            ));
         }
-        Ok(out)
+        self.stored_bytes(e)
     }
+
+    fn stored_bytes(&self, e: &Entry) -> io::Result<&[u8]> {
+        let raw = self.raw(e)?;
+        check_crc(e, raw)?;
+        Ok(raw)
+    }
+
+    /// The entry's bytes in the archive (the range was checked to lie inside it when the archive was opened)
+    fn raw(&self, e: &Entry) -> io::Result<&[u8]> {
+        let start = index(e.data_offset)?;
+        Ok(&self.data.as_ref()[start..start + index(e.compressed_size)?])
+    }
+}
+
+fn check_crc(e: &Entry, bytes: &[u8]) -> io::Result<()> {
+    let mut crc = flate2::Crc::new();
+    crc.update(bytes);
+    if crc.sum() != e.crc32 {
+        return Err(refuse(PkzipError::CrcMismatch {
+            expected: e.crc32,
+            actual: crc.sum(),
+        }));
+    }
+    Ok(())
 }
 
 /// Read `reader` to its end when it produces exactly `declared` bytes: it is asked for at most `declared + 1`
