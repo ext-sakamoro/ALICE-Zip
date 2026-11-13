@@ -1156,47 +1156,17 @@ const XZ_MAGIC: [u8; 6] = [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00];
 /// "alone" stream (what the earlier Rust writer emitted), told apart by the
 /// xz magic.
 ///
-/// `limit` is the payload length the header implies; a stream that expands
-/// past it is refused as `Corrupted` before more than `limit + 1` bytes are
-/// held.
+/// `limit` is the payload length the header implies; a stream that states or
+/// expands to more is refused as `Corrupted` (the core crate's bounded
+/// decoders: the xz chunk headers are read before decoding, the LZMA window
+/// is capped at `limit`), with memory within about twice `limit`.
 fn lzma_or_xz_decompress(bytes: &[u8], limit: usize) -> Result<Vec<u8>, ResidualError> {
     if bytes.starts_with(&XZ_MAGIC) {
-        let mut out = CappedWriter {
-            out: Vec::new(),
-            limit,
-        };
-        lzma_rs::xz_decompress(&mut std::io::Cursor::new(bytes), &mut out)
-            .map_err(|e| ResidualError::Corrupted(format!("xz: {e}")))?;
-        Ok(out.out)
+        crate::compression::xz_decompress(bytes, limit)
+            .map_err(|e| ResidualError::Corrupted(format!("xz: {e}")))
     } else {
         crate::compression::lzma_decompress(bytes, limit)
             .map_err(|e| ResidualError::Corrupted(format!("lzma: {e}")))
-    }
-}
-
-/// A `Write` that refuses to hold more than `limit` bytes
-struct CappedWriter {
-    out: Vec<u8>,
-    limit: usize,
-}
-
-impl std::io::Write for CappedWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if buf.len() > self.limit - self.out.len() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "decompressed output exceeds the limit of {} bytes",
-                    self.limit
-                ),
-            ));
-        }
-        self.out.extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
     }
 }
 

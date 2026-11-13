@@ -128,6 +128,13 @@ fn read_bounded(reader: impl Read, limit: usize) -> io::Result<Vec<u8>> {
     Ok(out)
 }
 
+/// Whether lzma-rs refused to grow its window past the memory limit (the only error it reports with this text;
+/// `tests/bounded_decompress_memory.rs` pins it)
+#[cfg(feature = "lzma")]
+fn is_window_refusal(e: &lzma_rs::error::Error) -> bool {
+    matches!(e, lzma_rs::error::Error::LzmaError(m) if m.starts_with("exceeded memory limit of"))
+}
+
 /// A writer that keeps at most `limit` bytes and fails once more would be written, so a decoder writing into it
 /// stops there.
 #[cfg(feature = "lzma")]
@@ -155,12 +162,32 @@ impl Write for BoundedWriter {
 
 /// Decompress an LZMA2 chunk stream (the body of an xz block), producing at most `max_output` bytes
 ///
+/// The chunk headers are read first: each states its unpacked size and the decoder produces exactly that much,
+/// so a stream whose sizes add up past `max_output` is refused before anything is decoded. The decoder holds the
+/// output in its own buffer until the stream ends (lzma-rs 0.3), so memory stays within about twice the stated
+/// total, which is at most `max_output`.
+///
 /// # Errors
 ///
-/// [`DecompressError::TooLarge`] (inside the [`io::Error`]) when the output would exceed `max_output`; otherwise
-/// [`io::ErrorKind::InvalidData`] when the chunks are not a valid LZMA2 stream
+/// [`DecompressError::TooLarge`] (inside the [`io::Error`]) when the stated sizes add up past `max_output`;
+/// otherwise [`io::ErrorKind::InvalidData`] when the chunks are not a valid LZMA2 stream (malformed headers,
+/// trailing bytes, or data that does not decode to the stated sizes)
 #[cfg(feature = "lzma")]
 pub(crate) fn lzma2_decompress_bounded(chunks: &[u8], max_output: usize) -> io::Result<Vec<u8>> {
+    let invalid = |what: &str| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("LZMA2 decompress error: {what}"),
+        )
+    };
+    let (len, stated) =
+        crate::xz::scan_lzma2(chunks).ok_or_else(|| invalid("malformed chunk headers"))?;
+    if len != chunks.len() {
+        return Err(invalid("bytes after the end marker"));
+    }
+    if stated > u64::try_from(max_output).unwrap_or(u64::MAX) {
+        return Err(too_large(max_output));
+    }
     let mut output = BoundedWriter {
         out: Vec::new(),
         limit: max_output,
@@ -170,13 +197,48 @@ pub(crate) fn lzma2_decompress_bounded(chunks: &[u8], max_output: usize) -> io::
     if output.exceeded {
         return Err(too_large(max_output));
     }
-    decoded.map_err(|e| {
+    decoded.map_err(|e| invalid(&e.to_string()))?;
+    // lzma-rs 0.3 produces each chunk to exactly its stated size or fails, so this holds today; it keeps the
+    // bound tied to the headers if a later decoder stops at a short chunk instead of failing
+    if output.out.len() as u64 != stated {
+        return Err(invalid("decoded length differs from the chunk headers"));
+    }
+    Ok(output.out)
+}
+
+/// Decompress an xz stream as the Python writer (`lzma.compress`, CRC-64) or lzma-rs (no check) writes it — one
+/// block whose only filter is LZMA2 — producing at most `max_output` bytes
+///
+/// The container and the LZMA2 chunk headers are parsed before anything is decoded (each chunk header states
+/// its unpacked size, which the decoder keeps to), so a stream that states more than `max_output` bytes is refused without being
+/// expanded, and memory stays within about twice the stated size. The block's check (CRC-32 or CRC-64, when
+/// present) is verified on the decoded data.
+///
+/// # Errors
+///
+/// [`DecompressError::TooLarge`] (inside the [`io::Error`]) when the stream states more than `max_output` bytes;
+/// otherwise [`io::ErrorKind::InvalidData`] when it is not such an xz stream, its chunks do not decode to their
+/// stated sizes, or the check does not match
+#[cfg(feature = "lzma")]
+pub fn xz_decompress(data: &[u8], max_output: usize) -> io::Result<Vec<u8>> {
+    let invalid = |what: &str| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("LZMA2 decompress error: {e}"),
+            format!("xz decompress error: {what}"),
         )
-    })?;
-    Ok(output.out)
+    };
+    let stream = crate::xz::parse(data, crate::xz::Checks::NoneCrc32OrCrc64)
+        .ok_or_else(|| invalid("not a single-block LZMA2 xz stream"))?;
+    // the chunk headers' total is checked against `max_output` before decoding
+    let out = if stream.chunks.is_empty() {
+        Vec::new()
+    } else {
+        lzma2_decompress_bounded(stream.chunks, max_output)?
+    };
+    if !stream.check.matches(&out) {
+        return Err(invalid("the check does not match the decoded data"));
+    }
+    Ok(out)
 }
 
 /// Decompress zlib-formatted `data` produced by [`zlib_compress`] (or any zlib-compliant encoder), producing at most
@@ -219,8 +281,16 @@ pub fn lzma_decompress(data: &[u8], max_output: usize) -> io::Result<Vec<u8>> {
         limit: max_output,
         exceeded: false,
     };
-    let decoded = lzma_rs::lzma_decompress(&mut io::Cursor::new(data), &mut output);
-    if output.exceeded {
+    // The decoder's window grows towards the dictionary size the header declares (up to 4 GiB) before anything
+    // reaches the writer; it never needs more than the output so far, so the output limit caps it, and the
+    // decoder refusing to grow it means the output would pass the limit.
+    let options = lzma_rs::decompress::Options {
+        memlimit: Some(max_output),
+        ..lzma_rs::decompress::Options::default()
+    };
+    let decoded =
+        lzma_rs::lzma_decompress_with_options(&mut io::Cursor::new(data), &mut output, &options);
+    if output.exceeded || decoded.as_ref().is_err_and(is_window_refusal) {
         return Err(too_large(max_output));
     }
     decoded.map_err(|e| {
@@ -1320,5 +1390,45 @@ mod tests {
             assert!(decompress_residual_lossless(&[0x00, 0, 0, 0, 0], usize::MAX).is_err());
             assert!(decompress_residual_lossless(&[0xFF, 9, 0, 0, 0, 1], usize::MAX).is_err());
         }
+    }
+}
+
+#[cfg(all(test, feature = "lzma"))]
+mod lzma2_bounded_tests {
+    use super::lzma2_decompress_bounded;
+
+    /// The LZMA2 chunks of a stream (parsed as the readers parse it)
+    fn chunks(stream: &[u8]) -> Vec<u8> {
+        crate::xz::parse(stream, crate::xz::Checks::NoneCrc32OrCrc64)
+            .unwrap()
+            .chunks
+            .to_vec()
+    }
+
+    // oracle: the chunks end at their end marker; a byte after it is not part of a stream
+    #[test]
+    fn bytes_after_the_end_marker_are_refused() {
+        let mut c = chunks(include_bytes!("../tests/data/bomb/xz_varied_none.xz"));
+        assert_eq!(
+            lzma2_decompress_bounded(&c, 1 << 20).unwrap().len(),
+            192 * 1024
+        );
+        c.push(0);
+        let e = lzma2_decompress_bounded(&c, 1 << 20).unwrap_err();
+        assert!(e.to_string().contains("after the end marker"), "{e}");
+    }
+
+    // oracle: a chunk header that states one byte less than its data does not decode to the stated sizes; the
+    // stream is refused as invalid data, never returned short (no check is consulted at this level)
+    #[test]
+    fn data_that_does_not_decode_to_the_stated_sizes_is_refused() {
+        let mut c = chunks(include_bytes!("../tests/data/bomb/xz_varied_none.xz"));
+        assert!(c[0] >= 0x80, "the first chunk is an LZMA chunk");
+        let stored = (u32::from(c[0] & 0x1F) << 16) | u32::from(u16::from_be_bytes([c[1], c[2]]));
+        let lowered = stored - 1;
+        c[0] = (c[0] & 0xE0) | (lowered >> 16) as u8;
+        c[1..3].copy_from_slice(&((lowered & 0xFFFF) as u16).to_be_bytes());
+        let e = lzma2_decompress_bounded(&c, 1 << 20).unwrap_err();
+        assert!(e.kind() == std::io::ErrorKind::InvalidData, "{e}");
     }
 }
