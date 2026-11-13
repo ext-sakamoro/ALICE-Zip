@@ -52,7 +52,8 @@
 //!
 //! let payload = b"the quick brown fox jumps over the lazy dog".repeat(4);
 //! let compressed = zlib_compress(&payload, 6).unwrap();
-//! let decompressed = zlib_decompress(&compressed).unwrap();
+//! // the caller states the largest output it accepts: a stream that would expand past it is refused
+//! let decompressed = zlib_decompress(&compressed, payload.len()).unwrap();
 //! assert_eq!(payload, decompressed);
 //! ```
 
@@ -81,18 +82,112 @@ pub fn zlib_compress(data: &[u8], level: u32) -> io::Result<Vec<u8>> {
     encoder.finish()
 }
 
-/// Decompress zlib-formatted `data` produced by [`zlib_compress`] (or any
-/// zlib-compliant encoder).
+/// Why a decompression was refused although the input may be a valid stream.
+///
+/// Carried inside the [`io::Error`] the decompression functions return (as [`ResidualIdError`] is): read it back
+/// with `err.get_ref().and_then(|e| e.downcast_ref::<DecompressError>())`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DecompressError {
+    /// The output would exceed `limit` bytes: decoding stopped there, nothing beyond `limit + 1` bytes was produced
+    /// (a small input that expands without bound is refused this way).
+    TooLarge {
+        /// The caller's limit, in bytes.
+        limit: usize,
+    },
+}
+
+impl fmt::Display for DecompressError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TooLarge { limit } => {
+                write!(f, "decompressed output exceeds the limit of {limit} bytes")
+            }
+        }
+    }
+}
+
+impl std::error::Error for DecompressError {}
+
+fn too_large(limit: usize) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        DecompressError::TooLarge { limit },
+    )
+}
+
+/// Read `reader` to its end, producing at most `limit` bytes: one byte more is
+/// [`DecompressError::TooLarge`] (the reader is never asked for more than `limit + 1` bytes)
+fn read_bounded(reader: impl Read, limit: usize) -> io::Result<Vec<u8>> {
+    let cap = u64::try_from(limit).unwrap_or(u64::MAX).saturating_add(1);
+    let mut out = Vec::new();
+    reader.take(cap).read_to_end(&mut out)?;
+    if out.len() > limit {
+        return Err(too_large(limit));
+    }
+    Ok(out)
+}
+
+/// A writer that keeps at most `limit` bytes and fails once more would be written, so a decoder writing into it
+/// stops there.
+#[cfg(feature = "lzma")]
+struct BoundedWriter {
+    out: Vec<u8>,
+    limit: usize,
+    exceeded: bool,
+}
+
+#[cfg(feature = "lzma")]
+impl Write for BoundedWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if buf.len() > self.limit - self.out.len() {
+            self.exceeded = true;
+            return Err(too_large(self.limit));
+        }
+        self.out.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Decompress an LZMA2 chunk stream (the body of an xz block), producing at most `max_output` bytes
 ///
 /// # Errors
 ///
-/// Returns [`io::Error`] if the input is not valid zlib format or the payload
-/// is truncated.
-pub fn zlib_decompress(data: &[u8]) -> io::Result<Vec<u8>> {
-    let mut decoder = ZlibDecoder::new(data);
-    let mut out = Vec::new();
-    decoder.read_to_end(&mut out)?;
-    Ok(out)
+/// [`DecompressError::TooLarge`] (inside the [`io::Error`]) when the output would exceed `max_output`; otherwise
+/// [`io::ErrorKind::InvalidData`] when the chunks are not a valid LZMA2 stream
+#[cfg(feature = "lzma")]
+pub(crate) fn lzma2_decompress_bounded(chunks: &[u8], max_output: usize) -> io::Result<Vec<u8>> {
+    let mut output = BoundedWriter {
+        out: Vec::new(),
+        limit: max_output,
+        exceeded: false,
+    };
+    let decoded = lzma_rs::lzma2_decompress(&mut &*chunks, &mut output);
+    if output.exceeded {
+        return Err(too_large(max_output));
+    }
+    decoded.map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("LZMA2 decompress error: {e}"),
+        )
+    })?;
+    Ok(output.out)
+}
+
+/// Decompress zlib-formatted `data` produced by [`zlib_compress`] (or any zlib-compliant encoder), producing at most
+/// `max_output` bytes.
+///
+/// # Errors
+///
+/// [`DecompressError::TooLarge`] (inside the [`io::Error`]) when the output would exceed `max_output` (decoding stops
+/// there); otherwise an [`io::Error`] if the input is not valid zlib format or the payload is truncated.
+pub fn zlib_decompress(data: &[u8], max_output: usize) -> io::Result<Vec<u8>> {
+    read_bounded(ZlibDecoder::new(data), max_output)
 }
 
 // ---------------------------------------------------------------- lzma
@@ -111,21 +206,30 @@ pub fn lzma_compress(data: &[u8], _preset: u32) -> io::Result<Vec<u8>> {
     Ok(output)
 }
 
-/// Decompress an LZMA stream produced by [`lzma_compress`]
+/// Decompress an LZMA stream produced by [`lzma_compress`], producing at most `max_output` bytes
 ///
 /// # Errors
 ///
-/// [`io::ErrorKind::InvalidData`] when `data` is not a valid LZMA stream
+/// [`DecompressError::TooLarge`] (inside the [`io::Error`]) when the output would exceed `max_output` (decoding stops
+/// there); otherwise [`io::ErrorKind::InvalidData`] when `data` is not a valid LZMA stream
 #[cfg(feature = "lzma")]
-pub fn lzma_decompress(data: &[u8]) -> io::Result<Vec<u8>> {
-    let mut output = Vec::new();
-    lzma_rs::lzma_decompress(&mut io::Cursor::new(data), &mut output).map_err(|e| {
+pub fn lzma_decompress(data: &[u8], max_output: usize) -> io::Result<Vec<u8>> {
+    let mut output = BoundedWriter {
+        out: Vec::new(),
+        limit: max_output,
+        exceeded: false,
+    };
+    let decoded = lzma_rs::lzma_decompress(&mut io::Cursor::new(data), &mut output);
+    if output.exceeded {
+        return Err(too_large(max_output));
+    }
+    decoded.map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("LZMA decompress error: {e}"),
         )
     })?;
-    Ok(output)
+    Ok(output.out)
 }
 
 // ------------------------------------------------- codec bytes identifier
@@ -642,15 +746,12 @@ fn codec_compress(payload: &[u8], codec: ResidualCodec, level: u32) -> io::Resul
     }
 }
 
-fn codec_decompress(payload: &[u8], codec: ResidualCodec) -> io::Result<Vec<u8>> {
+/// Decompress `payload` with `codec`, producing at most `limit` bytes
+fn codec_decompress(payload: &[u8], codec: ResidualCodec, limit: usize) -> io::Result<Vec<u8>> {
     match codec {
-        ResidualCodec::Deflate => {
-            let mut out = Vec::new();
-            DeflateDecoder::new(payload).read_to_end(&mut out)?;
-            Ok(out)
-        }
+        ResidualCodec::Deflate => read_bounded(DeflateDecoder::new(payload), limit),
         #[cfg(feature = "lzma")]
-        ResidualCodec::Lzma => lzma_decompress(payload),
+        ResidualCodec::Lzma => lzma_decompress(payload, limit),
         #[cfg(not(feature = "lzma"))]
         ResidualCodec::Lzma => Err(invalid(
             "this container needs the `lzma` feature (payload is an LZMA stream)",
@@ -791,9 +892,12 @@ pub fn compress_residual_quantized_with(
 ///
 /// As [`decompress_residual_quantized`], and [`ResidualIdError::Legacy`]
 /// (inside the [`io::Error`])
-pub fn decompress_residual_quantized_strict(data: &[u8]) -> io::Result<Vec<f32>> {
+pub fn decompress_residual_quantized_strict(
+    data: &[u8],
+    max_samples: usize,
+) -> io::Result<Vec<f32>> {
     strict(data)?;
-    decompress_residual_quantized(data)
+    decompress_residual_quantized(data, max_samples)
 }
 
 /// Inverse of [`compress_residual_quantized`]
@@ -808,24 +912,37 @@ pub fn decompress_residual_quantized_strict(data: &[u8]) -> io::Result<Vec<f32>>
 /// payload length exceeds `data`, or the payload is not a valid stream for the
 /// codec the header names; [`ResidualIdError::Mismatch`] (inside the
 /// [`io::Error`]) when the stored semantics identifier is not one this build
-/// reproduces
-pub fn decompress_residual_quantized(data: &[u8]) -> io::Result<Vec<f32>> {
+/// reproduces; [`DecompressError::TooLarge`] (inside the [`io::Error`]) when the
+/// container holds more than `max_samples` samples (decoding stops there)
+pub fn decompress_residual_quantized(data: &[u8], max_samples: usize) -> io::Result<Vec<f32>> {
+    // the sample width follows from `bits`, read before the payload is decoded
+    let limit = |bits: u8| max_samples.saturating_mul(if bits == 16 { 2 } else { 1 });
     let (bits, min_val, scale, quantized) = match data.first() {
         Some(&QUANTIZED_V2_MARKER) => {
             let (codec, extra, payload) = unpack_v2(data, QUANTIZED_V2_MARKER, QUANTIZED_V1_EXTRA)?;
             let bits = extra[0];
             let min_val = f64::from_le_bytes(extra[1..9].try_into().map_err(|_| invalid("min"))?);
             let scale = f64::from_le_bytes(extra[9..17].try_into().map_err(|_| invalid("scale"))?);
-            (bits, min_val, scale, codec_decompress(payload, codec)?)
+            (
+                bits,
+                min_val,
+                scale,
+                codec_decompress(payload, codec, limit(bits))?,
+            )
         }
         Some(&QUANTIZED_V1_MARKER) => {
             let (codec, extra, payload) = unpack_v1(data, QUANTIZED_V1_MARKER, QUANTIZED_V1_EXTRA)?;
             let bits = extra[0];
             let min_val = f64::from_le_bytes(extra[1..9].try_into().map_err(|_| invalid("min"))?);
             let scale = f64::from_le_bytes(extra[9..17].try_into().map_err(|_| invalid("scale"))?);
-            (bits, min_val, scale, codec_decompress(payload, codec)?)
+            (
+                bits,
+                min_val,
+                scale,
+                codec_decompress(payload, codec, limit(bits))?,
+            )
         }
-        _ => decompress_quantized_v0(data)?,
+        _ => decompress_quantized_v0(data, max_samples)?,
     };
     Ok(if bits == 16 {
         dequantize_16bit(&quantized, min_val, scale)
@@ -835,7 +952,7 @@ pub fn decompress_residual_quantized(data: &[u8]) -> io::Result<Vec<f32>> {
 }
 
 /// Version 0 quantised container: `bits · min: f64 · scale: f64 · len: u32 · LZMA(..)`
-fn decompress_quantized_v0(data: &[u8]) -> io::Result<(u8, f64, f64, Vec<u8>)> {
+fn decompress_quantized_v0(data: &[u8], max_samples: usize) -> io::Result<(u8, f64, f64, Vec<u8>)> {
     if data.len() < QUANTIZED_V0_HEADER {
         return Err(invalid(format!(
             "Data too short for residual header (need at least {QUANTIZED_V0_HEADER} bytes)"
@@ -858,7 +975,8 @@ fn decompress_quantized_v0(data: &[u8]) -> io::Result<(u8, f64, f64, Vec<u8>)> {
             data.len()
         )));
     }
-    let quantized = codec_decompress(&data[QUANTIZED_V0_HEADER..end], ResidualCodec::Lzma)?;
+    let limit = max_samples.saturating_mul(if bits == 16 { 2 } else { 1 });
+    let quantized = codec_decompress(&data[QUANTIZED_V0_HEADER..end], ResidualCodec::Lzma, limit)?;
     Ok((bits, min_val, scale, quantized))
 }
 
@@ -904,9 +1022,12 @@ pub fn compress_residual_lossless_with(
 ///
 /// As [`decompress_residual_lossless`], and [`ResidualIdError::Legacy`]
 /// (inside the [`io::Error`])
-pub fn decompress_residual_lossless_strict(data: &[u8]) -> io::Result<Vec<f32>> {
+pub fn decompress_residual_lossless_strict(
+    data: &[u8],
+    max_samples: usize,
+) -> io::Result<Vec<f32>> {
     strict(data)?;
-    decompress_residual_lossless(data)
+    decompress_residual_lossless(data, max_samples)
 }
 
 /// Inverse of [`compress_residual_lossless`]
@@ -920,17 +1041,20 @@ pub fn decompress_residual_lossless_strict(data: &[u8]) -> io::Result<Vec<f32>> 
 /// [`io::ErrorKind::InvalidData`] when the marker is unknown, the header or
 /// payload is truncated, or the payload is not a valid stream for the codec the
 /// header names; [`ResidualIdError::Mismatch`] (inside the [`io::Error`]) when
-/// the stored semantics identifier is not one this build reproduces
-pub fn decompress_residual_lossless(data: &[u8]) -> io::Result<Vec<f32>> {
+/// the stored semantics identifier is not one this build reproduces;
+/// [`DecompressError::TooLarge`] (inside the [`io::Error`], with the limit in
+/// bytes) when the container holds more than `max_samples` samples
+pub fn decompress_residual_lossless(data: &[u8], max_samples: usize) -> io::Result<Vec<f32>> {
+    let limit = max_samples.saturating_mul(4);
     let bytes = match data.first() {
         None => return Err(invalid("empty container")),
         Some(&LOSSLESS_V2_MARKER) => {
             let (codec, _, payload) = unpack_v2(data, LOSSLESS_V2_MARKER, 0)?;
-            codec_decompress(payload, codec)?
+            codec_decompress(payload, codec, limit)?
         }
         Some(&LOSSLESS_V1_MARKER) => {
             let (codec, _, payload) = unpack_v1(data, LOSSLESS_V1_MARKER, 0)?;
-            codec_decompress(payload, codec)?
+            codec_decompress(payload, codec, limit)?
         }
         Some(&LOSSLESS_V0_MARKER) => {
             if data.len() < LOSSLESS_V0_HEADER {
@@ -953,7 +1077,7 @@ pub fn decompress_residual_lossless(data: &[u8]) -> io::Result<Vec<f32>> {
                     data.len()
                 )));
             }
-            codec_decompress(&data[LOSSLESS_V0_HEADER..end], ResidualCodec::Lzma)?
+            codec_decompress(&data[LOSSLESS_V0_HEADER..end], ResidualCodec::Lzma, limit)?
         }
         Some(other) => {
             return Err(invalid(format!(
@@ -1053,13 +1177,15 @@ pub fn decompress_residual_xor_strict(data: &[u8], model: &[f32]) -> io::Result<
 /// truncated, the payload is not a valid stream, or the sample count does not
 /// match `model`; [`ResidualIdError::Mismatch`] (inside the [`io::Error`])
 /// when the stored semantics identifier is not one this build reproduces,
-/// checked before the payload is decoded
+/// checked before the payload is decoded; [`DecompressError::TooLarge`] (inside
+/// the [`io::Error`]) when the payload would decode to more samples than `model`
+/// has (decoding stops there: the model bounds the output)
 pub fn decompress_residual_xor(data: &[u8], model: &[f32]) -> io::Result<Vec<f32>> {
     let (codec, _, payload) = match data.first() {
         Some(&XOR_V2_MARKER) => unpack_v2(data, XOR_V2_MARKER, 0)?,
         _ => unpack_v1(data, XOR_MARKER, 0)?,
     };
-    let bytes = codec_decompress(payload, codec)?;
+    let bytes = codec_decompress(payload, codec, model.len().saturating_mul(4))?;
     if bytes.len() % 4 != 0 {
         return Err(invalid(format!(
             "payload is {} bytes, not a whole number of samples",
@@ -1088,7 +1214,7 @@ mod tests {
     fn roundtrip_ascii() {
         let payload = b"the quick brown fox jumps over the lazy dog".repeat(8);
         let compressed = zlib_compress(&payload, 6).unwrap();
-        let decompressed = zlib_decompress(&compressed).unwrap();
+        let decompressed = zlib_decompress(&compressed, usize::MAX).unwrap();
         assert_eq!(payload, decompressed);
         assert!(
             compressed.len() < payload.len(),
@@ -1099,7 +1225,7 @@ mod tests {
     #[test]
     fn roundtrip_empty() {
         let compressed = zlib_compress(&[], 6).unwrap();
-        let decompressed = zlib_decompress(&compressed).unwrap();
+        let decompressed = zlib_decompress(&compressed, usize::MAX).unwrap();
         assert!(decompressed.is_empty());
     }
 
@@ -1107,7 +1233,7 @@ mod tests {
     fn roundtrip_binary() {
         let payload: Vec<u8> = (0..=255u8).cycle().take(1024).collect();
         let compressed = zlib_compress(&payload, 9).unwrap();
-        let decompressed = zlib_decompress(&compressed).unwrap();
+        let decompressed = zlib_decompress(&compressed, usize::MAX).unwrap();
         assert_eq!(payload, decompressed);
     }
 
@@ -1123,14 +1249,14 @@ mod tests {
     fn level_zero_stores() {
         let payload = b"abcdef".repeat(16);
         let stored = zlib_compress(&payload, 0).unwrap();
-        let decompressed = zlib_decompress(&stored).unwrap();
+        let decompressed = zlib_decompress(&stored, usize::MAX).unwrap();
         assert_eq!(payload, decompressed);
     }
 
     #[test]
     fn decompress_invalid_returns_error() {
         let garbage = vec![0xff, 0xfe, 0xfd, 0xfc];
-        assert!(zlib_decompress(&garbage).is_err());
+        assert!(zlib_decompress(&garbage, usize::MAX).is_err());
     }
 
     #[cfg(feature = "lzma")]
@@ -1142,10 +1268,10 @@ mod tests {
             let payload = b"alice alice alice alice".repeat(32);
             let c = lzma_compress(&payload, 6).unwrap();
             assert!(c.len() < payload.len());
-            assert_eq!(lzma_decompress(&c).unwrap(), payload);
-            assert!(lzma_decompress(b"not lzma").is_err());
+            assert_eq!(lzma_decompress(&c, usize::MAX).unwrap(), payload);
+            assert!(lzma_decompress(b"not lzma", usize::MAX).is_err());
             assert_eq!(
-                lzma_decompress(&lzma_compress(&[], 6).unwrap()).unwrap(),
+                lzma_decompress(&lzma_compress(&[], 6).unwrap(), usize::MAX).unwrap(),
                 Vec::<u8>::new()
             );
         }
@@ -1164,7 +1290,7 @@ mod tests {
                 assert_eq!(c[1], residual_codec_default().tag());
                 assert_eq!(c[2..34], crate::law::SEMANTICS_ID);
                 assert_eq!(c[34], if bits == 16 { 16 } else { 8 });
-                let out = decompress_residual_quantized(&c).unwrap();
+                let out = decompress_residual_quantized(&c, usize::MAX).unwrap();
                 assert_eq!(out.len(), residual.len());
                 let tol = if bits == 16 {
                     10.0 / 65535.0
@@ -1175,10 +1301,10 @@ mod tests {
                     assert!((a - b).abs() <= tol / 2.0 + 1e-5, "bits={bits}: {a} vs {b}");
                 }
             }
-            assert!(decompress_residual_quantized(&[16; 20]).is_err());
+            assert!(decompress_residual_quantized(&[16; 20], usize::MAX).is_err());
             let mut truncated = compress_residual_quantized(&residual, 8, 6).unwrap();
             truncated.truncate(60);
-            assert!(decompress_residual_quantized(&truncated).is_err());
+            assert!(decompress_residual_quantized(&truncated, usize::MAX).is_err());
         }
 
         #[test]
@@ -1186,13 +1312,13 @@ mod tests {
             let residual: Vec<f32> = vec![0.0, -0.0, 1.5e-30, f32::MAX, -7.25, 3.0e10];
             let c = compress_residual_lossless(&residual, 6).unwrap();
             assert_eq!(c[0], LOSSLESS_V2_MARKER);
-            let out = decompress_residual_lossless(&c).unwrap();
+            let out = decompress_residual_lossless(&c, usize::MAX).unwrap();
             assert_eq!(out.len(), residual.len());
             for (a, b) in out.iter().zip(&residual) {
                 assert_eq!(a.to_bits(), b.to_bits());
             }
-            assert!(decompress_residual_lossless(&[0x00, 0, 0, 0, 0]).is_err());
-            assert!(decompress_residual_lossless(&[0xFF, 9, 0, 0, 0, 1]).is_err());
+            assert!(decompress_residual_lossless(&[0x00, 0, 0, 0, 0], usize::MAX).is_err());
+            assert!(decompress_residual_lossless(&[0xFF, 9, 0, 0, 0, 1], usize::MAX).is_err());
         }
     }
 }
