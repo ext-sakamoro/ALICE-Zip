@@ -40,6 +40,22 @@ pub enum AliceError {
     /// A Rust panic was caught at the FFI boundary; the message is available
     /// through [`alice_get_last_error`] (libalice ≥ 2.3.0)
     InternalPanic = 7,
+    /// The decompressed output would exceed the caller's limit; nothing is
+    /// returned (libalice ≥ 5.0.0)
+    OutputTooLarge = 8,
+}
+
+/// The status for a failed decompression: [`AliceError::OutputTooLarge`] when
+/// the core crate refused the input at the caller's limit, otherwise
+/// [`AliceError::DecompressionError`]
+fn decompress_status(e: &std::io::Error) -> AliceError {
+    match e
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<compression::DecompressError>())
+    {
+        Some(compression::DecompressError::TooLarge { .. }) => AliceError::OutputTooLarge,
+        _ => AliceError::DecompressionError,
+    }
 }
 
 // Thread-local error message storage (NUL-terminated for C callers)
@@ -502,7 +518,8 @@ pub unsafe extern "C" fn alice_lzma_compress(
     })
 }
 
-/// Decompress LZMA data.
+/// Decompress LZMA data, refusing output longer than `max_output` bytes
+/// ([`AliceError::OutputTooLarge`]; pass `SIZE_MAX` for no limit).
 ///
 /// # Safety
 ///
@@ -511,6 +528,7 @@ pub unsafe extern "C" fn alice_lzma_compress(
 pub unsafe extern "C" fn alice_lzma_decompress(
     data: *const u8,
     len: usize,
+    max_output: usize,
     out_buffer: *mut AliceBuffer,
 ) -> AliceError {
     guarded(|| {
@@ -529,7 +547,7 @@ pub unsafe extern "C" fn alice_lzma_decompress(
             &[]
         };
 
-        match compression::lzma_decompress(input) {
+        match compression::lzma_decompress(input, max_output) {
             Ok(decompressed) => {
                 *out_buffer = AliceBuffer::new(decompressed);
                 AliceError::Success
@@ -537,7 +555,7 @@ pub unsafe extern "C" fn alice_lzma_decompress(
             Err(e) => {
                 set_last_error(&format!("LZMA decompression failed: {e}"));
                 *out_buffer = AliceBuffer::null();
-                AliceError::DecompressionError
+                decompress_status(&e)
             }
         }
     })
@@ -585,7 +603,8 @@ pub unsafe extern "C" fn alice_zlib_compress(
     })
 }
 
-/// Decompress zlib data.
+/// Decompress zlib data, refusing output longer than `max_output` bytes
+/// ([`AliceError::OutputTooLarge`]; pass `SIZE_MAX` for no limit).
 ///
 /// # Safety
 ///
@@ -594,6 +613,7 @@ pub unsafe extern "C" fn alice_zlib_compress(
 pub unsafe extern "C" fn alice_zlib_decompress(
     data: *const u8,
     len: usize,
+    max_output: usize,
     out_buffer: *mut AliceBuffer,
 ) -> AliceError {
     guarded(|| {
@@ -612,7 +632,7 @@ pub unsafe extern "C" fn alice_zlib_decompress(
             &[]
         };
 
-        match compression::zlib_decompress(input) {
+        match compression::zlib_decompress(input, max_output) {
             Ok(decompressed) => {
                 *out_buffer = AliceBuffer::new(decompressed);
                 AliceError::Success
@@ -620,7 +640,7 @@ pub unsafe extern "C" fn alice_zlib_decompress(
             Err(e) => {
                 set_last_error(&format!("zlib decompression failed: {e}"));
                 *out_buffer = AliceBuffer::null();
-                AliceError::DecompressionError
+                decompress_status(&e)
             }
         }
     })
@@ -669,7 +689,8 @@ pub unsafe extern "C" fn alice_residual_compress(
     })
 }
 
-/// Decompress quantized residuals.
+/// Decompress quantized residuals, refusing more than `max_samples` samples
+/// ([`AliceError::OutputTooLarge`]; pass `SIZE_MAX` for no limit).
 ///
 /// # Safety
 ///
@@ -678,6 +699,7 @@ pub unsafe extern "C" fn alice_residual_compress(
 pub unsafe extern "C" fn alice_residual_decompress(
     data: *const u8,
     len: usize,
+    max_samples: usize,
     out_buffer: *mut AliceFloatBuffer,
 ) -> AliceError {
     guarded(|| {
@@ -696,7 +718,7 @@ pub unsafe extern "C" fn alice_residual_decompress(
             &[]
         };
 
-        match compression::decompress_residual_quantized(input) {
+        match compression::decompress_residual_quantized(input, max_samples) {
             Ok(decompressed) => {
                 *out_buffer = AliceFloatBuffer::new(decompressed);
                 AliceError::Success
@@ -704,7 +726,7 @@ pub unsafe extern "C" fn alice_residual_decompress(
             Err(e) => {
                 set_last_error(&format!("Residual decompression failed: {e}"));
                 *out_buffer = AliceFloatBuffer::null();
-                AliceError::DecompressionError
+                decompress_status(&e)
             }
         }
     })
@@ -745,7 +767,12 @@ mod tests {
             assert_eq!(result, AliceError::Success);
 
             let mut decompressed = AliceBuffer::null();
-            let result = alice_lzma_decompress(compressed.data, compressed.len, &mut decompressed);
+            let result = alice_lzma_decompress(
+                compressed.data,
+                compressed.len,
+                data.len(),
+                &mut decompressed,
+            );
             assert_eq!(result, AliceError::Success);
 
             let output = slice::from_raw_parts(decompressed.data, decompressed.len);
@@ -753,6 +780,82 @@ mod tests {
 
             alice_free_buffer(&mut compressed);
             alice_free_buffer(&mut decompressed);
+        }
+    }
+
+    // oracle: the limit is the caller's, exactly `len` passes and one byte less is refused with the
+    // distinct code (no buffer handed back), for each of the three bounded entry points
+    #[test]
+    fn decompress_refuses_output_past_the_callers_limit() {
+        unsafe {
+            let data = vec![7u8; 4096];
+            for (compress, decompress) in [
+                (
+                    alice_lzma_compress
+                        as unsafe extern "C" fn(
+                            *const u8,
+                            usize,
+                            u32,
+                            *mut AliceBuffer,
+                        ) -> AliceError,
+                    alice_lzma_decompress
+                        as unsafe extern "C" fn(
+                            *const u8,
+                            usize,
+                            usize,
+                            *mut AliceBuffer,
+                        ) -> AliceError,
+                ),
+                (alice_zlib_compress, alice_zlib_decompress),
+            ] {
+                let mut packed = AliceBuffer::null();
+                assert_eq!(
+                    compress(data.as_ptr(), data.len(), 6, &mut packed),
+                    AliceError::Success
+                );
+                let mut out = AliceBuffer::null();
+                assert_eq!(
+                    decompress(packed.data, packed.len, data.len(), &mut out),
+                    AliceError::Success
+                );
+                assert_eq!(out.len, data.len());
+                alice_free_buffer(&mut out);
+                let mut refused = AliceBuffer::null();
+                assert_eq!(
+                    decompress(packed.data, packed.len, data.len() - 1, &mut refused),
+                    AliceError::OutputTooLarge
+                );
+                assert!(refused.data.is_null());
+                alice_free_buffer(&mut packed);
+            }
+
+            let samples = vec![0.25f32; 512];
+            let mut packed = AliceBuffer::null();
+            assert_eq!(
+                alice_residual_compress(samples.as_ptr(), samples.len(), 8, 6, &mut packed),
+                AliceError::Success
+            );
+            let mut out = AliceFloatBuffer::null();
+            assert_eq!(
+                alice_residual_decompress(packed.data, packed.len, samples.len(), &mut out),
+                AliceError::Success
+            );
+            assert_eq!(out.len, samples.len());
+            alice_free_float_buffer(&mut out);
+            let mut refused = AliceFloatBuffer::null();
+            assert_eq!(
+                alice_residual_decompress(packed.data, packed.len, samples.len() - 1, &mut refused),
+                AliceError::OutputTooLarge
+            );
+            assert!(refused.data.is_null());
+            // a malformed stream is still a decompression error, not a size refusal
+            let junk = [0xFFu8; 16];
+            let mut bad = AliceBuffer::null();
+            assert_eq!(
+                alice_zlib_decompress(junk.as_ptr(), junk.len(), usize::MAX, &mut bad),
+                AliceError::DecompressionError
+            );
+            alice_free_buffer(&mut packed);
         }
     }
 

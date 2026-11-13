@@ -48,7 +48,8 @@ typedef enum AliceError {
     ALICE_ERROR_DECOMPRESSION = 4,/**< Decompression operation failed */
     ALICE_ERROR_ALLOCATION = 5,  /**< Memory allocation failed */
     ALICE_ERROR_INVALID_DATA = 6,/**< Input data is invalid or corrupted */
-    ALICE_ERROR_INTERNAL_PANIC = 7/**< Rust panic caught at the FFI boundary (2.3.0+); see alice_get_last_error() */
+    ALICE_ERROR_INTERNAL_PANIC = 7,/**< Rust panic caught at the FFI boundary (2.3.0+); see alice_get_last_error() */
+    ALICE_ERROR_OUTPUT_TOO_LARGE = 8/**< Decompressed output would exceed the caller's limit (5.0.0+); nothing is returned */
 } AliceError;
 
 /* ============================================================================
@@ -270,12 +271,15 @@ ALICE_API AliceError alice_lzma_compress(
  *
  * @param data Compressed data
  * @param len Length of compressed data
+ * @param max_output Largest decompressed size accepted, in bytes (SIZE_MAX for no limit)
  * @param out_buffer Output buffer for decompressed data
- * @return ALICE_SUCCESS on success
+ * @return ALICE_SUCCESS on success, ALICE_ERROR_OUTPUT_TOO_LARGE when the
+ *         output would exceed max_output (out_buffer is left empty)
  */
 ALICE_API AliceError alice_lzma_decompress(
     const uint8_t* data,
     size_t len,
+    size_t max_output,
     AliceBuffer* out_buffer
 );
 
@@ -300,12 +304,15 @@ ALICE_API AliceError alice_zlib_compress(
  *
  * @param data Compressed data
  * @param len Length of compressed data
+ * @param max_output Largest decompressed size accepted, in bytes (SIZE_MAX for no limit)
  * @param out_buffer Output buffer for decompressed data
- * @return ALICE_SUCCESS on success
+ * @return ALICE_SUCCESS on success, ALICE_ERROR_OUTPUT_TOO_LARGE when the
+ *         output would exceed max_output (out_buffer is left empty)
  */
 ALICE_API AliceError alice_zlib_decompress(
     const uint8_t* data,
     size_t len,
+    size_t max_output,
     AliceBuffer* out_buffer
 );
 
@@ -335,12 +342,15 @@ ALICE_API AliceError alice_residual_compress(
  *
  * @param data Compressed residual data
  * @param len Length of compressed data
+ * @param max_samples Largest number of floats accepted (SIZE_MAX for no limit)
  * @param out_buffer Output buffer for decompressed floats
- * @return ALICE_SUCCESS on success
+ * @return ALICE_SUCCESS on success, ALICE_ERROR_OUTPUT_TOO_LARGE when the
+ *         stream holds more than max_samples floats (out_buffer is left empty)
  */
 ALICE_API AliceError alice_residual_decompress(
     const uint8_t* data,
     size_t len,
+    size_t max_samples,
     AliceFloatBuffer* out_buffer
 );
 

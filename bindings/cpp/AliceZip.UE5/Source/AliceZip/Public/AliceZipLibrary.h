@@ -135,10 +135,14 @@ public:
 
 	/**
 	 * Decompress LZMA data
+	 *
+	 * @param MaxOutput Largest output accepted, in bytes; a larger output fails
+	 * @return True if successful
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ALICE-Zip|Compression")
 	static bool LzmaDecompress(
 		const TArray<uint8>& CompressedData,
+		int32 MaxOutput,
 		TArray<uint8>& OutData);
 
 	/**
@@ -152,10 +156,14 @@ public:
 
 	/**
 	 * Decompress zlib data
+	 *
+	 * @param MaxOutput Largest output accepted, in bytes; a larger output fails
+	 * @return True if successful
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ALICE-Zip|Compression")
 	static bool ZlibDecompress(
 		const TArray<uint8>& CompressedData,
+		int32 MaxOutput,
 		TArray<uint8>& OutData);
 
 	/**
@@ -176,10 +184,14 @@ public:
 
 	/**
 	 * Decompress quantized residuals
+	 *
+	 * @param MaxSamples Largest output accepted, in floats; a larger output fails
+	 * @return True if successful
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ALICE-Zip|Compression")
 	static bool ResidualDecompress(
 		const TArray<uint8>& CompressedData,
+		int32 MaxSamples,
 		TArray<float>& OutResidual);
 
 	// ========================================================================

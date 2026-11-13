@@ -90,7 +90,7 @@ pub fn compress_subband(
 /// Returns integer coefficients reconstructed from the compressed stream.
 /// Note: lossy quantization means reconstructed values are approximate.
 pub fn decompress_subband(compressed: &CompressedSubBand) -> std::io::Result<Vec<i32>> {
-    let floats = compression::decompress_residual_quantized(&compressed.data)?;
+    let floats = compression::decompress_residual_quantized(&compressed.data, compressed.count)?;
     Ok(floats.iter().map(|&v| v.round() as i32).collect())
 }
 
