@@ -663,11 +663,15 @@ fn zlib_roundtrip_is_invariant_under_level() {
     for data in corpus() {
         for level in 0..=12u32 {
             let c = zlib_compress(&data, level).unwrap();
-            assert_eq!(zlib_decompress(&c).unwrap(), data, "level={level}");
+            assert_eq!(
+                zlib_decompress(&c, usize::MAX).unwrap(),
+                data,
+                "level={level}"
+            );
         }
     }
-    assert!(zlib_decompress(b"not zlib at all").is_err());
-    assert!(zlib_decompress(&[]).is_err());
+    assert!(zlib_decompress(b"not zlib at all", usize::MAX).is_err());
+    assert!(zlib_decompress(&[], usize::MAX).is_err());
 }
 
 // ---------------------------------------------------------------- mutation-driven additions (2026-09-15)
@@ -946,7 +950,7 @@ fn residual_containers_have_the_documented_layout_and_round_trip() {
             .fold(f32::NEG_INFINITY, alice_det_math::max);
         assert!((scale - f64::from(hi - lo)).abs() < 1e-5, "{scale}");
         assert_eq!(c.len(), QUANTIZED_HEADER + len);
-        let out = decompress_residual_quantized(&c).unwrap();
+        let out = decompress_residual_quantized(&c, usize::MAX).unwrap();
         let tol = scale / f64::from((1u32 << u32::from(bits)) - 1) / 2.0 + 1e-6;
         for (a, b) in out.iter().zip(&residual) {
             assert!((f64::from(a - b)).abs() <= tol, "bits={bits}: {a} vs {b}");
@@ -961,7 +965,10 @@ fn residual_containers_have_the_documented_layout_and_round_trip() {
     assert_eq!(c[2..34], SEMANTICS_ID, "semantics identifier");
     let len = u32::from_le_bytes(c[34..38].try_into().unwrap()) as usize;
     assert_eq!(c.len(), HEADER + len);
-    assert_eq!(decompress_residual_lossless(&c).unwrap(), residual);
+    assert_eq!(
+        decompress_residual_lossless(&c, usize::MAX).unwrap(),
+        residual
+    );
 
     // With the LZMA codec requested explicitly the payload is byte-for-byte the
     // LZMA stream of the samples — this pins what the codec byte means, not just
@@ -973,7 +980,10 @@ fn residual_containers_have_the_documented_layout_and_round_trip() {
     assert_eq!(c.len(), HEADER + len);
     let raw: Vec<u8> = residual.iter().flat_map(|v| v.to_le_bytes()).collect();
     assert_eq!(&c[HEADER..], &lzma_compress(&raw, 6).unwrap()[..]);
-    assert_eq!(decompress_residual_lossless(&c).unwrap(), residual);
+    assert_eq!(
+        decompress_residual_lossless(&c, usize::MAX).unwrap(),
+        residual
+    );
 
     // xor: 0xF9 | codec u8 | semantics [u8; 32] | len u32 LE | codec(u32 LE of bits ^ bits)
     let model: Vec<f32> = residual.iter().map(|v| v * 0.999).collect();

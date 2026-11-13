@@ -63,11 +63,11 @@ fn old_residual_containers_read_as_a_verified_earlier_identifier() {
             "{name}"
         );
     }
-    let lossless = decompress_residual_lossless_strict(LOSSLESS).unwrap();
+    let lossless = decompress_residual_lossless_strict(LOSSLESS, usize::MAX).unwrap();
     assert_eq!(bits(&lossless), bits(&original));
     let xor = decompress_residual_xor_strict(XOR, &model).unwrap();
     assert_eq!(bits(&xor), bits(&original));
-    let quantized = decompress_residual_quantized_strict(QUANTIZED).unwrap();
+    let quantized = decompress_residual_quantized_strict(QUANTIZED, usize::MAX).unwrap();
     assert_eq!(quantized.len(), original.len());
 }
 
