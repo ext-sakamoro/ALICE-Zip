@@ -16,7 +16,7 @@ pub use alice_zip::compression::{
     compress_residual_quantized_with, compress_residual_xor, compress_residual_xor_with,
     decompress_residual_lossless, decompress_residual_quantized, decompress_residual_xor,
     lzma_compress, lzma_decompress, residual_codec_default, residual_container_codec,
-    zlib_compress, zlib_decompress, DecompressError, ResidualCodec,
+    xz_decompress, zlib_compress, zlib_decompress, DecompressError, ResidualCodec,
 };
 pub use alice_zip::quantize::{dequantize_16bit, dequantize_8bit, quantize_16bit, quantize_8bit};
 
