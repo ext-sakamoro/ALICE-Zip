@@ -60,7 +60,7 @@ jobs:
             || { echo "::error::$off archive(s) do not carry version $version"; ls -l dist; exit 1; }
           python3 scripts/dist_license_check.py 'dist/*.whl' 'dist/*.tar.gz'
           twine check --strict dist/*
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: alice-zip-dist
           path: dist/
