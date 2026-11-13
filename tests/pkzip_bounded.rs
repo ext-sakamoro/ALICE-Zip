@@ -408,3 +408,58 @@ fn a_zip64_locator_that_points_at_the_end_of_the_address_space_is_refused_withou
         );
     }
 }
+
+#[test]
+fn an_archive_of_many_records_is_refused_in_time_that_grows_slower_than_the_square() {
+    // 300 000 distinct names over one local header: refusing it (the entries overlap) must not compare every name
+    // with every other one, which would be 4.5e10 comparisons
+    const N: u32 = 300_000;
+    let mut b = Vec::new();
+    b.extend_from_slice(b"PK\x03\x04");
+    b.extend_from_slice(&[0u8; 22]);
+    b.extend_from_slice(&1u16.to_le_bytes()); // name length
+    b.extend_from_slice(&0u16.to_le_bytes());
+    b.push(b'x');
+    let cd = b.len() as u32;
+    for i in 0..N {
+        let name = format!("{i:x}");
+        let mut rec = vec![0u8; 46];
+        rec[..4].copy_from_slice(b"PK\x01\x02");
+        rec[28..30].copy_from_slice(&(name.len() as u16).to_le_bytes());
+        b.extend_from_slice(&rec);
+        b.extend_from_slice(name.as_bytes());
+    }
+    let size = b.len() as u32 - cd;
+    b.extend_from_slice(b"PK\x05\x06");
+    b.extend_from_slice(&[0u8; 4]);
+    b.extend_from_slice(&u16::MAX.to_le_bytes());
+    b.extend_from_slice(&u16::MAX.to_le_bytes());
+    b.extend_from_slice(&size.to_le_bytes());
+    b.extend_from_slice(&cd.to_le_bytes());
+    b.extend_from_slice(&0u16.to_le_bytes());
+    // the 16-bit counts are saturated without ZIP64 records, so give the real count through ZIP64 records instead
+    let eocd = b.len() - 22;
+    let mut z = b[..eocd].to_vec();
+    let z64 = z.len() as u64;
+    z.extend_from_slice(b"PK\x06\x06");
+    z.extend_from_slice(&44u64.to_le_bytes());
+    z.extend_from_slice(&[0u8; 4]);
+    z.extend_from_slice(&[0u8; 8]);
+    z.extend_from_slice(&u64::from(N).to_le_bytes());
+    z.extend_from_slice(&u64::from(N).to_le_bytes());
+    z.extend_from_slice(&u64::from(size).to_le_bytes());
+    z.extend_from_slice(&u64::from(cd).to_le_bytes());
+    z.extend_from_slice(b"PK\x06\x07");
+    z.extend_from_slice(&0u32.to_le_bytes());
+    z.extend_from_slice(&z64.to_le_bytes());
+    z.extend_from_slice(&1u32.to_le_bytes());
+    z.extend_from_slice(&b[eocd..]);
+    let start = std::time::Instant::now();
+    let e = Archive::new(z, Limits::new(BIG, BIG)).err().unwrap();
+    let took = start.elapsed();
+    assert!(matches!(pkzip_error(&e), PkzipError::Overlap { .. }), "{e}");
+    assert!(
+        took < std::time::Duration::from_secs(10),
+        "opening took {took:?}"
+    );
+}
