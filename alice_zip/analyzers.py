@@ -388,7 +388,7 @@ class ProceduralCompressionDesigner:
 
     # Largest result a stored CompressionResult may state, in bytes (its metadata is the data's own claim);
     # as ALICEZip.MAX_OUTPUT_SIZE, lower it on an instance
-    MAX_OUTPUT_SIZE = 4 * 1024 * 1024 * 1024
+    MAX_OUTPUT_SIZE = 1024 * 1024 * 1024
 
     def __init__(self, max_error: float = MAX_ACCEPTABLE_ERROR):
         """

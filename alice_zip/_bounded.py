@@ -13,6 +13,9 @@ import zlib
 # the dictionary a stream may ask for: the writers (preset 6) use 8 MiB, a header can ask for 4 GiB
 MAX_LZMA_DECODER_MEMORY = 80 * 1024 * 1024
 
+# the largest block a zstd frame may hold (RFC 8878 Block_Maximum_Size)
+ZSTD_BLOCK_MAX = 128 * 1024
+
 
 class OutputTooLarge(ValueError):
     """The decompressed output would exceed ``limit`` bytes"""
@@ -101,6 +104,9 @@ def zstd_single_frame_size(data: bytes) -> int:
         last, kind, block = header & 1, (header >> 1) & 3, header >> 3
         if kind == 3:
             raise ValueError("reserved zstd block type")
+        # Block_Maximum_Size (RFC 8878 3.1.1.2.4): no block holds or regenerates more than 128 KiB
+        if block > ZSTD_BLOCK_MAX:
+            raise ValueError(f"zstd block of {block} bytes, more than 128 KiB ({ZSTD_BLOCK_MAX})")
         at += 3 + (1 if kind == 1 else block)  # an RLE block stores one byte
         if last:
             break

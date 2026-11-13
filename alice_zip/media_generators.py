@@ -259,8 +259,8 @@ class VideoParams:
 # Image Generator
 # ============================================================================
 
-# Largest image or frame a file may state (4 GiB, as ALICEZip.MAX_OUTPUT_SIZE)
-MAX_REGENERATED_SIZE = 4 * 1024 * 1024 * 1024
+# Largest image or frame a file may state (1 GiB, as ALICEZip.MAX_OUTPUT_SIZE and the CLI's --max-output)
+MAX_REGENERATED_SIZE = 1024 * 1024 * 1024
 
 
 def _check_regenerated_size(width, height, channels, limit: int) -> None:

@@ -490,12 +490,12 @@ class ALICEZip:
         meta_len = struct.pack('<I', len(meta_json))
         return meta_len + meta_json + result.compressed_data
 
-    # Largest original_size the LZMA fallback reader decodes (4 GiB), and the
-    # largest image or video frame a media file may state. The header states
-    # the size and a few bytes can expand to gigabytes, so the readers decode
-    # at most this much; lower it on an instance (`zipper.MAX_OUTPUT_SIZE = n`)
-    # to bound memory further.
-    MAX_OUTPUT_SIZE = 4 * 1024 * 1024 * 1024
+    # Largest original_size the readers decode (1 GiB, the same default as the
+    # CLI's --max-output), and the largest image or video frame a media file
+    # may state. The header states the size and a few bytes can expand to
+    # gigabytes, so the readers decode at most this much; change it on an
+    # instance (`zipper.MAX_OUTPUT_SIZE = n`).
+    MAX_OUTPUT_SIZE = 1024 * 1024 * 1024
     # Files whose values are regenerated (procedural payloads, ALICE_IMG / AUD /
     # VID) record the arithmetic that regenerates them as "semantics"; a file
     # with another identifier is always refused, and one written before 3.0.0
