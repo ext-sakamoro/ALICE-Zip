@@ -11,7 +11,7 @@
 //! your caps.** A stored entry is its own bytes inside the archive, and no two
 //! entries may cover the same bytes, so the stored entries together are at
 //! most the archive's length: they are checked (two equal sizes, inside the
-//! archive, CRC-32) but not held to the caps, and [`Archive::stored`] returns
+//! archive, CRC-32) but not held to the caps, and [`Archive::in_place`] returns
 //! them in place. A deflated entry can expand without bound, so two caps the
 //! caller must give ([`Limits`]) hold it: the most bytes one deflated entry
 //! may declare, and the most bytes all deflated entries may declare together.
@@ -250,7 +250,7 @@ impl Entry {
 
     /// The bytes the entry occupies in the archive.
     #[must_use]
-    pub fn compressed_size(&self) -> u64 {
+    pub fn size_in_archive(&self) -> u64 {
         self.compressed_size
     }
 
@@ -605,7 +605,7 @@ impl<D: AsRef<[u8]>> Archive<D> {
     ///
     /// `NotFound` when no entry has that name; `InvalidInput` when the entry is deflated (read it with
     /// [`Archive::read`]); [`PkzipError::CrcMismatch`] inside an `InvalidData` error.
-    pub fn stored(&self, name: &str) -> io::Result<&[u8]> {
+    pub fn in_place(&self, name: &str) -> io::Result<&[u8]> {
         let e = self
             .entries
             .iter()

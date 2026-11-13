@@ -200,17 +200,17 @@ fn a_stored_entry_is_not_held_to_the_limits_and_is_read_in_place() {
     let archive = Archive::new(data("aligned.zip"), Limits::new(0, 0)).unwrap();
     assert_eq!(archive.read("archive/data.pkl").unwrap(), content(0, 300));
     assert_eq!(
-        archive.stored("archive/data/0").unwrap(),
+        archive.in_place("archive/data/0").unwrap(),
         content(1, 40).as_slice()
     );
     let basic = Archive::new(data("basic.zip"), Limits::new(BIG, BIG)).unwrap();
     assert_eq!(
-        basic.stored("b.bin").unwrap_err().kind(),
+        basic.in_place("b.bin").unwrap_err().kind(),
         io::ErrorKind::InvalidInput,
         "deflated: use read"
     );
     assert_eq!(
-        basic.stored("nope").unwrap_err().kind(),
+        basic.in_place("nope").unwrap_err().kind(),
         io::ErrorKind::NotFound
     );
 }
@@ -278,7 +278,7 @@ fn an_entry_whose_bytes_do_not_match_its_crc_is_refused() {
         matches!(pkzip_error(&e), PkzipError::CrcMismatch { .. }),
         "{e}"
     );
-    let e = archive.stored("a.bin").unwrap_err();
+    let e = archive.in_place("a.bin").unwrap_err();
     assert!(
         matches!(pkzip_error(&e), PkzipError::CrcMismatch { .. }),
         "in place too: {e}"
