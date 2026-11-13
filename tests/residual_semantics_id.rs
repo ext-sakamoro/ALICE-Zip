@@ -52,12 +52,12 @@ fn decode(name: &str, data: &[u8]) -> [std::io::Result<Vec<f32>>; 2] {
     let (_, model) = signal();
     match name {
         "quantized" => [
-            decompress_residual_quantized(data),
-            decompress_residual_quantized_strict(data),
+            decompress_residual_quantized(data, usize::MAX),
+            decompress_residual_quantized_strict(data, usize::MAX),
         ],
         "lossless" => [
-            decompress_residual_lossless(data),
-            decompress_residual_lossless_strict(data),
+            decompress_residual_lossless(data, usize::MAX),
+            decompress_residual_lossless_strict(data, usize::MAX),
         ],
         "xor" => [
             decompress_residual_xor(data, &model),
