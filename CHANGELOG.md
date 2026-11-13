@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Breaking:** 展開は呼び出し側が渡す上限付きだけになった (版を 0.12.0 に上げた) 小さな入力が大きく伸びる展開 (decompression bomb) は上限で止まり、確保は上限 + 1 byte を超えない `compression::zlib_decompress(data, max_output)` / `lzma_decompress(data, max_output)` は出力の byte 数、`decompress_residual_quantized` / `decompress_residual_quantized_strict` / `decompress_residual_lossless` / `decompress_residual_lossless_strict` は `max_samples` (値の数) を取り、超えると `io::Error` の中の `DecompressError::TooLarge { limit }` を返す (`err.get_ref().and_then(|e| e.downcast_ref::<DecompressError>())` で読む、壊れた入力は従来どおり別の error) xor の残差は model の大きさ、container の旧 lzma2 section は記録された `original_size` が上限 上限の無い形は残していない 移行: 呼び出し側は元の長さ (header や model が記録している値) を渡す 上限を決められない経路だけ `usize::MAX` を渡す 識別子は動かない (`law::SEMANTICS_ID` と `container::FORMAT_ID` は golden・tag・det-math の pin を畳んだもので codec の bytes を含まず、展開の結果の bits も上限以内では同じ) この crate に依存する crate は 0.12 へ後から移る
+- **Breaking (Python):** 読み手の展開は header が示す長さを上限にする (`alice_zip._bounded`、超えると `OutputTooLarge`、`ValueError` の派生) 残差の各 method、version 4 の payload、Rust の旧量子化 container (値の数 × bit 幅)、旧 delta とその差分、`ProceduralCompressionDesigner.decompress` の旧 residual、`decompress_from_lzma` (shape × dtype) が対象 zstd は frame header に記録された大きさを展開の前に見て、大きさを記録しない frame は拒む 以前は header より長く伸びる payload を全部展開してから長さを比べていた 版は上げない: Python package の 3.0.0 は未公開で、この変更はその 3.0.0 に含まれる
+
 ### Changed
 - CI: 共有の `scripts/lock_sources_check.py` と試験を ALICE-Edge と同じ新しい bytes にした 追跡している全ての Cargo.lock の間で git から取る alice-* の source が同じかも見る `--skip compat/` をやめ、`compat/v0_10_reader/Cargo.lock` の alice-zip 0.10.0 と alice-det-math 0.5.1 (crates.io、旧形式の reader が要る) は `scripts/lock_sources.toml` の exempt に理由と試験 `compat/v0_10_reader/tests/residual_containers_across_versions.rs` を書いて外す
 

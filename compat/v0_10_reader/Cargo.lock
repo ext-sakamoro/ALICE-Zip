@@ -35,7 +35,7 @@ dependencies = [
 
 [[package]]
 name = "alice-zip"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "alice-det-math 0.6.1",
  "flate2",
@@ -50,7 +50,7 @@ name = "alice-zip-compat-v0-10-reader"
 version = "0.0.0"
 dependencies = [
  "alice-zip 0.10.0",
- "alice-zip 0.11.0",
+ "alice-zip 0.12.0",
 ]
 
 [[package]]

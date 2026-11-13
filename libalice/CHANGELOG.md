@@ -4,6 +4,12 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- **Breaking** 版を 5.0.0 に上げた (core crate を `alice-zip` 0.12 に) 展開は上限付きだけ: C ABI の `alice_lzma_decompress` / `alice_zlib_decompress` は `max_output` (byte 数)、`alice_residual_decompress` は `max_samples` (値の数) を `len` の後に取り、超えると新しい `ALICE_ERROR_OUTPUT_TOO_LARGE = 8` を返して buffer を空にする (上限を決められない時は `SIZE_MAX`) 壊れた入力は従来どおり `ALICE_ERROR_DECOMPRESSION` C++ (`alice.hpp`) / C# (`AliceZip.cs` と Unity 版) / UE5 (`UAliceZipLibrary`) の decompress も上限の引数が必須 Python module の `lzma_decompress` / `zlib_decompress` / `residual_decompress` / `residual_decompress_lossless` も上限が必須 4.x の呼び出しは引数の数が合わず compile・link で止まる
+- CLI の `alice decompress` は header の `original_size` を上限にする (量子化 mode は値の数 × 1 / 2 byte) それより長く伸びる file は何も書かずに拒む
+- 残差の読み手 (`residual::decompress` / `ResidualData::from_bytes` の version 4) は header が示す長さを上限にする xz の payload は core crate を通らず上限なしで展開していた
+
 ### Changed
 
 - **Breaking (Python):** 対応する Python の最小版を 3.9 から 3.10 に上げた (`requires-python = ">=3.10"`、classifier、black / ruff / mypy の対象) 3.9 は 2025-10 に保守が終わり、CI の `ubuntu-latest` (Ubuntu 26.04) の setup-python には 3.9 の build が無い libalice の Python module の CI は 3.10 / 3.12 / 3.13 で試し、PyPI の wheel も 3.10 から作る
