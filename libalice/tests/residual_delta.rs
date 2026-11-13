@@ -26,7 +26,13 @@ fn bits(v: &[f32]) -> Vec<u32> {
 fn round_trip(data: &[f32]) -> Vec<u32> {
     let rd = compress_residual_delta(data);
     assert_eq!(rd.method, ResidualCompressionMethod::BitDelta);
-    bits(&decompress(&ResidualData::from_bytes(&rd.to_bytes()).unwrap()).unwrap())
+    bits(
+        &decompress(
+            &ResidualData::from_bytes(&rd.to_bytes(), usize::MAX).unwrap(),
+            usize::MAX,
+        )
+        .unwrap(),
+    )
 }
 
 #[test]
@@ -89,7 +95,7 @@ fn random_bit_patterns_come_back_bit_for_bit() {
 #[test]
 fn a_delta_file_without_its_base_is_refused() {
     assert!(matches!(
-        ResidualData::from_bytes(PY_LEGACY),
+        ResidualData::from_bytes(PY_LEGACY, usize::MAX),
         Err(ResidualError::DeltaWithoutBase)
     ));
 }
@@ -97,7 +103,11 @@ fn a_delta_file_without_its_base_is_refused() {
 #[test]
 fn an_earlier_rust_delta_file_reads_lzma_alone() {
     assert_eq!(
-        decompress(&ResidualData::from_bytes(RS_LEGACY).unwrap()).unwrap(),
+        decompress(
+            &ResidualData::from_bytes(RS_LEGACY, usize::MAX).unwrap(),
+            usize::MAX
+        )
+        .unwrap(),
         VALUES
     );
 }
@@ -105,7 +115,11 @@ fn an_earlier_rust_delta_file_reads_lzma_alone() {
 #[test]
 fn a_bitdelta_file_written_by_python_reads_xz() {
     assert_eq!(
-        decompress(&ResidualData::from_bytes(BITDELTA).unwrap()).unwrap(),
+        decompress(
+            &ResidualData::from_bytes(BITDELTA, usize::MAX).unwrap(),
+            usize::MAX
+        )
+        .unwrap(),
         VALUES
     );
 }
@@ -119,7 +133,7 @@ fn the_float_difference_method_that_never_shipped_is_not_read() {
     let len = u32::from_le_bytes([v[0], v[1], v[2], v[3]]) - 2;
     v[..4].copy_from_slice(&len.to_le_bytes());
     assert!(matches!(
-        ResidualData::from_bytes(&v),
+        ResidualData::from_bytes(&v, usize::MAX),
         Err(ResidualError::UnknownMethod(_))
     ));
 }
@@ -134,7 +148,11 @@ fn choose_compression_never_labels_bytes_with_another_method() {
         &[1.0, -1.0, 1.0, -1.0, 3.5][..],
     ] {
         let rd = choose_compression(data, false);
-        let back = decompress(&ResidualData::from_bytes(&rd.to_bytes()).unwrap()).unwrap();
+        let back = decompress(
+            &ResidualData::from_bytes(&rd.to_bytes(), usize::MAX).unwrap(),
+            usize::MAX,
+        )
+        .unwrap();
         assert_eq!(back, data, "{:?}", rd.method);
     }
 }

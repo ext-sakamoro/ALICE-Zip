@@ -55,7 +55,7 @@ def test_a_procedural_result_carries_a_residual_file(name):
     r, _ = round_trip(INPUTS[name].astype(np.float32))
     assert r.engine_used == CompressionEngine.PROCEDURAL
     assert r.metadata["residual_format"] == "alice-residual"
-    rd = ResidualData.from_bytes(r.residual_data)
+    rd = ResidualData.from_bytes(r.residual_data, 1 << 40)
     assert rd.original_dtype == "float32"
 
 
@@ -140,7 +140,7 @@ def test_a_lossless_result_is_not_larger_than_lzma_of_the_input(name, dtype):
 def test_a_float64_input_keeps_its_residual_in_float64():
     r, _ = round_trip(INPUTS["sin"].astype(np.float64))
     assert r.engine_used == CompressionEngine.PROCEDURAL
-    rd = ResidualData.from_bytes(r.residual_data)
+    rd = ResidualData.from_bytes(r.residual_data, 1 << 40)
     assert rd.residual_dtype == "float64"
     # only where o - g is not exact (near the zero crossings, where the two
     # are not within a factor of 2): 18 of 2000; a float32 residual keeps

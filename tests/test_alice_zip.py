@@ -255,7 +255,7 @@ class TestDecompressFromLzma:
         original = np.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=np.float32)
         compressed = lzma.compress(original.tobytes())
 
-        result = decompress_from_lzma(compressed, (5,), dtype='float32')
+        result = decompress_from_lzma(compressed, (5,), dtype='float32', max_output=1 << 40)
 
         np.testing.assert_array_equal(result, original)
 
@@ -266,7 +266,7 @@ class TestDecompressFromLzma:
         original = np.arange(100, dtype=np.float32).reshape(10, 10)
         compressed = lzma.compress(original.tobytes())
 
-        result = decompress_from_lzma(compressed, (10, 10), dtype='float32')
+        result = decompress_from_lzma(compressed, (10, 10), dtype='float32', max_output=1 << 40)
 
         np.testing.assert_array_equal(result, original)
 
@@ -277,7 +277,7 @@ class TestDecompressFromLzma:
         original = np.arange(50, dtype=np.int32)
         compressed = lzma.compress(original.tobytes())
 
-        result = decompress_from_lzma(compressed, (50,), dtype='int32')
+        result = decompress_from_lzma(compressed, (50,), dtype='int32', max_output=1 << 40)
 
         np.testing.assert_array_equal(result, original)
 

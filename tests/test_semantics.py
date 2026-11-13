@@ -168,7 +168,7 @@ def test_the_residual_writer_records_the_procedural_identifier_with_versions_5_t
     rd = ResidualCompressor(method=M.NONE).compress_original(original, generated)
     h = header(rd.to_bytes())
     assert (h["version"], h["semantics"]) == (5, semantics.procedural_semantics_id().hex())
-    back = ResidualData.from_bytes(rd.to_bytes())
+    back = ResidualData.from_bytes(rd.to_bytes(), 1 << 40)
     assert back.semantics == semantics.procedural_semantics_id()
     assert back.to_bytes() == rd.to_bytes()
     rd64 = ResidualCompressor(method=M.NONE).compress_original(original.astype(np.float64), generated)
@@ -188,10 +188,10 @@ def test_the_files_written_by_each_writer_carry_their_writers_identifier():
     own = semantics.procedural_semantics_id().hex()
     for blob, written in ((py, semantics.PYTHON_SEMANTICS_ID.hex()), (rust, stored)):
         if written == own:
-            assert ResidualData.from_bytes(blob, strict=True).semantics.hex() == written
+            assert ResidualData.from_bytes(blob, 1 << 40, strict=True).semantics.hex() == written
         else:
             with pytest.raises(ValueError) as e:
-                ResidualData.from_bytes(blob)
+                ResidualData.from_bytes(blob, 1 << 40)
             assert written in str(e.value) and own in str(e.value)
 
 
@@ -199,9 +199,9 @@ def test_a_residual_without_the_identifier_is_legacy_and_strict_refuses_it():
     legacy = (DATA / "python_none.bin").read_bytes()
     assert "semantics" not in header(legacy)
     with pytest.warns(semantics.LegacySemanticsWarning):
-        assert ResidualData.from_bytes(legacy).semantics is None
+        assert ResidualData.from_bytes(legacy, 1 << 40).semantics is None
     with pytest.raises(ValueError, match="strict"):
-        ResidualData.from_bytes(legacy, strict=True)
+        ResidualData.from_bytes(legacy, 1 << 40, strict=True)
 
 
 def test_the_identifier_on_versions_1_to_4_is_refused():
@@ -211,4 +211,4 @@ def test_the_identifier_on_versions_1_to_4_is_refused():
     n = struct.unpack("<I", rust[:4])[0]
     j = json.dumps(h, separators=(",", ":")).encode()
     with pytest.raises(ValueError, match="only read with versions 5 to 7"):
-        ResidualData.from_bytes(struct.pack("<I", len(j)) + j + rust[4 + n:])
+        ResidualData.from_bytes(struct.pack("<I", len(j)) + j + rust[4 + n:], 1 << 40)

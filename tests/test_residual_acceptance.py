@@ -41,7 +41,7 @@ def test_the_python_reader_accepts_exactly_the_files_the_table_lists():
     for name, writer, _rust, python, values in table:
         try:
             out = ResidualCompressor().decompress_residual(
-                ResidualData.from_bytes((DATA / name).read_bytes()))
+                ResidualData.from_bytes((DATA / name).read_bytes(), 1 << 40), 1 << 40)
         except ValueError as e:
             assert python == "refuse", f"{name} ({writer}): {e}"
             continue

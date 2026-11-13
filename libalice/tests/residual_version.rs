@@ -14,7 +14,7 @@ const V0: &[u8] = include_bytes!("../../tests/data/residual/residual_v0.bin");
 
 #[test]
 fn version_2_is_read() {
-    let r = ResidualData::from_bytes(V2).expect("version 2");
+    let r = ResidualData::from_bytes(V2, usize::MAX).expect("version 2");
     assert_eq!(r.method, ResidualCompressionMethod::Zlib);
     assert_eq!(r.original_len, 2);
 }
@@ -22,7 +22,7 @@ fn version_2_is_read() {
 #[test]
 fn a_later_version_is_refused_instead_of_being_read_as_version_2() {
     assert!(matches!(
-        ResidualData::from_bytes(V8),
+        ResidualData::from_bytes(V8, usize::MAX),
         Err(ResidualError::UnsupportedVersion(8))
     ));
 }
@@ -31,7 +31,7 @@ fn a_later_version_is_refused_instead_of_being_read_as_version_2() {
 fn version_5_without_the_semantics_identifier_is_refused() {
     // versions 5 to 7 are layouts 2 to 4 with "semantics"
     assert!(matches!(
-        ResidualData::from_bytes(V5),
+        ResidualData::from_bytes(V5, usize::MAX),
         Err(ResidualError::MissingField(f)) if f == "semantics"
     ));
 }
@@ -40,7 +40,7 @@ fn version_5_without_the_semantics_identifier_is_refused() {
 fn version_3_without_exceptions_is_refused() {
     // version 3 is a file with exceptions (tests/test_residual_exceptions.py)
     assert!(matches!(
-        ResidualData::from_bytes(V3),
+        ResidualData::from_bytes(V3, usize::MAX),
         Err(ResidualError::MissingField(f)) if f == "exceptions"
     ));
 }
@@ -61,7 +61,7 @@ fn a_version_written_as_a_float_or_a_string_is_refused() {
     ] {
         assert!(
             matches!(
-                ResidualData::from_bytes(bytes),
+                ResidualData::from_bytes(bytes, usize::MAX),
                 Err(ResidualError::InvalidHeader(_))
             ),
             "{name}"
@@ -74,7 +74,7 @@ fn version_0_is_refused_as_an_unsupported_version() {
     // versions 1 to 4 exist; 0 is refused the same way as 5 (Python: the
     // same ValueError), not read as the 2-byte-length version 1 layout
     assert!(matches!(
-        ResidualData::from_bytes(V0),
+        ResidualData::from_bytes(V0, usize::MAX),
         Err(ResidualError::UnsupportedVersion(0))
     ));
 }

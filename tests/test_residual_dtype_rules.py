@@ -52,7 +52,7 @@ def test_a_lossless_residual_reconstructs_the_original_exactly(dtype, method):
 def test_the_residual_is_returned_as_float32_values(dtype):
     wide = np.array([-36.54, 300.5, 5.5, -129.75], dtype=np.float32)
     c = ResidualCompressor(method=M.LZMA)
-    out = c.decompress_residual(c.compress_residual(wide, original_dtype=dtype))
+    out = c.decompress_residual(c.compress_residual(wide, original_dtype=dtype), 1 << 40)
     assert out.dtype == np.float32
     assert out.view("<u4").tolist() == wide.view("<u4").tolist()
 

@@ -30,7 +30,7 @@ VALUES = np.array([5.0, 5.5, 6.0, 4.0], dtype=np.float32)
 
 
 def read(name):
-    return ResidualData.from_bytes((DATA / f"residual_{name}.bin").read_bytes())
+    return ResidualData.from_bytes((DATA / f"residual_{name}.bin").read_bytes(), 1 << 40)
 
 
 def bits(a):
@@ -41,7 +41,7 @@ def round_trip(values):
     c = ResidualCompressor(method=ResidualCompressionMethod.DELTA)
     r = c.compress_residual(values, original_dtype="float32")
     assert r.method == ResidualCompressionMethod.BITDELTA
-    return c.decompress_residual(ResidualData.from_bytes(r.to_bytes()))
+    return c.decompress_residual(ResidualData.from_bytes(r.to_bytes(), 1 << 40), 1 << 40)
 
 
 @pytest.mark.parametrize(
@@ -75,38 +75,38 @@ def test_the_delta_streams_equal_the_shared_reference():
 
 def test_a_delta_file_without_its_base_is_refused():
     with pytest.raises(ValueError, match="base"):
-        ResidualCompressor().decompress_residual(read("delta_python_legacy"))
+        ResidualCompressor().decompress_residual(read("delta_python_legacy"), 1 << 40)
 
 
 def test_the_differences_of_such_a_file_are_available_on_request():
-    d = decompress_delta_differences(read("delta_python_legacy"))
+    d = decompress_delta_differences(read("delta_python_legacy"), 1 << 40)
     assert np.asarray(d, dtype=np.float32).tolist() == [0.0, 0.5, 0.5, -2.0]
 
 
 def test_an_earlier_rust_delta_file_reads_lzma_alone():
-    back = ResidualCompressor().decompress_residual(read("delta_rust_legacy"))
+    back = ResidualCompressor().decompress_residual(read("delta_rust_legacy"), 1 << 40)
     assert np.asarray(back, dtype=np.float32).tolist() == VALUES.tolist()
 
 
 def test_a_bitdelta_file_reads_xz():
-    back = ResidualCompressor().decompress_residual(read("bitdelta"))
+    back = ResidualCompressor().decompress_residual(read("bitdelta"), 1 << 40)
     assert np.asarray(back, dtype=np.float32).tolist() == VALUES.tolist()
 
 
 def test_the_recorded_dtype_is_kept_and_the_values_are_float32():
     # the dtype is the original's (tests/test_residual_dtype_rules.py)
-    back = ResidualCompressor().decompress_residual(read("bitdelta"))
+    back = ResidualCompressor().decompress_residual(read("bitdelta"), 1 << 40)
     assert back.dtype == np.float32
-    rd = ResidualData.from_bytes((DATA / "python_lzma_float64.bin").read_bytes())
+    rd = ResidualData.from_bytes((DATA / "python_lzma_float64.bin").read_bytes(), 1 << 40)
     assert rd.original_dtype == "float64"
-    assert ResidualCompressor().decompress_residual(rd).dtype == np.float32
+    assert ResidualCompressor().decompress_residual(rd, 1 << 40).dtype == np.float32
 
 
 def test_a_dtype_the_writer_never_records_is_refused_when_read():
     raw = (DATA / "python_lzma.bin").read_bytes()
     bad = raw.replace(b'"dtype":"float32"', b'"dtype":"complex"')
     with pytest.raises(ValueError, match="dtype"):
-        ResidualData.from_bytes(bad)
+        ResidualData.from_bytes(bad, 1 << 40)
 
 
 @pytest.mark.parametrize("method", [ResidualCompressionMethod.NONE, ResidualCompressionMethod.LZMA,
@@ -116,6 +116,6 @@ def test_stored_float32_values_come_back_bit_for_bit(method):
     # in 1000 random bit patterns are signaling NaNs)
     v = np.random.default_rng(11).integers(0, 2**32, size=10_000, dtype=np.uint32).view("<f4")
     c = ResidualCompressor(method=method)
-    out = c.decompress_residual(ResidualData.from_bytes(c.compress_residual(v).to_bytes()))
+    out = c.decompress_residual(ResidualData.from_bytes(c.compress_residual(v).to_bytes(), 1 << 40), 1 << 40)
     assert out.dtype == np.float32
     assert out.view("<u4").tolist() == v.view("<u4").tolist()

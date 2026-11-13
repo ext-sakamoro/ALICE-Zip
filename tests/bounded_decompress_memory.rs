@@ -3,7 +3,7 @@
 //! oracle (from the rules, not read from the code under test): a stream that expands past the caller's limit
 //! is refused while the live allocation stays within twice the limit plus a small constant (the decoder's
 //! window and the output it has produced), whatever the stream's headers declare: an LZMA "alone" stream
-//! declaring a 1 GiB dictionary, an xz stream of 64 MiB of zeros. A stream whose chunk header lies about its
+//! declaring a 1 GiB dictionary, a zlib stream and an xz stream of 64 MiB of zeros. A stream whose chunk header lies about its
 //! size (the other headers made to agree) is refused when the decoded data diverges, also within the bound.
 //! A decoder that buffers differently (for example a dependency that reserves the declared dictionary) makes
 //! this go red even though it still returns `TooLarge`.
@@ -17,7 +17,9 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
-use alice_zip::compression::{lzma_decompress, xz_decompress, DecompressError};
+use alice_zip::compression::{
+    lzma_decompress, xz_decompress, zlib_compress, zlib_decompress, DecompressError,
+};
 
 struct Peak;
 
@@ -141,6 +143,12 @@ fn every_bomb_is_refused_within_twice_the_limit() {
         peak <= bound,
         "alone, 1 GiB dictionary: peak {peak} bytes > {bound}"
     );
+
+    // zlib: 64 MiB of zeros, compressed here (before measuring) by the crate's own writer
+    let zlib_bomb = zlib_compress(&vec![0u8; 64 << 20], 9).unwrap();
+    let (r, peak) = peak_of(|| zlib_decompress(&zlib_bomb, LIMIT));
+    assert_eq!(too_large(&r.unwrap_err()), Some(LIMIT));
+    assert!(peak <= bound, "zlib of 64 MiB: peak {peak} bytes > {bound}");
 
     let (r, peak) = peak_of(|| xz_decompress(XZ_ZEROS, LIMIT));
     assert_eq!(too_large(&r.unwrap_err()), Some(LIMIT));

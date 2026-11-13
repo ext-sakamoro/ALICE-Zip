@@ -75,13 +75,13 @@ fn the_rust_reader_accepts_exactly_the_files_the_table_lists() {
         let (name, writer, rust, values) = (c[0], c[1], c[2], c[4]);
         let bytes = std::fs::read(dir().join(name)).unwrap();
         // a float64 residual (version 4) is read with decompress_f64
-        let read = ResidualData::from_bytes(&bytes)
-            .and_then(|r| decompress_f64(&r).map(|_| r))
+        let read = ResidualData::from_bytes(&bytes, usize::MAX)
+            .and_then(|r| decompress_f64(&r, usize::MAX).map(|_| r))
             .and_then(|r| {
                 if r.metadata.residual_f64 {
                     Ok(Vec::new())
                 } else {
-                    decompress(&r)
+                    decompress(&r, usize::MAX)
                 }
             });
         assert_eq!(
@@ -111,8 +111,9 @@ fn the_rust_reader_accepts_exactly_the_files_the_table_lists() {
 
 #[test]
 fn the_original_shape_and_dtype_are_kept() {
-    let read =
-        |name: &str| ResidualData::from_bytes(&std::fs::read(dir().join(name)).unwrap()).unwrap();
+    let read = |name: &str| {
+        ResidualData::from_bytes(&std::fs::read(dir().join(name)).unwrap(), usize::MAX).unwrap()
+    };
     let r = read("python_lzma_2d.bin");
     assert_eq!(
         (r.shape.clone(), r.dtype.as_str(), r.original_len),
@@ -154,7 +155,7 @@ fn this_crate_writes_the_canonical_header() {
 fn shape_and_original_len_that_disagree_are_refused() {
     let bytes = std::fs::read(dir().join("residual_shape_len_mismatch.bin")).unwrap();
     assert!(matches!(
-        ResidualData::from_bytes(&bytes),
+        ResidualData::from_bytes(&bytes, usize::MAX),
         Err(ResidualError::InvalidHeader(m)) if m.contains("disagree")
     ));
 }

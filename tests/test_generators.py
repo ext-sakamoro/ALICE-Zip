@@ -438,7 +438,7 @@ class TestDecompressFromLzma:
         compressed = lzma.compress(original.tobytes())
 
         # Decompress
-        result = decompress_from_lzma(compressed, (5,), dtype='float32')
+        result = decompress_from_lzma(compressed, (5,), dtype='float32', max_output=1 << 40)
 
         np.testing.assert_array_equal(result, original)
 
@@ -451,7 +451,7 @@ class TestDecompressFromLzma:
         compressed = lzma.compress(original.tobytes())
 
         # Decompress
-        result = decompress_from_lzma(compressed, (10, 10), dtype='float32')
+        result = decompress_from_lzma(compressed, (10, 10), dtype='float32', max_output=1 << 40)
 
         np.testing.assert_array_equal(result, original)
 

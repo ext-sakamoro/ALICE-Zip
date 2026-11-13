@@ -50,7 +50,7 @@ fn the_shared_cases_come_back_bit_for_bit() {
     for (dtype, (original, generated)) in &cases {
         for method in [M::None, M::Lzma, M::Zlib, M::BitDelta] {
             let rd = compress_original(original, dtype, generated, method).unwrap();
-            let read = ResidualData::from_bytes(&rd.to_bytes()).unwrap();
+            let read = ResidualData::from_bytes(&rd.to_bytes(), usize::MAX).unwrap();
             assert!(!read.metadata.exception_positions.is_empty(), "{dtype}");
             assert_eq!(
                 reconstruct_bytes(generated, &read).unwrap(),
@@ -67,7 +67,7 @@ fn both_writers_files_rebuild_the_original() {
     for (dtype, (original, generated)) in cases() {
         for writer in ["python", "rust"] {
             let bytes = std::fs::read(dir().join(format!("{writer}_exc_{dtype}.bin"))).unwrap();
-            let rd = ResidualData::from_bytes(&bytes).unwrap();
+            let rd = ResidualData::from_bytes(&bytes, usize::MAX).unwrap();
             assert_eq!(
                 reconstruct_bytes(&generated, &rd).unwrap(),
                 original,
@@ -109,8 +109,11 @@ fn quantized_cannot_keep_exceptions() {
 
 #[test]
 fn a_well_formed_file_with_exceptions_rebuilds_its_original() {
-    let rd = ResidualData::from_bytes(&std::fs::read(dir().join("residual_exc_ok.bin")).unwrap())
-        .unwrap();
+    let rd = ResidualData::from_bytes(
+        &std::fs::read(dir().join("residual_exc_ok.bin")).unwrap(),
+        usize::MAX,
+    )
+    .unwrap();
     let out = reconstruct_bytes(&[0.0, 1.0, -1.0, 4.0], &rd).unwrap();
     let bits: Vec<u32> = out
         .chunks_exact(4)
@@ -153,7 +156,7 @@ fn random_bit_patterns_come_back_bit_for_bit() {
                 .collect();
             for method in [M::Lzma, M::BitDelta] {
                 let rd = compress_original(&original, dtype, &generated, method).unwrap();
-                let read = ResidualData::from_bytes(&rd.to_bytes()).unwrap();
+                let read = ResidualData::from_bytes(&rd.to_bytes(), usize::MAX).unwrap();
                 assert_eq!(
                     reconstruct_bytes(&generated, &read).unwrap(),
                     original,
@@ -192,7 +195,7 @@ fn values_close_to_generated_need_no_exceptions_with_a_float64_residual() {
     let generated: Vec<f64> = values.iter().map(|v| v + (next() - 0.5) * 0.4).collect();
     let original: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
     let rd = compress_original(&original, "float64", &generated, M::Lzma).unwrap();
-    let read = ResidualData::from_bytes(&rd.to_bytes()).unwrap();
+    let read = ResidualData::from_bytes(&rd.to_bytes(), usize::MAX).unwrap();
     assert!(read.metadata.exception_positions.is_empty());
     assert!(read.metadata.residual_f64);
     assert_eq!(reconstruct_bytes(&generated, &read).unwrap(), original);
@@ -200,8 +203,11 @@ fn values_close_to_generated_need_no_exceptions_with_a_float64_residual() {
 
 #[test]
 fn a_float64_file_rebuilds_its_original() {
-    let rd = ResidualData::from_bytes(&std::fs::read(dir().join("residual_v4_ok.bin")).unwrap())
-        .unwrap();
+    let rd = ResidualData::from_bytes(
+        &std::fs::read(dir().join("residual_v4_ok.bin")).unwrap(),
+        usize::MAX,
+    )
+    .unwrap();
     let out = reconstruct_bytes(&[0.0, 1.0, -1.0, 4.0], &rd).unwrap();
     let bits: Vec<u64> = out
         .chunks_exact(8)

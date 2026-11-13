@@ -101,6 +101,69 @@ fn a_payload_larger_than_its_header_states_is_refused() {
     );
 }
 
+fn decompress_with(dir: &Path, name: &str, bytes: &[u8], extra: &[&str]) -> std::process::Output {
+    let path = dir.join(name);
+    std::fs::write(&path, bytes).unwrap();
+    let out = dir.join(format!("{name}.out"));
+    Command::new(env!("CARGO_BIN_EXE_alice"))
+        .arg("decompress")
+        .arg(&path)
+        .arg("-o")
+        .arg(&out)
+        .args(extra)
+        .output()
+        .expect("run alice decompress")
+}
+
+// oracle: the header is the file's own claim, so a header stating more than the caller accepts is refused before
+// anything is decoded (by `--max-output`, and by the 1 GiB default), and a header stating more than the payload
+// holds is refused once decoded
+#[test]
+fn a_header_stating_more_than_the_caller_accepts_is_refused() {
+    let d = tempdir("liar");
+    let alz = compressed(&d);
+    let stated = u64::from_le_bytes(alz[24..32].try_into().unwrap());
+    let o = decompress_with(&d, "ok.alz", &alz, &["--max-output", &stated.to_string()]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let o = decompress_with(
+        &d,
+        "cap.alz",
+        &alz,
+        &["--max-output", &(stated - 1).to_string()],
+    );
+    assert!(!o.status.success(), "a file past --max-output was read");
+    assert!(
+        String::from_utf8_lossy(&o.stderr).contains("--max-output"),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    // a header lying upward: 2^40 bytes around the same small payload
+    let mut big = alz.clone();
+    big[24..32].copy_from_slice(&(1_u64 << 40).to_le_bytes());
+    let o = decompress_with(&d, "big.alz", &big, &[]);
+    assert!(
+        !o.status.success(),
+        "a 1 TiB claim was read under the default limit"
+    );
+    assert!(
+        String::from_utf8_lossy(&o.stderr).contains("--max-output"),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    // within the limit but more than the payload decodes to
+    let mut more = alz.clone();
+    more[24..32].copy_from_slice(&(stated + 1).to_le_bytes());
+    let o = decompress_with(&d, "more.alz", &more, &[]);
+    assert!(
+        !o.status.success(),
+        "a header stating more than the payload was read"
+    );
+    assert!(
+        !d.join("more.alz.out").exists(),
+        "output written for a refused file"
+    );
+}
+
 fn f32_input(dir: &Path) -> (std::path::PathBuf, Vec<f32>) {
     // a ramp with a fold: no transcendental (the crate's lint forbids the
     // platform libm), range 0.25..=6.25

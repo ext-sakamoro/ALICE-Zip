@@ -37,6 +37,6 @@ def test_the_python_reader_gives_the_verdict(version, verdict, cell, header):
     data = file_of(version, header)
     if verdict == "refuse":
         with pytest.raises(ValueError):
-            ResidualData.from_bytes(data)
+            ResidualData.from_bytes(data, 1 << 40)
     else:
-        ResidualData.from_bytes(data)
+        ResidualData.from_bytes(data, 1 << 40)

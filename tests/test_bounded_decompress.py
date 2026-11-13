@@ -96,19 +96,19 @@ def test_a_residual_past_the_length_its_header_states_is_refused(method, bits):
     rc = ResidualCompressor(method=method, quantization_bits=bits)
     rd = rc.compress_residual(data)
     assert rd.method == method, "fell back to another encoding"
-    assert rc.decompress_residual(rd).size == data.size
+    assert rc.decompress_residual(rd, 1 << 40).size == data.size
     rd.original_shape = (data.size - 1,)
     with pytest.raises(_bounded.OutputTooLarge):
-        rc.decompress_residual(rd)
+        rc.decompress_residual(rd, 1 << 40)
 
 
 def test_the_lzma_fallback_of_the_generators_is_bounded_by_shape_and_dtype():
     from alice_zip.generators import decompress_from_lzma
     values = np.arange(16, dtype=np.float32)
     packed = lzma.compress(values.tobytes())
-    assert (decompress_from_lzma(packed, (16,), "float32") == values).all()
+    assert (decompress_from_lzma(packed, (16,), "float32", max_output=1 << 40) == values).all()
     with pytest.raises(_bounded.OutputTooLarge):
-        decompress_from_lzma(packed, (15,), "float32")
+        decompress_from_lzma(packed, (15,), "float32", max_output=1 << 40)
 
 
 @pytest.mark.parametrize("method", [M.LZMA, M.ZLIB, M.NONE])
@@ -120,11 +120,11 @@ def test_a_version_4_payload_past_its_stated_length_is_refused(method):
     generated = np.where(np.arange(n) % 512 == 0, 1e10, 2.0)
     rd = ResidualCompressor(method=method).compress_original(original, generated)
     assert rd.layout == 4
-    assert ResidualData.from_bytes(rd.to_bytes()).original_shape == (n,)
+    assert ResidualData.from_bytes(rd.to_bytes(), 1 << 40).original_shape == (n,)
     rd.original_shape = (n - 1,)
     expected = OutputTooLarge if method != M.NONE else ValueError
     with pytest.raises(expected):
-        ResidualData.from_bytes(rd.to_bytes())
+        ResidualData.from_bytes(rd.to_bytes(), 1 << 40)
 
 
 def _rust_container(codes, bits, codec):
@@ -155,13 +155,13 @@ def test_the_earlier_float_delta_and_its_differences_are_bounded_by_the_shape():
     rd = ResidualData(method=M.DELTA, compressed_data=lzma.compress(deltas.tobytes()),
                       original_shape=(256,), original_dtype="float32",
                       compression_ratio=1.0, base_value=0.0)
-    assert ResidualCompressor().decompress_residual(rd).size == 256
-    assert decompress_delta_differences(rd).size == 256
+    assert ResidualCompressor().decompress_residual(rd, 1 << 40).size == 256
+    assert decompress_delta_differences(rd, 1 << 40).size == 256
     rd.original_shape = (255,)
     with pytest.raises(OutputTooLarge):
-        ResidualCompressor().decompress_residual(rd)
+        ResidualCompressor().decompress_residual(rd, 1 << 40)
     with pytest.raises(OutputTooLarge):
-        decompress_delta_differences(rd)
+        decompress_delta_differences(rd, 1 << 40)
 
 
 @pytest.mark.parametrize("bits,width", [(8, 1), (16, 2), (None, 4)])
@@ -196,3 +196,73 @@ def test_a_stream_declaring_a_huge_dictionary_is_refused_without_reserving_it():
     peak = tracemalloc.get_traced_memory()[1]
     tracemalloc.stop()
     assert peak < 16 * 1024 * 1024, peak
+
+
+# oracle: the header is the data's own claim, so a header stating more values than the caller accepts is
+# refused before any payload is decompressed, in every reader and layout
+@pytest.mark.parametrize("method,bits", [(M.LZMA, None), (M.ZLIB, None), (M.BITDELTA, None),
+                                         (M.QUANTIZED, 8), (M.NONE, None)])
+def test_a_header_stating_more_values_than_the_caller_accepts_is_refused(method, bits):
+    from alice_zip.residual_compression import ResidualData
+    from alice_zip._bounded import TooManyValues
+    n = 4096
+    rc = ResidualCompressor(method=method, quantization_bits=bits)
+    rd = rc.compress_residual(np.full(n, 0.5, dtype=np.float32))
+    b = rd.to_bytes()
+    assert ResidualData.from_bytes(b, n).original_shape == (n,)
+    with pytest.raises(TooManyValues) as e:
+        ResidualData.from_bytes(b, n - 1)
+    assert (e.value.stated, e.value.limit) == (n, n - 1)
+    with pytest.raises(TooManyValues):
+        rc.decompress_residual(rd, n - 1)
+
+
+def test_a_version_4_header_stating_more_values_than_the_caller_accepts_is_refused():
+    from alice_zip.residual_compression import ResidualData
+    from alice_zip._bounded import TooManyValues
+    n = 4096
+    original = np.full(n, 2.5, dtype=np.float32)
+    generated = np.where(np.arange(n) % 512 == 0, 1e10, 2.0)
+    rd = ResidualCompressor(method=M.LZMA).compress_original(original, generated)
+    assert rd.layout == 4
+    with pytest.raises(TooManyValues):
+        ResidualData.from_bytes(rd.to_bytes(), n - 1)
+    # rebuilding: the caller's generated values are the ceiling
+    with pytest.raises(ValueError):
+        ResidualCompressor().reconstruct(generated[:n - 1], rd)
+
+
+def test_the_delta_differences_and_the_lzma_fallback_take_the_callers_ceiling():
+    from alice_zip.residual_compression import ResidualData, decompress_delta_differences
+    from alice_zip.generators import decompress_from_lzma
+    from alice_zip._bounded import TooManyValues
+    deltas = np.full(256, 0.25, dtype="<f4")
+    rd = ResidualData(method=M.DELTA, compressed_data=lzma.compress(deltas.tobytes()),
+                      original_shape=(256,), original_dtype="float32",
+                      compression_ratio=1.0, base_value=0.0)
+    with pytest.raises(TooManyValues):
+        decompress_delta_differences(rd, 255)
+    packed = lzma.compress(np.arange(16, dtype=np.float32).tobytes())
+    # a shape (the data's claim) of 2^40 values is refused at the caller's ceiling before decoding
+    with pytest.raises(OutputTooLarge):
+        decompress_from_lzma(packed, (1 << 40,), "float32", max_output=1 << 20)
+    assert decompress_from_lzma(packed, (16,), "float32", max_output=64).size == 16
+    with pytest.raises(OutputTooLarge):
+        decompress_from_lzma(packed, (16,), "float32", max_output=63)
+
+
+def test_zstd_input_must_be_exactly_one_frame():
+    magic = (0xFD2FB528).to_bytes(4, "little")
+    # single segment, 1-byte size 3, one last raw block of 3 bytes
+    raw_block = ((3 << 3) | (0 << 1) | 1).to_bytes(3, "little")
+    frame = magic + bytes([0x20, 3]) + raw_block + b"abc"
+    assert _bounded.zstd_single_frame_size(frame) == 3
+    with pytest.raises(ValueError):
+        _bounded.zstd_single_frame_size(frame + frame)
+    with pytest.raises(ValueError):
+        _bounded.zstd_single_frame_size(frame + b"\x00")
+    with pytest.raises(ValueError):
+        _bounded.zstd_single_frame_size(frame[:-1])
+    # an RLE block stores one byte for its run
+    rle = ((5 << 3) | (1 << 1) | 1).to_bytes(3, "little")
+    assert _bounded.zstd_single_frame_size(magic + bytes([0x20, 5]) + rle + b"x") == 5

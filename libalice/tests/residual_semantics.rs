@@ -56,9 +56,9 @@ fn the_writer_records_this_crates_identifier_and_reproduces_the_fixture() {
         h.contains(&format!("\"semantics\":\"{}\"", hex(&SEMANTICS_ID))),
         "{h}"
     );
-    let rd = ResidualData::from_bytes(&bytes).unwrap();
+    let rd = ResidualData::from_bytes(&bytes, usize::MAX).unwrap();
     assert_eq!(rd.metadata.semantics, Some(SEMANTICS_ID));
-    assert!(ResidualData::from_bytes_strict(&bytes).is_ok());
+    assert!(ResidualData::from_bytes_strict(&bytes, usize::MAX).is_ok());
     // written back as read
     assert_eq!(rd.to_bytes(), bytes);
 }
@@ -72,7 +72,7 @@ fn a_residual_the_python_writer_generated_under_numpy_is_refused_naming_both() {
         + 13;
     let stored_hex = &h[at..at + 64];
     assert_ne!(stored_hex, hex(&SEMANTICS_ID));
-    match ResidualData::from_bytes(PYTHON) {
+    match ResidualData::from_bytes(PYTHON, usize::MAX) {
         Err(ResidualError::SemanticsMismatch { stored, running }) => {
             assert_eq!(hex(&stored), stored_hex);
             assert_eq!(running, SEMANTICS_ID);
@@ -89,10 +89,10 @@ fn a_residual_the_python_writer_generated_under_numpy_is_refused_naming_both() {
 #[test]
 fn a_file_without_the_identifier_reads_as_legacy_and_a_strict_read_refuses_it() {
     assert!(!header(LEGACY).contains("semantics"));
-    let rd = ResidualData::from_bytes(LEGACY).unwrap();
+    let rd = ResidualData::from_bytes(LEGACY, usize::MAX).unwrap();
     assert_eq!(rd.metadata.semantics, None);
     assert!(matches!(
-        ResidualData::from_bytes_strict(LEGACY),
+        ResidualData::from_bytes_strict(LEGACY, usize::MAX),
         Err(ResidualError::LegacySemantics)
     ));
 }
@@ -106,7 +106,7 @@ fn the_identifier_on_a_file_of_versions_1_to_4_is_refused() {
     let n = u32::from_le_bytes([RUST[0], RUST[1], RUST[2], RUST[3]]) as usize;
     b.extend_from_slice(&RUST[4 + n..]);
     assert!(matches!(
-        ResidualData::from_bytes(&b),
+        ResidualData::from_bytes(&b, usize::MAX),
         Err(ResidualError::InvalidHeader(m)) if m.contains("semantics")
     ));
 }
@@ -128,7 +128,7 @@ fn a_malformed_identifier_is_refused() {
         b.extend_from_slice(&RUST[4 + n..]);
         assert!(
             matches!(
-                ResidualData::from_bytes(&b),
+                ResidualData::from_bytes(&b, usize::MAX),
                 Err(ResidualError::InvalidHeader(_))
             ),
             "{bad}"

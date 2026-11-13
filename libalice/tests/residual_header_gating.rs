@@ -41,7 +41,7 @@ fn the_rust_reader_gives_every_verdict() {
         let mut data = u32::try_from(header.len()).unwrap().to_le_bytes().to_vec();
         data.extend_from_slice(header);
         data.extend_from_slice(&bases[c[0]]);
-        let read = ResidualData::from_bytes(&data);
+        let read = ResidualData::from_bytes(&data, usize::MAX);
         if read.is_ok() != (c[1] == "accept") {
             wrong.push(format!("{line}: {:?}", read.err()));
         }

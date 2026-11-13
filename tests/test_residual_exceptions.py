@@ -56,7 +56,7 @@ def header(data):
 def test_the_shared_cases_come_back_bit_for_bit(dtype, method):
     original, generated = WPF.exception_inputs(dtype)
     c = ResidualCompressor(method=method)
-    rd = ResidualData.from_bytes(c.compress_original(original, generated).to_bytes())
+    rd = ResidualData.from_bytes(c.compress_original(original, generated).to_bytes(), 1 << 40)
     out = c.reconstruct(generated, rd)
     assert out.dtype == np.dtype(dtype)
     assert le_bytes(out) == le_bytes(original)
@@ -74,7 +74,7 @@ def test_exceptions_are_exactly_the_positions_the_rule_cannot_rebuild(dtype):
     assert len(h["semantics"]) == 64
     assert h["exceptions"] == len(positions) > 0
     assert positions == sorted(set(positions))
-    residual = c.decompress_residual(rd)
+    residual = c.decompress_residual(rd, 1 << 40)
     assert residual.dtype == np.dtype(rdt)
     assert all(residual.view(f"<u{residual.itemsize}")[p] == 0 for p in positions)
     # the other positions rebuild from generated + residual alone; these do not,
@@ -120,7 +120,7 @@ def test_random_bit_patterns_come_back_bit_for_bit(dtype, seed):
     generated = np.where(pick == 0, near, np.where(pick == 1, noise, as_float))
     for method in (M.LZMA, M.BITDELTA):
         c = ResidualCompressor(method=method)
-        rd = ResidualData.from_bytes(c.compress_original(original, generated).to_bytes())
+        rd = ResidualData.from_bytes(c.compress_original(original, generated).to_bytes(), 1 << 40)
         assert le_bytes(c.reconstruct(generated, rd)) == le_bytes(original), method
 
 
@@ -131,7 +131,7 @@ def test_quantized_cannot_keep_exceptions():
 
 
 def test_a_well_formed_file_with_exceptions_rebuilds_its_original():
-    rd = ResidualData.from_bytes((DATA / "residual_exc_ok.bin").read_bytes())
+    rd = ResidualData.from_bytes((DATA / "residual_exc_ok.bin").read_bytes(), 1 << 40)
     out = ResidualCompressor().reconstruct(np.array([0.0, 1.0, -1.0, 4.0]), rd)
     assert out.view("<u4").tolist() == [0x40A00000, 0x7FC00001, 0x40A00000, 0xFF800000]
 
@@ -140,7 +140,7 @@ def test_a_well_formed_file_with_exceptions_rebuilds_its_original():
 @pytest.mark.parametrize("writer", ["python", "rust"])
 def test_both_writers_files_rebuild_the_original(dtype, writer):
     original, generated = WPF.exception_inputs(dtype)
-    rd = ResidualData.from_bytes((DATA / f"{writer}_exc_{dtype}.bin").read_bytes())
+    rd = ResidualData.from_bytes((DATA / f"{writer}_exc_{dtype}.bin").read_bytes(), 1 << 40)
     assert le_bytes(ResidualCompressor().reconstruct(generated, rd)) == le_bytes(original)
 
 
@@ -179,12 +179,12 @@ def test_values_close_to_generated_need_no_exceptions(dtype):
     rd = ResidualCompressor(method=M.LZMA).compress_original(original, generated)
     h = header(rd.to_bytes())
     assert (h["version"], h["residual_dtype"], h["exceptions"]) == (7, "float64", 0)
-    out = ResidualCompressor().reconstruct(generated, ResidualData.from_bytes(rd.to_bytes()))
+    out = ResidualCompressor().reconstruct(generated, ResidualData.from_bytes(rd.to_bytes(), 1 << 40))
     assert le_bytes(out) == le_bytes(original)
 
 
 def test_a_float64_file_rebuilds_its_original():
-    rd = ResidualData.from_bytes((DATA / "residual_v4_ok.bin").read_bytes())
+    rd = ResidualData.from_bytes((DATA / "residual_v4_ok.bin").read_bytes(), 1 << 40)
     out = ResidualCompressor().reconstruct(np.array([0.0, 1.0, -1.0, 4.0]), rd)
     assert out.view("<u8").tolist() == [0x4014000000000000, 0x7FF0000000000001,
                                         0x4014000000000000, 0x4020000000000000]
