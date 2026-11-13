@@ -88,6 +88,7 @@ jobs:
           - fuzz_dictionary
           - fuzz_bpe
           - fuzz_zlib_roundtrip
+          - fuzz_xz_bounded
           - fuzz_generators
           - fuzz_fourier_parity
     steps:

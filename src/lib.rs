@@ -78,6 +78,8 @@ pub mod media;
 pub mod prelude;
 pub mod quantize;
 pub mod semantics;
+#[cfg(feature = "lzma")]
+pub(crate) mod xz;
 
 #[cfg(test)]
 mod integration_tests;

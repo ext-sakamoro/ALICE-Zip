@@ -183,3 +183,16 @@ def test_the_earlier_residual_path_of_the_designer_is_bounded_by_the_shape(bits,
     result.residual_data = lzma.compress(bytes(513 * width))
     with pytest.raises(OutputTooLarge):
         designer.decompress(result, allow_approximate=True)
+
+
+def test_a_stream_declaring_a_huge_dictionary_is_refused_without_reserving_it():
+    import pathlib
+    bomb = (pathlib.Path(__file__).resolve().parent / "data" / "bomb"
+            / "alone_zeros_64m_dict1g.lzma").read_bytes()
+    tracemalloc.start()
+    # liblzma refuses the 1 GiB dictionary at the decoder's memory limit (80 MiB) before decoding
+    with pytest.raises((OutputTooLarge, lzma.LZMAError)):
+        _bounded.lzma_decompress(bomb, 1024)
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    assert peak < 16 * 1024 * 1024, peak

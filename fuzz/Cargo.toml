@@ -68,3 +68,10 @@ path = "fuzz_targets/fuzz_fourier_parity.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_xz_bounded"
+path = "fuzz_targets/fuzz_xz_bounded.rs"
+test = false
+doc = false
+bench = false
