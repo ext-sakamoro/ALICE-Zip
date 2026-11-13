@@ -37,6 +37,7 @@
 //! `err.get_ref().and_then(|e| e.downcast_ref::<PkzipError>())`.
 
 use core::fmt;
+use std::collections::btree_map::{self, BTreeMap};
 use std::io::{self, Read};
 
 use flate2::read::DeflateDecoder;
@@ -230,7 +231,8 @@ pub struct Entry {
 }
 
 impl Entry {
-    /// The name as the archive stores it.
+    /// The name as the archive stores it: raw bytes, not checked as a path (a name may hold `..`, a leading `/` or
+    /// a drive prefix), so a caller that writes entries to disk must validate the path itself.
     #[must_use]
     pub fn name(&self) -> &[u8] {
         &self.name
@@ -272,6 +274,9 @@ impl Entry {
 pub struct Archive<D: AsRef<[u8]>> {
     data: D,
     entries: Vec<Entry>,
+    /// name -> central directory index, built when the archive is opened (a lookup and the duplicate check are
+    /// logarithmic in the number of entries, not linear)
+    by_name: BTreeMap<Vec<u8>, usize>,
     limits: Limits,
 }
 
@@ -427,6 +432,7 @@ impl<D: AsRef<[u8]>> Archive<D> {
         let b = data.as_ref();
         let (start, end, count) = directory(b)?;
         let mut entries: Vec<Entry> = Vec::with_capacity(index(count)?);
+        let mut by_name: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
         // the byte range each entry covers: its local header, name, extra field and data
         let mut spans: Vec<(u64, u64, usize)> = Vec::with_capacity(entries.capacity());
         let mut at = start;
@@ -476,8 +482,13 @@ impl<D: AsRef<[u8]>> Archive<D> {
                     declared: size,
                 }));
             }
-            if entries.iter().any(|e| e.name == name) {
-                return Err(refuse(PkzipError::DuplicateName { index: i }));
+            match by_name.entry(name.clone()) {
+                btree_map::Entry::Occupied(_) => {
+                    return Err(refuse(PkzipError::DuplicateName { index: i }));
+                }
+                btree_map::Entry::Vacant(slot) => {
+                    slot.insert(i);
+                }
             }
             let local = index(offset)?;
             if local.checked_add(LOCAL_LEN).is_none_or(|e| e > start) {
@@ -539,6 +550,7 @@ impl<D: AsRef<[u8]>> Archive<D> {
         Ok(Self {
             data,
             entries,
+            by_name,
             limits,
         })
     }
@@ -562,14 +574,7 @@ impl<D: AsRef<[u8]>> Archive<D> {
     /// `NotFound` when no entry has that name; otherwise an [`io::Error`] of kind `InvalidData` carrying a
     /// [`PkzipError`].
     pub fn read(&self, name: &str) -> io::Result<Vec<u8>> {
-        let i = self
-            .entries
-            .iter()
-            .position(|e| e.name == name.as_bytes())
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::NotFound, "no ZIP entry with that name")
-            })?;
-        self.read_index(i)
+        self.read_index(self.index_of(name)?)
     }
 
     /// The bytes of the entry at central directory index `i`, within the limits.
@@ -606,13 +611,7 @@ impl<D: AsRef<[u8]>> Archive<D> {
     /// `NotFound` when no entry has that name; `InvalidInput` when the entry is deflated (read it with
     /// [`Archive::read`]); [`PkzipError::CrcMismatch`] inside an `InvalidData` error.
     pub fn in_place(&self, name: &str) -> io::Result<&[u8]> {
-        let e = self
-            .entries
-            .iter()
-            .find(|e| e.name == name.as_bytes())
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::NotFound, "no ZIP entry with that name")
-            })?;
+        let e = &self.entries[self.index_of(name)?];
         if e.method != Method::Stored {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -620,6 +619,18 @@ impl<D: AsRef<[u8]>> Archive<D> {
             ));
         }
         self.stored_bytes(e)
+    }
+
+    /// The central directory index of the entry named `name`.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` when no entry has that name.
+    pub fn index_of(&self, name: &str) -> io::Result<usize> {
+        self.by_name
+            .get(name.as_bytes())
+            .copied()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no ZIP entry with that name"))
     }
 
     fn stored_bytes(&self, e: &Entry) -> io::Result<&[u8]> {

@@ -410,6 +410,9 @@ fn a_zip64_locator_that_points_at_the_end_of_the_address_space_is_refused_withou
 }
 
 #[test]
+// the wall clock bounds the cost of a refusal here, it decides no result: what is refused (Overlap) is asserted
+// without it, and a quadratic duplicate check takes minutes against a bound of seconds
+#[allow(clippy::disallowed_methods)]
 fn an_archive_of_many_records_is_refused_in_time_that_grows_slower_than_the_square() {
     // 300 000 distinct names over one local header: refusing it (the entries overlap) must not compare every name
     // with every other one, which would be 4.5e10 comparisons
