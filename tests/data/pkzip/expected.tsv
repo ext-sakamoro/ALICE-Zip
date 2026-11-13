@@ -1,0 +1,18 @@
+# archive	name	method	length	crc32 (written by scripts/gen_pkzip_fixtures.py)
+basic.zip	a.bin	0	1000	b403841f
+basic.zip	b.bin	8	50000	2b0067f5
+basic.zip	dir/	0	0	00000000
+basic.zip	dir/c.txt	8	1	bfdf0b66
+basic.zip	empty.bin	0	0	00000000
+basic.zip	empty.z	8	0	00000000
+aligned.zip	archive/data.pkl	0	300	ab041050
+aligned.zip	archive/data/0	0	40	10e68132
+aligned.zip	archive/data/1	0	7	019da4f5
+descriptor.zip	x.bin	8	4000	a1d5bb30
+descriptor.zip	y.bin	0	33	32a92d7b
+descriptor.zip	z.bin	8	5	d9ae9269
+zip64_local.zip	p.bin	0	70	763fe803
+zip64_local.zip	q.bin	8	9000	38d53d1e
+zip64_all.zip	m0.bin	0	100	cded47b6
+zip64_all.zip	m1.bin	8	3000	b60c73c6
+zip64_all.zip	m2.bin	0	80	5a1d440f
