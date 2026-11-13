@@ -341,6 +341,7 @@ def decompress_from_lzma(compressed_data: bytes, shape: Tuple, dtype: str = 'flo
 
     This is the fallback decompression.
     """
-    import lzma
-    raw = lzma.decompress(compressed_data)
+    from ._bounded import lzma_decompress
+    # the shape and dtype fix the length, so no stream may expand past it
+    raw = lzma_decompress(compressed_data, int(np.prod(shape)) * np.dtype(dtype).itemsize)
     return np.frombuffer(raw, dtype=dtype).reshape(shape)

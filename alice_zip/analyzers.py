@@ -28,6 +28,7 @@ from .generators import (
     CompressionResult,
     CompressionEngine,
 )
+from . import _bounded
 from . import native_accelerator as accel
 
 logger = logging.getLogger(__name__)
@@ -526,7 +527,12 @@ class ProceduralCompressionDesigner:
 
             # Add residual if present (for lossless/near-lossless reconstruction)
             if result.has_residual:
-                residual_bytes = lzma.decompress(result.residual_data)
+                # one code (8 / 16 bits) or one float32 per value, so the stream is bounded by the shape
+                if shape is None:
+                    raise ValueError("Shape not found in metadata for the residual")
+                width = {8: 1, 16: 2}.get(quant_bits, 4)
+                residual_bytes = _bounded.lzma_decompress(
+                    result.residual_data, width * int(np.prod(shape)))
                 if quant_bits == 8:
                     quantized = np.frombuffer(residual_bytes, dtype=np.uint8).reshape(shape)
                     r_min = result.metadata.get('residual_min', 0.0)

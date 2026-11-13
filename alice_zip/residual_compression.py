@@ -25,6 +25,7 @@ from enum import Enum
 from typing import Optional, Tuple, Dict, Any
 import numpy as np
 
+from . import _bounded
 from . import semantics as _semantics
 
 logger = logging.getLogger(__name__)
@@ -357,10 +358,11 @@ class ResidualData:
                               ResidualCompressionMethod.ZLIB, ResidualCompressionMethod.BITDELTA) \
                     or header.get('quant_bits') is not None:
                 raise ValueError(f"version 4 is lossless: method {method.value} is not read")
-            plain = _decompress_plain(method, compressed_data)
             n = int(np.prod(shape))
             rw = 8 if header['residual_dtype'] == 'float64' else 4
             width = np.dtype(header['dtype']).itemsize
+            # the header fixes the payload length, so no stream may expand past it
+            plain = _decompress_plain(method, compressed_data, n * rw + k * (8 + width))
             if len(plain) != n * rw + k * (8 + width):
                 raise ValueError(
                     f"version 4 payload holds {len(plain)} bytes, expected "
@@ -577,16 +579,22 @@ class ResidualCompressor:
         method = residual_data.method
         compressed = residual_data.compressed_data
         shape = residual_data.original_shape
+        # the payload length the header implies: 16 bytes of range then one code per value when
+        # quantised, one float32 per value otherwise
+        n = int(np.prod(shape))
+        bits = residual_data.quantization_bits
+        limit = 16 + n * ((bits or 8) // 8) if bits is not None or method == ResidualCompressionMethod.QUANTIZED \
+            else n * 4
 
         # Decompress based on method
         if method == ResidualCompressionMethod.NONE:
             raw_bytes = compressed
         elif method == ResidualCompressionMethod.LZMA:
-            raw_bytes = lzma.decompress(compressed)
+            raw_bytes = _bounded.lzma_decompress(compressed, limit)
         elif method == ResidualCompressionMethod.ZLIB:
-            raw_bytes = zlib.decompress(compressed)
+            raw_bytes = _bounded.zlib_decompress(compressed, limit)
         elif method == ResidualCompressionMethod.ZSTD:
-            raw_bytes = self._decompress_zstd(compressed)
+            raw_bytes = self._decompress_zstd(compressed, limit)
         elif method == ResidualCompressionMethod.BITDELTA:
             return self._decompress_bitdelta(compressed, shape)
         elif method == ResidualCompressionMethod.DELTA:
@@ -600,9 +608,9 @@ class ResidualCompressor:
                 )
             return self._decompress_delta(compressed, shape)
         elif method == ResidualCompressionMethod.QUANTIZED and residual_data.rust_container:
-            return _decode_rust_quantized_container(compressed).reshape(shape)
+            return _decode_rust_quantized_container(compressed, n).reshape(shape)
         elif method == ResidualCompressionMethod.QUANTIZED:
-            raw_bytes = lzma.decompress(compressed)
+            raw_bytes = _bounded.lzma_decompress(compressed, limit)
             return self._dequantize_residual(
                 raw_bytes, shape, residual_data.quantization_bits or 8
             )
@@ -816,11 +824,11 @@ class ResidualCompressor:
 
     def _decompress_bitdelta(self, data: bytes, shape: Tuple[int, ...]) -> np.ndarray:
         """float32 values of a bitdelta residual, bit for bit"""
-        return _bit_delta_decode(lzma.decompress(data)).reshape(shape)
+        return _bit_delta_decode(_bounded.lzma_decompress(data, 4 * int(np.prod(shape)))).reshape(shape)
 
     def _decompress_delta(self, data: bytes, shape: Tuple[int, ...]) -> np.ndarray:
         """Earlier float-difference delta (as the earlier Rust writer stored it)"""
-        raw = lzma.decompress(data)
+        raw = _bounded.lzma_decompress(data, 4 * int(np.prod(shape)))
         # Use little-endian '<f4' for cross-platform binary compatibility
         deltas = np.frombuffer(raw, dtype='<f4')
 
@@ -837,14 +845,19 @@ class ResidualCompressor:
             logger.warning("zstd not available, falling back to LZMA")
             return lzma.compress(data, preset=self.lzma_preset)
 
-    def _decompress_zstd(self, data: bytes) -> bytes:
-        """Decompress zstd data"""
+    def _decompress_zstd(self, data: bytes, limit: int) -> bytes:
+        """Decompress zstd data of at most `limit` bytes (the frame must state its size)"""
         try:
             import zstd
-            return zstd.decompress(data)
         except ImportError:
             # Might be LZMA fallback
-            return lzma.decompress(data)
+            return _bounded.lzma_decompress(data, limit)
+        if _bounded.zstd_content_size(data) > limit:
+            raise _bounded.OutputTooLarge(limit)
+        out = zstd.decompress(data)
+        if len(out) > limit:
+            raise _bounded.OutputTooLarge(limit)
+        return out
 
 
 # ============================================================================
@@ -952,7 +965,8 @@ def decompress_delta_differences(residual_data: "ResidualData") -> np.ndarray:
     """The stored differences of a delta residual, without reconstructing it."""
     if residual_data.method not in (ResidualCompressionMethod.DELTA, ResidualCompressionMethod.BITDELTA):
         raise ValueError(f"Not a delta residual: {residual_data.method.value}")
-    raw = lzma.decompress(residual_data.compressed_data)
+    raw = _bounded.lzma_decompress(residual_data.compressed_data,
+                                   4 * int(np.prod(residual_data.original_shape)))
     return np.frombuffer(raw, dtype='<f4').reshape(residual_data.original_shape)
 
 
@@ -1090,49 +1104,58 @@ def _bit_delta_decode(stream: bytes, dtype=np.dtype('<f4')) -> np.ndarray:
     return np.cumsum(d, dtype=np.uint32).astype('<u4').view('<f4')
 
 
-def _decompress_plain(method: 'ResidualCompressionMethod', data: bytes) -> bytes:
-    """The payload of a version 4 file before the method's compression."""
+def _decompress_plain(method: 'ResidualCompressionMethod', data: bytes, limit: int) -> bytes:
+    """The payload of a version 4 file before the method's compression (at most `limit` bytes)."""
     if method == ResidualCompressionMethod.NONE:
         return data
     if method == ResidualCompressionMethod.ZLIB:
-        return zlib.decompress(data)
-    return lzma.decompress(data)
+        return _bounded.zlib_decompress(data, limit)
+    return _bounded.lzma_decompress(data, limit)
 
 
-def _decode_rust_quantized_container(data: bytes) -> np.ndarray:
+def _decode_rust_quantized_container(data: bytes, count: int) -> np.ndarray:
     """Values of the Rust writer's earlier quantized container, as its reader
     returns them: version 1 `0xFC · codec · bits · min: f64 · scale: f64 ·
     len: u32 · payload` (codec 0 = raw deflate, 1 = LZMA) or version 0
     `bits · min · scale · len · LZMA payload`; codes of 8 or 16 bits (little
-    endian), `code / (levels - 1) * scale + min` in float64, then float32."""
+    endian), `code / (levels - 1) * scale + min` in float64, then float32.
+    The codes of `count` values take `count * bits / 8` bytes, so their
+    stream is read up to that length."""
     if data[:1] == b"\xfc":
         if len(data) < 23:
             raise ValueError("Rust quantized container too short")
         codec, bits = data[1], data[2]
+        limit = _rust_codes_len(bits, count)
         min_val, scale = struct.unpack("<dd", data[3:19])
         n = struct.unpack("<I", data[19:23])[0]
         payload = data[23:23 + n]
         if codec == 0:
-            codes = zlib.decompress(payload, -15)
+            codes = _bounded.zlib_decompress(payload, limit, -15)
         elif codec == 1:
-            codes = lzma.decompress(payload)
+            codes = _bounded.lzma_decompress(payload, limit)
         else:
             raise ValueError(f"Unknown codec tag {codec} in a Rust quantized container")
     else:
         if len(data) < 21:
             raise ValueError("Rust quantized container too short")
         bits = data[0]
+        limit = _rust_codes_len(bits, count)
         min_val, scale = struct.unpack("<dd", data[1:17])
         n = struct.unpack("<I", data[17:21])[0]
         payload = data[21:21 + n]
-        codes = lzma.decompress(payload)
+        codes = _bounded.lzma_decompress(payload, limit)
     if len(payload) != n:
         raise ValueError("Rust quantized container truncated")
     if bits == 8:
         q = np.frombuffer(codes, dtype=np.uint8).astype(np.float64) / 255.0
-    elif bits == 16:
-        q = np.frombuffer(codes, dtype="<u2").astype(np.float64) / 65535.0
     else:
-        raise ValueError(f"Rust quantized container with {bits} bits")
+        q = np.frombuffer(codes, dtype="<u2").astype(np.float64) / 65535.0
     return (q * scale + min_val).astype(np.float32)
+
+
+def _rust_codes_len(bits: int, count: int) -> int:
+    """Bytes of `count` codes of `bits` bits (8 or 16) in the Rust quantized container"""
+    if bits not in (8, 16):
+        raise ValueError(f"Rust quantized container with {bits} bits")
+    return count * (bits // 8)
 
