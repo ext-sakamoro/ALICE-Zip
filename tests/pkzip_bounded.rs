@@ -15,12 +15,19 @@ use alice_zip::pkzip::{Archive, Limits, Method, PkzipError};
 const BIG: u64 = 1 << 30;
 
 fn data(name: &str) -> Vec<u8> {
-    std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/pkzip").join(name)).unwrap()
+    std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data/pkzip")
+            .join(name),
+    )
+    .unwrap()
 }
 
 /// byte i of the entry with index k (the generator's formula)
 fn content(index: usize, length: usize) -> Vec<u8> {
-    (0..length).map(|i| ((31 * i + 7 * index) % 251) as u8).collect()
+    (0..length)
+        .map(|i| ((31 * i + 7 * index) % 251) as u8)
+        .collect()
 }
 
 fn pkzip_error(e: &io::Error) -> PkzipError {
@@ -35,7 +42,10 @@ fn le16(b: &[u8], at: usize) -> usize {
 
 /// offsets of the central directory records and of the end record (the archives here have no ZIP64 end records)
 fn central(b: &[u8]) -> (Vec<usize>, usize) {
-    let eocd = (0..b.len() - 21).rev().find(|&i| b[i..i + 4] == *b"PK\x05\x06").unwrap();
+    let eocd = (0..b.len() - 21)
+        .rev()
+        .find(|&i| b[i..i + 4] == *b"PK\x05\x06")
+        .unwrap();
     let mut at = u32::from_le_bytes(b[eocd + 16..eocd + 20].try_into().unwrap()) as usize;
     let mut out = Vec::new();
     for _ in 0..le16(b, eocd + 10) {
@@ -93,8 +103,10 @@ fn aliased(b: &[u8], name: &str, alias: &str, offset: u32) -> Vec<u8> {
 
 #[test]
 fn every_entry_of_the_zipfile_archives_reads_back_as_written() {
-    let tsv = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/pkzip/expected.tsv"))
-        .unwrap();
+    let tsv = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/pkzip/expected.tsv"),
+    )
+    .unwrap();
     let mut compared = 0;
     let mut archives: Vec<(String, Vec<Vec<String>>)> = Vec::new();
     for line in tsv.lines().filter(|l| !l.starts_with('#')) {
@@ -110,12 +122,20 @@ fn every_entry_of_the_zipfile_archives_reads_back_as_written() {
         for (k, row) in rows.iter().enumerate() {
             let entry = &archive.entries()[k];
             assert_eq!(entry.name(), row[1].as_bytes(), "{name}");
-            let method = if row[2] == "0" { Method::Stored } else { Method::Deflated };
+            let method = if row[2] == "0" {
+                Method::Stored
+            } else {
+                Method::Deflated
+            };
             assert_eq!(entry.method(), method, "{name} {}", row[1]);
             let length: usize = row[3].parse().unwrap();
             assert_eq!(entry.size(), length as u64);
             assert_eq!(format!("{:08x}", entry.crc32()), row[4]);
-            let want = if row[1].ends_with('/') { Vec::new() } else { content(k, length) };
+            let want = if row[1].ends_with('/') {
+                Vec::new()
+            } else {
+                content(k, length)
+            };
             assert_eq!(archive.read(&row[1]).unwrap(), want, "{name} {}", row[1]);
             assert_eq!(archive.read_index(k).unwrap(), want, "{name} #{k}");
             compared += 1;
@@ -129,9 +149,19 @@ fn every_entry_of_the_zipfile_archives_reads_back_as_written() {
 fn an_entry_that_declares_more_than_the_entry_limit_is_refused_before_it_is_read() {
     let archive = Archive::new(data("basic.zip"), Limits::new(49_999, BIG)).unwrap();
     let e = archive.read("b.bin").unwrap_err();
-    assert_eq!(pkzip_error(&e), PkzipError::EntryTooLarge { declared: 50_000, limit: 49_999 });
+    assert_eq!(
+        pkzip_error(&e),
+        PkzipError::EntryTooLarge {
+            declared: 50_000,
+            limit: 49_999
+        }
+    );
     assert_eq!(archive.spent(), 0, "nothing was decoded");
-    assert_eq!(archive.read("a.bin").unwrap(), content(0, 1000), "the limit is per entry");
+    assert_eq!(
+        archive.read("a.bin").unwrap(),
+        content(0, 1000),
+        "the limit is per entry"
+    );
     // the limit itself is allowed
     let archive = Archive::new(data("basic.zip"), Limits::new(50_000, BIG)).unwrap();
     assert_eq!(archive.read("b.bin").unwrap().len(), 50_000);
@@ -155,24 +185,52 @@ fn reads_past_the_archive_total_are_refused_and_a_second_read_counts_again() {
 fn a_deflated_entry_that_expands_past_its_declared_size_is_refused() {
     // the declared size passes the entry limit, so the read is what must stop: the decoder is asked for at most the
     // declared size and one byte more
-    let archive = Archive::new(declaring(data("basic.zip"), "b.bin", 1000), Limits::new(BIG, BIG)).unwrap();
+    let archive = Archive::new(
+        declaring(data("basic.zip"), "b.bin", 1000),
+        Limits::new(BIG, BIG),
+    )
+    .unwrap();
     let e = archive.read("b.bin").unwrap_err();
-    assert_eq!(pkzip_error(&e), PkzipError::ExpandsPastDeclared { declared: 1000 });
+    assert_eq!(
+        pkzip_error(&e),
+        PkzipError::ExpandsPastDeclared { declared: 1000 }
+    );
     assert!(e.to_string().contains("expands past"), "{e}");
     assert_eq!(archive.spent(), 0);
 }
 
 #[test]
 fn a_deflated_entry_that_ends_short_of_its_declared_size_is_refused() {
-    let archive = Archive::new(declaring(data("basic.zip"), "b.bin", 50_001), Limits::new(BIG, BIG)).unwrap();
+    let archive = Archive::new(
+        declaring(data("basic.zip"), "b.bin", 50_001),
+        Limits::new(BIG, BIG),
+    )
+    .unwrap();
     let e = archive.read("b.bin").unwrap_err();
-    assert_eq!(pkzip_error(&e), PkzipError::ShortOfDeclared { declared: 50_001, actual: 50_000 });
+    assert_eq!(
+        pkzip_error(&e),
+        PkzipError::ShortOfDeclared {
+            declared: 50_001,
+            actual: 50_000
+        }
+    );
 }
 
 #[test]
 fn a_stored_entry_whose_sizes_differ_is_refused_when_the_archive_is_opened() {
-    let e = Archive::new(declaring(data("basic.zip"), "a.bin", 999), Limits::new(BIG, BIG)).err().unwrap();
-    assert_eq!(pkzip_error(&e), PkzipError::StoredSizeMismatch { compressed: 1000, declared: 999 });
+    let e = Archive::new(
+        declaring(data("basic.zip"), "a.bin", 999),
+        Limits::new(BIG, BIG),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(
+        pkzip_error(&e),
+        PkzipError::StoredSizeMismatch {
+            compressed: 1000,
+            declared: 999
+        }
+    );
 }
 
 #[test]
@@ -183,7 +241,10 @@ fn an_entry_whose_bytes_do_not_match_its_crc_is_refused() {
     b[at] ^= 1;
     let archive = Archive::new(b, Limits::new(BIG, BIG)).unwrap();
     let e = archive.read("a.bin").unwrap_err();
-    assert!(matches!(pkzip_error(&e), PkzipError::CrcMismatch { .. }), "{e}");
+    assert!(
+        matches!(pkzip_error(&e), PkzipError::CrcMismatch { .. }),
+        "{e}"
+    );
 }
 
 #[test]
@@ -197,7 +258,13 @@ fn two_entries_over_the_same_bytes_are_refused_when_the_archive_is_opened() {
     // a record whose header starts inside another entry's data
     let inside = aliased(&b, "b.bin", "B.bin", local_of(&b, "b.bin") as u32 + 40);
     let e = Archive::new(inside, Limits::new(BIG, BIG)).err().unwrap();
-    assert!(matches!(pkzip_error(&e), PkzipError::Overlap { .. } | PkzipError::Malformed(_)), "{e}");
+    assert!(
+        matches!(
+            pkzip_error(&e),
+            PkzipError::Overlap { .. } | PkzipError::Malformed(_)
+        ),
+        "{e}"
+    );
 }
 
 #[test]
@@ -222,7 +289,13 @@ fn an_encrypted_entry_and_an_unknown_method_are_refused() {
     let r = central_of(&b, "b.bin");
     b[r + 10] = 12; // bzip2
     let e = Archive::new(b, Limits::new(BIG, BIG)).err().unwrap();
-    assert_eq!(pkzip_error(&e), PkzipError::UnsupportedMethod { index: 1, method: 12 });
+    assert_eq!(
+        pkzip_error(&e),
+        PkzipError::UnsupportedMethod {
+            index: 1,
+            method: 12
+        }
+    );
 }
 
 #[test]
@@ -242,7 +315,9 @@ fn a_local_header_that_names_another_entry_is_refused() {
 fn every_truncation_of_an_archive_is_refused_without_a_panic() {
     let b = data("basic.zip");
     for n in 0..b.len() {
-        let r = std::panic::catch_unwind(|| Archive::new(b[..n].to_vec(), Limits::new(BIG, BIG)).is_err());
+        let r = std::panic::catch_unwind(|| {
+            Archive::new(b[..n].to_vec(), Limits::new(BIG, BIG)).is_err()
+        });
         assert_eq!(r.ok(), Some(true), "prefix of {n} bytes");
     }
 }
@@ -250,6 +325,12 @@ fn every_truncation_of_an_archive_is_refused_without_a_panic() {
 #[test]
 fn a_missing_name_is_not_found() {
     let archive = Archive::new(data("basic.zip"), Limits::new(BIG, BIG)).unwrap();
-    assert_eq!(archive.read("nope").unwrap_err().kind(), io::ErrorKind::NotFound);
-    assert_eq!(archive.read_index(6).unwrap_err().kind(), io::ErrorKind::NotFound);
+    assert_eq!(
+        archive.read("nope").unwrap_err().kind(),
+        io::ErrorKind::NotFound
+    );
+    assert_eq!(
+        archive.read_index(6).unwrap_err().kind(),
+        io::ErrorKind::NotFound
+    );
 }

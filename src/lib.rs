@@ -75,6 +75,8 @@ pub mod law_ref;
 pub mod lz77;
 pub(crate) mod math;
 pub mod media;
+#[cfg(feature = "std")]
+pub mod pkzip;
 pub mod prelude;
 pub mod quantize;
 pub mod semantics;

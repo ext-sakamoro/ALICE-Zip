@@ -118,7 +118,7 @@ fn too_large(limit: usize) -> io::Error {
 
 /// Read `reader` to its end, producing at most `limit` bytes: one byte more is
 /// [`DecompressError::TooLarge`] (the reader is never asked for more than `limit + 1` bytes)
-fn read_bounded(mut reader: impl Read, limit: usize) -> io::Result<Vec<u8>> {
+pub(crate) fn read_bounded(mut reader: impl Read, limit: usize) -> io::Result<Vec<u8>> {
     // The output grows by doubling, but never past `limit + 1` bytes of capacity, so a reallocation holds at
     // most about twice the limit (the old and the new buffer); `read_to_end` would double past it
     let ceiling = limit.saturating_add(1);
