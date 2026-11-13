@@ -1456,12 +1456,14 @@ pub fn decompress_legacy_alice_zip(
     if xz.unpacked != header.original_size {
         return Err(bad);
     }
-    // The chunk headers bound what the decoder produces (each chunk stops at
-    // its stated size), so the output stays near `original_size`.
-    let mut data = Vec::new();
-    if !xz.chunks.is_empty() {
-        lzma_rs::lzma2_decompress(&mut &*xz.chunks, &mut data).map_err(|_| bad)?;
-    }
+    // The decoder writes through a bound of `original_size` (checked against
+    // `limit` above), so a stream whose chunks claim more stops there.
+    let cap = usize::try_from(header.original_size).map_err(|_| bad)?;
+    let data = if xz.chunks.is_empty() {
+        Vec::new()
+    } else {
+        crate::compression::lzma2_decompress_bounded(xz.chunks, cap).map_err(|_| bad)?
+    };
     if xz::crc64(&data) != xz.check {
         return Err(bad);
     }

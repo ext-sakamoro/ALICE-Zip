@@ -102,7 +102,8 @@ fn measure(name: &'static str, original: &[f32], model: &[f32], params: usize) -
 
     // (3) quantised residual — lossy on purpose
     let quantized = compress_residual_quantized(&residual, 16, LEVEL).expect("quantised container");
-    let qback = decompress_residual_quantized(&quantized).expect("quantised round trip");
+    let qback =
+        decompress_residual_quantized(&quantized, residual.len()).expect("quantised round trip");
     let quantized_err = original
         .iter()
         .zip(model.iter())

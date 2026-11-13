@@ -10,7 +10,7 @@ fuzz_target!(|input: &[u8]| {
     let level = u32::from(input[0]);
     let data = &input[1..];
     let c = zlib_compress(data, level).expect("compress");
-    assert_eq!(zlib_decompress(&c).expect("decompress"), data);
+    assert_eq!(zlib_decompress(&c, data.len()).expect("decompress"), data);
     // Arbitrary input to the decoder: Ok or Err, never a panic
-    let _ = zlib_decompress(data);
+    let _ = zlib_decompress(data, 1 << 20);
 });

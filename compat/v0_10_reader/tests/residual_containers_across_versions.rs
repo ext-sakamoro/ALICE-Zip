@@ -46,11 +46,11 @@ fn released_residual_containers_decode_as_legacy_and_strict_refuses_them() {
         );
     }
     assert_eq!(
-        now::decompress_residual_quantized(&quantized).unwrap(),
+        now::decompress_residual_quantized(&quantized, usize::MAX).unwrap(),
         old::decompress_residual_quantized(&quantized).unwrap()
     );
     assert_eq!(
-        now::decompress_residual_lossless(&lossless).unwrap(),
+        now::decompress_residual_lossless(&lossless, usize::MAX).unwrap(),
         original
     );
     assert_eq!(
@@ -58,10 +58,10 @@ fn released_residual_containers_decode_as_legacy_and_strict_refuses_them() {
         original
     );
     assert!(is_legacy_error(
-        &now::decompress_residual_quantized_strict(&quantized).unwrap_err()
+        &now::decompress_residual_quantized_strict(&quantized, usize::MAX).unwrap_err()
     ));
     assert!(is_legacy_error(
-        &now::decompress_residual_lossless_strict(&lossless).unwrap_err()
+        &now::decompress_residual_lossless_strict(&lossless, usize::MAX).unwrap_err()
     ));
     assert!(is_legacy_error(
         &now::decompress_residual_xor_strict(&xor, &model).unwrap_err()

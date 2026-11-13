@@ -404,7 +404,7 @@ fn deflate_outputs_are_the_recorded_bytes_and_decode() {
         let probe = label.rsplit('/').next().unwrap();
         let input = &inputs.iter().find(|(n, _)| *n == probe).unwrap().1;
         let back = if label.starts_with("zlib/") {
-            zlib_decompress(bytes).unwrap()
+            zlib_decompress(bytes, usize::MAX).unwrap()
         } else {
             let mut v = Vec::new();
             flate2::read::DeflateDecoder::new(&bytes[..])
@@ -480,7 +480,11 @@ mod lzma {
         assert_eq!(outputs.len(), 6);
         dump(&outputs);
         for ((label, bytes), (_, input)) in outputs.iter().zip(codec_probe_inputs()) {
-            assert_eq!(lzma_decompress(bytes).unwrap(), input, "{label}");
+            assert_eq!(
+                lzma_decompress(bytes, usize::MAX).unwrap(),
+                input,
+                "{label}"
+            );
         }
         assert_recorded(&outputs, LZMA_OUTPUTS);
     }
