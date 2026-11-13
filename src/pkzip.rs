@@ -275,19 +275,19 @@ const LOCAL: &[u8; 4] = b"PK\x03\x04";
 const LOCAL_LEN: usize = 30;
 
 fn u16_at(b: &[u8], at: usize) -> io::Result<u16> {
-    b.get(at..at + 2)
+    b.get(at..at.saturating_add(2))
         .map(|s| u16::from_le_bytes([s[0], s[1]]))
         .ok_or_else(|| malformed("a record runs past the end of the archive"))
 }
 
 fn u32_at(b: &[u8], at: usize) -> io::Result<u32> {
-    b.get(at..at + 4)
+    b.get(at..at.saturating_add(4))
         .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
         .ok_or_else(|| malformed("a record runs past the end of the archive"))
 }
 
 fn u64_at(b: &[u8], at: usize) -> io::Result<u64> {
-    b.get(at..at + 8)
+    b.get(at..at.saturating_add(8))
         .map(|s| u64::from_le_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
         .ok_or_else(|| malformed("a record runs past the end of the archive"))
 }
@@ -332,7 +332,9 @@ fn directory(b: &[u8]) -> io::Result<(usize, usize, u64)> {
             return Err(malformed("the archive spans several disks"));
         }
         let at = index(u64_at(b, locator + 8)?)?;
-        if b.get(at..at + 4) != Some(ZIP64_EOCD.as_slice()) || at + 56 > locator {
+        if b.get(at..at.saturating_add(4)) != Some(ZIP64_EOCD.as_slice())
+            || at.saturating_add(56) > locator
+        {
             return Err(malformed("no ZIP64 end of central directory record"));
         }
         (
@@ -419,7 +421,7 @@ impl<D: AsRef<[u8]>> Archive<D> {
         let mut spans: Vec<(u64, u64, usize)> = Vec::with_capacity(entries.capacity());
         let mut at = start;
         for i in 0..index(count)? {
-            if b.get(at..at + 4) != Some(CENTRAL.as_slice()) {
+            if b.get(at..at.saturating_add(4)) != Some(CENTRAL.as_slice()) {
                 return Err(malformed("a central directory record has no signature"));
             }
             let flags = u16_at(b, at + 8)?;
@@ -577,11 +579,20 @@ impl<D: AsRef<[u8]>> Archive<D> {
         // reserve the declared size against the total before decoding: a refused read reserves nothing, and every
         // successful read produces exactly what it reserved
         let max_total = self.limits.max_total;
-        self.spent
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |s| {
-                s.checked_add(e.size).filter(|&t| t <= max_total)
-            })
-            .map_err(|_| refuse(PkzipError::TotalTooLarge { limit: max_total }))?;
+        let mut seen = self.spent.load(Ordering::SeqCst);
+        loop {
+            let next = seen
+                .checked_add(e.size)
+                .filter(|&t| t <= max_total)
+                .ok_or_else(|| refuse(PkzipError::TotalTooLarge { limit: max_total }))?;
+            match self
+                .spent
+                .compare_exchange(seen, next, Ordering::SeqCst, Ordering::SeqCst)
+            {
+                Ok(_) => break,
+                Err(now) => seen = now,
+            }
+        }
         let out = self.decode(e);
         if out.is_err() {
             self.spent.fetch_sub(e.size, Ordering::SeqCst);

@@ -347,3 +347,26 @@ fn an_entry_whose_data_runs_into_the_central_directory_is_refused_when_the_archi
     let e = Archive::new(b, Limits::new(BIG, BIG)).err().unwrap();
     assert!(matches!(pkzip_error(&e), PkzipError::Malformed(_)), "{e}");
 }
+
+#[test]
+fn a_zip64_locator_that_points_at_the_end_of_the_address_space_is_refused_without_a_panic() {
+    // found by fuzz_pkzip_bounded: the record's offset plus its length overflowed
+    for offset in [u64::MAX, u64::MAX - 2, u64::MAX - 55] {
+        let mut b = Vec::new();
+        b.extend_from_slice(b"PK\x06\x07");
+        b.extend_from_slice(&0u32.to_le_bytes());
+        b.extend_from_slice(&offset.to_le_bytes());
+        b.extend_from_slice(&1u32.to_le_bytes());
+        b.extend_from_slice(b"PK\x05\x06");
+        b.extend_from_slice(&[0u8; 18]);
+        let r = std::panic::catch_unwind(|| {
+            Archive::new(b.clone(), Limits::new(BIG, BIG))
+                .err()
+                .map(|e| pkzip_error(&e))
+        });
+        assert!(
+            matches!(r, Ok(Some(PkzipError::Malformed(_)))),
+            "offset {offset:#x}: {r:?}"
+        );
+    }
+}
