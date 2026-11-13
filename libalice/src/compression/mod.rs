@@ -16,7 +16,7 @@ pub use alice_zip::compression::{
     compress_residual_quantized_with, compress_residual_xor, compress_residual_xor_with,
     decompress_residual_lossless, decompress_residual_quantized, decompress_residual_xor,
     lzma_compress, lzma_decompress, residual_codec_default, residual_container_codec,
-    zlib_compress, zlib_decompress, ResidualCodec,
+    zlib_compress, zlib_decompress, DecompressError, ResidualCodec,
 };
 pub use alice_zip::quantize::{dequantize_16bit, dequantize_8bit, quantize_16bit, quantize_8bit};
 
@@ -55,7 +55,7 @@ mod tests {
             .collect();
 
         let compressed = compress_residual_quantized(&data, 8, 6).unwrap();
-        let restored = decompress_residual_quantized(&compressed).unwrap();
+        let restored = decompress_residual_quantized(&compressed, usize::MAX).unwrap();
 
         assert_eq!(data.len(), restored.len());
 
@@ -77,7 +77,7 @@ mod tests {
             .collect();
 
         let compressed = compress_residual_lossless(&data, 6).unwrap();
-        let restored = decompress_residual_lossless(&compressed).unwrap();
+        let restored = decompress_residual_lossless(&compressed, usize::MAX).unwrap();
 
         assert_eq!(data, restored);
     }
@@ -86,7 +86,7 @@ mod tests {
     fn test_zlib_roundtrip() {
         let data = b"Hello, World! This is a test of zlib compression.";
         let compressed = zlib_compress(data, 6).unwrap();
-        let decompressed = zlib_decompress(&compressed).unwrap();
+        let decompressed = zlib_decompress(&compressed, data.len()).unwrap();
         assert_eq!(data.to_vec(), decompressed);
     }
 
@@ -94,7 +94,7 @@ mod tests {
     fn test_invalid_lzma_data() {
         // Test that invalid data returns error instead of panicking
         let invalid_data = b"not valid lzma data";
-        let result = lzma_decompress(invalid_data);
+        let result = lzma_decompress(invalid_data, usize::MAX);
         assert!(result.is_err());
     }
 
@@ -102,7 +102,7 @@ mod tests {
     fn test_invalid_zlib_data() {
         // Test that invalid data returns error instead of panicking
         let invalid_data = b"not valid zlib data";
-        let result = zlib_decompress(invalid_data);
+        let result = zlib_decompress(invalid_data, usize::MAX);
         assert!(result.is_err());
     }
 
@@ -178,7 +178,7 @@ mod tests {
     fn test_compress_residual_empty() {
         let data: Vec<f32> = Vec::new();
         let compressed = compress_residual_quantized(&data, 8, 6).unwrap();
-        let restored = decompress_residual_quantized(&compressed).unwrap();
+        let restored = decompress_residual_quantized(&compressed, usize::MAX).unwrap();
         assert!(restored.is_empty());
     }
 
@@ -186,7 +186,7 @@ mod tests {
     fn test_compress_residual_single_element() {
         let data = vec![123.456f32];
         let compressed = compress_residual_quantized(&data, 8, 6).unwrap();
-        let restored = decompress_residual_quantized(&compressed).unwrap();
+        let restored = decompress_residual_quantized(&compressed, usize::MAX).unwrap();
         assert_eq!(restored.len(), 1);
         assert!((restored[0] - 123.456).abs() < 1.0);
     }
@@ -195,7 +195,7 @@ mod tests {
     fn test_decompress_truncated_header() {
         // Header requires at least 21 bytes
         let short_data = vec![8u8; 20]; // 20 bytes, less than required 21
-        let result = decompress_residual_quantized(&short_data);
+        let result = decompress_residual_quantized(&short_data, usize::MAX);
         assert!(result.is_err());
     }
 
@@ -203,7 +203,7 @@ mod tests {
     fn test_decompress_lossless_truncated() {
         // Lossless header requires at least 5 bytes
         let short_data = vec![0xFFu8; 4]; // 4 bytes, less than required 5
-        let result = decompress_residual_lossless(&short_data);
+        let result = decompress_residual_lossless(&short_data, usize::MAX);
         assert!(result.is_err());
     }
 
@@ -212,7 +212,7 @@ mod tests {
         // Invalid marker (not 0xFF)
         let mut data = vec![0x00u8; 10];
         data[0] = 0x00; // Wrong marker
-        let result = decompress_residual_lossless(&data);
+        let result = decompress_residual_lossless(&data, usize::MAX);
         assert!(result.is_err());
     }
 }

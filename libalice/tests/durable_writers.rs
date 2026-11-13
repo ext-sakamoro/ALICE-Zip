@@ -56,7 +56,7 @@ const WRITERS: [(&str, &str, Decision); 19] = [
     ("bin/alice.rs", "cmd_compress", Literal), // the ALZ file: zlib or 8/16-bit quantisation of the input
 ];
 // further names the scan finds that are not writers
-const NOT_WRITERS: [(&str, &str, &str); 2] = [
+const NOT_WRITERS: [(&str, &str, &str); 3] = [
     (
         "bin/alice.rs",
         "to_bytes",
@@ -66,6 +66,11 @@ const NOT_WRITERS: [(&str, &str, &str); 2] = [
         "analyzer.rs",
         "compress",
         "returns an in-memory CompressedPayload; nothing in this crate writes it",
+    ),
+    (
+        "residual.rs",
+        "write",
+        "io::Write of CappedWriter, the in-memory buffer an xz stream is decoded into",
     ),
 ];
 
@@ -174,7 +179,7 @@ fn the_writer_list_is_every_writer_in_the_source() {
         unlisted.is_empty() && gone.is_empty(),
         "without a decision: {unlisted:?}; listed but not in the source: {gone:?}"
     );
-    assert_eq!(found.len(), 21);
+    assert_eq!(found.len(), 22);
 }
 
 #[test]
