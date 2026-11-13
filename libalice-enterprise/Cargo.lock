@@ -25,7 +25,7 @@ source = "git+https://github.com/ext-sakamoro/ALICE-DetMath?branch=main#3d55df82
 
 [[package]]
 name = "alice-zip"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "alice-det-math",
  "crc",
@@ -40,7 +40,7 @@ dependencies = [
 
 [[package]]
 name = "alice-zip-cli"
-version = "4.0.0"
+version = "5.0.0"
 dependencies = [
  "alice-det-math",
  "alice-zip",

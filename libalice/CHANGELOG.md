@@ -4,6 +4,12 @@ All notable changes to ALICE-Zip (libalice) will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- **Breaking** 版を 5.0.0 に上げた (core crate を `alice-zip` 0.12 に) 展開は上限付きだけ: C ABI の `alice_lzma_decompress` / `alice_zlib_decompress` は `max_output` (byte 数)、`alice_residual_decompress` は `max_samples` (値の数) を `len` の後に取り、超えると新しい `ALICE_ERROR_OUTPUT_TOO_LARGE = 8` を返して buffer を空にする (上限を決められない時は `SIZE_MAX`) 壊れた入力は従来どおり `ALICE_ERROR_DECOMPRESSION` C++ (`alice.hpp`) / C# (`AliceZip.cs` と Unity 版) / UE5 (`UAliceZipLibrary`) の decompress も上限の引数が必須 Python module の `lzma_decompress` / `zlib_decompress` / `residual_decompress` / `residual_decompress_lossless` も上限が必須 4.x の呼び出しは引数の数が合わず compile・link で止まる
+- CLI の `alice decompress` は `--max-output <bytes>` (既定 1 GiB) を超える `original_size` を記載した file を展開の前に拒み、記載より長く伸びる file も短い file も何も書かずに拒む (header はファイル自身の申告なので、それだけを上限にしない)
+- **Breaking** 残差の読み手は呼び出し側の値の数の上限が必須: `ResidualData::from_bytes(data, max_values)` / `from_bytes_strict(data, max_values)` / `residual::decompress(rd, max_values)` / `decompress_f64(rd, max_values)` / `decompress_residual_delta(rd, max_values)` は超える residual を展開の前に `ResidualError::TooManyValues` で拒む `reconstruct_bytes` は生成した値の数を上限にする その上で header が示す長さを展開の上限にする (`residual::decompress` / `ResidualData::from_bytes` の version 4) xz の payload は core crate を通らず上限なしで展開していた 今は core の `compression::xz_decompress` (chunk header を展開の前に読む) で読み、Python の書き手と lzma-rs の 1 block の stream の形だけを受け付ける
+
 ### Changed
 
 - **Breaking (Python):** 対応する Python の最小版を 3.9 から 3.10 に上げた (`requires-python = ">=3.10"`、classifier、black / ruff / mypy の対象) 3.9 は 2025-10 に保守が終わり、CI の `ubuntu-latest` (Ubuntu 26.04) の setup-python には 3.9 の build が無い libalice の Python module の CI は 3.10 / 3.12 / 3.13 で試し、PyPI の wheel も 3.10 から作る
