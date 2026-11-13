@@ -88,6 +88,23 @@ mod lzma {
         assert_eq!(too_large(&e), Some(1 << 20), "{e}");
     }
 
+    // oracle: when the stream's dictionary (8 MiB from this writer) is smaller than the limit, the decoder's
+    // window wraps and hands its bytes to the output, and the output's limit stops it there
+    #[test]
+    fn an_lzma_stream_with_a_dictionary_below_the_limit_is_stopped_at_the_output() {
+        let data = vec![0u8; 9 << 20];
+        let c = lzma_compress(&data, 6).unwrap();
+        assert_eq!(
+            u32::from_le_bytes(c[1..5].try_into().unwrap()),
+            8 << 20,
+            "the writer's dictionary"
+        );
+        assert_eq!(lzma_decompress(&c, data.len()).unwrap().len(), data.len());
+        let limit = (8 << 20) + (512 << 10);
+        let e = lzma_decompress(&c, limit).unwrap_err();
+        assert_eq!(too_large(&e), Some(limit), "{e}");
+    }
+
     #[test]
     fn an_invalid_lzma_stream_is_an_error_that_is_not_too_large() {
         let e = lzma_decompress(&[0x5d, 0, 0, 0x80, 0, 1, 2, 3], 1 << 20).unwrap_err();
