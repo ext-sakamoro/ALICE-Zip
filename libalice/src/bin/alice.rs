@@ -346,9 +346,15 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
     )]
     let start = Instant::now();
 
+    // The header states the original size; no payload may expand past it
+    let original_size = usize::try_from(header.original_size)
+        .map_err(|_| "original size does not fit this platform")?;
+
     // Decompress based on mode
     let decompressed = match header.mode {
-        CompressionMode::RawLzma | CompressionMode::Lossless => zlib_decompress(payload)?,
+        CompressionMode::RawLzma | CompressionMode::Lossless => {
+            zlib_decompress(payload, original_size)?
+        }
         CompressionMode::Quantized8
         | CompressionMode::Quantized8Legacy11
         | CompressionMode::Quantized16 => {
@@ -363,7 +369,13 @@ fn cmd_decompress(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
             let compressed = &payload[16..];
 
             // Decompress
-            let quantized = zlib_decompress(compressed)?;
+            // one quantised value per original f32 (4 bytes): 1 byte at 8 bits, 2 at 16
+            let value_bytes = if header.mode == CompressionMode::Quantized16 {
+                2
+            } else {
+                1
+            };
+            let quantized = zlib_decompress(compressed, original_size / 4 * value_bytes)?;
 
             // Dequantize
             let floats = if header.mode == CompressionMode::Quantized16 {

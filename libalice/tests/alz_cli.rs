@@ -77,6 +77,30 @@ fn a_mode_it_never_wrote_is_refused() {
     );
 }
 
+// oracle: the header states the original size, so a payload that expands past it is refused before
+// anything is written (exact size passes: `a_file_the_command_wrote_reads_back`)
+#[test]
+fn a_payload_larger_than_its_header_states_is_refused() {
+    let d = tempdir("oversize");
+    let mut alz = compressed(&d);
+    let stated = u64::from_le_bytes(alz[24..32].try_into().unwrap());
+    alz[24..32].copy_from_slice(&(stated - 1).to_le_bytes());
+    let o = decompress(&d, "big.alz", &alz);
+    assert!(
+        !o.status.success(),
+        "a payload past its stated size was read"
+    );
+    assert!(
+        String::from_utf8_lossy(&o.stderr).contains("limit"),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(
+        !d.join("big.alz.out").exists(),
+        "output written for a refused file"
+    );
+}
+
 fn f32_input(dir: &Path) -> (std::path::PathBuf, Vec<f32>) {
     // a ramp with a fold: no transcendental (the crate's lint forbids the
     // platform libm), range 0.25..=6.25
@@ -90,6 +114,47 @@ fn f32_input(dir: &Path) -> (std::path::PathBuf, Vec<f32>) {
     let bytes: Vec<u8> = vals.iter().flat_map(|v| v.to_le_bytes()).collect();
     std::fs::write(&path, bytes).unwrap();
     (path, vals)
+}
+
+// oracle: a quantised file holds one code per original f32, so its stream is bounded by the
+// stated size too (8 and 16 bits)
+#[test]
+fn a_quantised_payload_larger_than_its_header_states_is_refused() {
+    for bits in ["8", "16"] {
+        let d = tempdir(&format!("qbig{bits}"));
+        let (input, _) = f32_input(&d);
+        let alz = d.join("q.alz");
+        run(
+            &d,
+            &[
+                "compress".as_ref(),
+                input.as_os_str(),
+                "-o".as_ref(),
+                alz.as_os_str(),
+                "--bits".as_ref(),
+                bits.as_ref(),
+            ],
+        );
+        let mut bytes = std::fs::read(&alz).unwrap();
+        assert!(
+            matches!(bytes[5], 10 | 12),
+            "bits {bits}: written as mode {}, not quantised",
+            bytes[5]
+        );
+        assert!(decompress(&d, "ok.alz", &bytes).status.success());
+        let stated = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
+        bytes[24..32].copy_from_slice(&(stated - 4).to_le_bytes());
+        let o = decompress(&d, "big.alz", &bytes);
+        assert!(
+            !o.status.success(),
+            "bits {bits}: a payload past its stated size was read"
+        );
+        assert!(
+            String::from_utf8_lossy(&o.stderr).contains("limit"),
+            "bits {bits}: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+    }
 }
 
 fn run(dir: &Path, args: &[&std::ffi::OsStr]) {

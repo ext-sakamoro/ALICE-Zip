@@ -403,8 +403,12 @@ mod python {
     }
 
     #[pyfunction]
-    fn residual_decompress(py: Python<'_>, data: Vec<u8>) -> PyResult<Vec<f32>> {
-        py.detach(|| compression::decompress_residual_quantized(&data))
+    fn residual_decompress(
+        py: Python<'_>,
+        data: Vec<u8>,
+        max_samples: usize,
+    ) -> PyResult<Vec<f32>> {
+        py.detach(|| compression::decompress_residual_quantized(&data, max_samples))
             .map_err(io_err_to_pyerr)
     }
 
@@ -420,8 +424,12 @@ mod python {
     }
 
     #[pyfunction]
-    fn residual_decompress_lossless(py: Python<'_>, data: Vec<u8>) -> PyResult<Vec<f32>> {
-        py.detach(|| compression::decompress_residual_lossless(&data))
+    fn residual_decompress_lossless(
+        py: Python<'_>,
+        data: Vec<u8>,
+        max_samples: usize,
+    ) -> PyResult<Vec<f32>> {
+        py.detach(|| compression::decompress_residual_lossless(&data, max_samples))
             .map_err(io_err_to_pyerr)
     }
 
@@ -433,8 +441,8 @@ mod python {
     }
 
     #[pyfunction]
-    fn lzma_decompress(py: Python<'_>, data: Vec<u8>) -> PyResult<Vec<u8>> {
-        py.detach(|| compression::lzma_decompress(&data))
+    fn lzma_decompress(py: Python<'_>, data: Vec<u8>, max_output: usize) -> PyResult<Vec<u8>> {
+        py.detach(|| compression::lzma_decompress(&data, max_output))
             .map_err(io_err_to_pyerr)
     }
 
@@ -446,8 +454,8 @@ mod python {
     }
 
     #[pyfunction]
-    fn zlib_decompress(py: Python<'_>, data: Vec<u8>) -> PyResult<Vec<u8>> {
-        py.detach(|| compression::zlib_decompress(&data))
+    fn zlib_decompress(py: Python<'_>, data: Vec<u8>, max_output: usize) -> PyResult<Vec<u8>> {
+        py.detach(|| compression::zlib_decompress(&data, max_output))
             .map_err(io_err_to_pyerr)
     }
 }
@@ -484,7 +492,7 @@ mod tests {
         // Test LZMA roundtrip
         let data = b"Hello, World! This is a test.".to_vec();
         let compressed = compression::lzma_compress(&data, 6).unwrap();
-        let decompressed = compression::lzma_decompress(&compressed).unwrap();
+        let decompressed = compression::lzma_decompress(&compressed, data.len()).unwrap();
         assert_eq!(data, decompressed);
 
         // Test quantization roundtrip
