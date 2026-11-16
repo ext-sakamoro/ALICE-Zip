@@ -21,4 +21,6 @@ alice-sign = { git = "https://github.com/ext-sakamoro/ALICE-Sign", branch = "mai
 wasm-bindgen = "0.2"
 
 [dev-dependencies]
+# zlib and LZMA in the browser target (tests only: the page build keeps the no_std core)
+alice-zip = { path = "..", features = ["std", "lzma"] }
 wasm-bindgen-test = "0.3"

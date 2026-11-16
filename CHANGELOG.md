@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `PerlinNoise::fbm` を deprecated にした (拒む入力で黙って 0.0 を返すため) `try_fbm` を使う
 
 ### Fixed
+
+- `std` で build した crate が browser の target (wasm32-unknown-unknown) で link できるようになった 以前は `std` が rand / rand_chacha の `std` も有効にし、それが getrandom を引いて、getrandom は `js` feature 無しではこの target を持たないので build が止まっていた (zlib・LZMA の `compression` module はこの target で使えなかった) rand / rand_chacha は seed から作る生成だけに使っているので、`std` はそれらの `std` を有効にしない 生成の結果・識別子は変わらない (code は変えておらず、seed 付きの生成は `std` の有無で同じ値) 試験: `wasm/tests/compression.rs` が host と Node の両方で、記録した encoder の bytes (`check_codec_bytes` が deflate と lzma の 2 つを比べる)、probe 入力の zlib (level 1 / 6 / 9) と LZMA の往復、上限を 1 byte 下回る展開の拒否を確かめる (CI の wasm-entry job、host と Node の通過数が等しく 5 以上)
 - fBm (`generate_fbm_1d`、`generate_perlin_advanced`、`PerlinNoise::fbm`) の octaves は繰り返しの回数で上限が無く、octaves が `u32::MAX` 近くの model は 1 点に約 40 億回の計算をした また周波数が f32 を出ると位置が inf になり noise が NaN になった 点の数 × octaves が `MAX_FBM_STEPS` を超える呼び出しは計算と確保の前に `InvalidParameter` で拒む、振幅が 0 になった octave で和を止める (以後は何も足さない)、位置が有限でない octave は `InvalidParameter` 範囲内の入力の結果の bit は変わらない (`ZIP_SEMANTICS_ID` は動かない)
 - ALICE_IMG と ALICE_VID の keyframe は、記載された大きさが `MAX_OUTPUT_SIZE` (既定 4 GiB) を超えると確保の前に `MemoryError` で拒む 確保の失敗は native 拡張ではプロセスを終わらせていた `libalice.media_image` も同じ上限で拒む
 - ALICE_AUD も、記載された長さの 16 bit のサンプルが `MAX_OUTPUT_SIZE` を超えると生成の前に `MemoryError` で拒む 長さ 1e12 秒の file は上限なしで生成を続けていた

@@ -43,7 +43,10 @@ default = ["std"]
 # and the exactly-rounded float operations (`sqrt` / `floor` / `round`) go
 # through `libm`. The transcendentals do not depend on this feature: they go
 # through `alice-det-math` in both builds.
-std = ["dep:flate2", "rand/std", "rand_chacha/std", "alice-det-math/std"]
+# rand / rand_chacha are used seeded only (`SeedableRng::seed_from_u64`), so `std` does not turn on
+# their `std` (which pulls getrandom, and getrandom has no wasm32-unknown-unknown backend without
+# its `js` feature): with `std`, the crate builds for the browser target too.
+std = ["dep:flate2", "alice-det-math/std"]
 # `generators::analyze_signal_fft` (same contract as the naive DFT
 # `analyze_signal`, O(n log n), an in-crate f64 transform with the same bits on
 # every target); implies `std`.
