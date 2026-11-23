@@ -451,16 +451,16 @@ cargo build --manifest-path libalice/Cargo.toml --release
 
 どれも同じ考え方を共有する: **データそのものでなく、生成の手順を符号化する**
 
-<!-- law-integration:begin law=ffcc3d5a9395f4620aec29c5244fc2c528122fb0 -->
+<!-- law-integration:begin law=4bb6b5045e12169f6a7676ee606868b39332b6bc -->
 ## ALICE-Law との統合
 
-ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `ffcc3d5a9395` とこの repository の `alice-law-conformance.toml` から生成する 手で編集しない
+ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `4bb6b5045e12` とこの repository の `alice-law-conformance.toml` から生成する 手で編集しない
 
 | | |
 |---|---|
-| release train | alice-zip 0.10.0 (published)、Law への依存: あり |
-| 算術 | main branch の alice-det-math 0.6.1、算術の識別子 `6fc214e924c53557f33775df51f1f8dfe2f246d67a9e493d6fb5837d999022f2` (release train の alice-det-math は 0.5.1 で、測った版と違う) この crate の要求は `alice-det-math = "0.6"` |
-| end to end 検査 | 対象 (`alice-zip` 0.11、main branch から)、値の digest `66b99010e871b2bc099ad5a4dd0f7c34cc5d6731f1c2a0459c0dd58284b081d7`、aarch64 と x86_64 で同じ |
+| release train | alice-zip 0.12.0 (main 52186410b2f4)、Law への依存: あり |
+| 算術 | main branch の alice-det-math 0.6.1、算術の識別子 `6fc214e924c53557f33775df51f1f8dfe2f246d67a9e493d6fb5837d999022f2` この crate の要求は `alice-det-math = "0.6"` |
+| end to end 検査 | 対象 (`alice-zip` 0.12、main branch から)、値の digest `d1a37d5f3bf2590657f8507277f1661ea9f7ea27bb0b492e7952add280f2a414`、aarch64 と x86_64 で同じ |
 
 ### 適合 (G1-G14)
 
