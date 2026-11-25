@@ -1,7 +1,7 @@
 //! License Key Generation and Parsing
 
+use alice_ephemeris::time::{CivilDate, Timestamp};
 use bitflags::bitflags;
-use chrono::{NaiveDate, Utc};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
@@ -120,14 +120,47 @@ impl Feature {
     }
 }
 
-/// The current date in UTC (the only place the license code reads the clock)
-fn today_utc() -> NaiveDate {
-    Utc::now().date_naive()
+/// The current date in UTC (the only place the license code reads the clock; every date
+/// computation takes `today` as an argument)
+#[allow(
+    clippy::disallowed_methods,
+    reason = "license expiry is a wall-clock date by definition; read once here and passed in everywhere else"
+)]
+fn today_utc() -> CivilDate {
+    // an offset of 0 is less than a day, and the Timestamp range lies inside the calendar's
+    Timestamp::from_system_time(std::time::SystemTime::now())
+        .civil_date_at_offset(0)
+        .expect("the UTC date of a Timestamp exists")
 }
 
-/// The expiry date of a trial of `days` days started on `today`
-fn trial_expiry(today: NaiveDate, days: u16) -> NaiveDate {
-    today + chrono::Duration::days(i64::from(days))
+/// The expiry date of a trial of `days` days started on `today`: midnight UTC of `today`,
+/// `days` days later
+fn trial_expiry(today: CivilDate, days: u16) -> CivilDate {
+    const EPOCH_DAY: i64 = 86_400;
+    let epoch = CivilDate::from_ymd(1970, 1, 1).expect("1970-01-01 is a date");
+    // |days since 1970| stays far below i64::MAX / 86 400 for every date a Timestamp holds
+    let midnight = Timestamp::from_unix(epoch.days_until(today) * EPOCH_DAY, 0)
+        .expect("midnight of a calendar date is in the Timestamp range");
+    midnight
+        .plus_days(i64::from(days))
+        .civil_date_at_offset(0)
+        .expect("the UTC date of a Timestamp exists")
+}
+
+/// The `YYYYMMDD` text of a date in the key (years 0..=9999, the only ones a key can carry)
+fn expiry_text(d: CivilDate) -> String {
+    format!("{:04}{:02}{:02}", d.year(), d.month(), d.day())
+}
+
+/// The date of an 8-digit `YYYYMMDD` text; `None` for any other text or a day not in the calendar
+fn parse_expiry(text: &str) -> Option<CivilDate> {
+    if text.len() != 8 || !text.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let year = text[0..4].parse::<i64>().ok()?;
+    let month = text[4..6].parse::<u8>().ok()?;
+    let day = text[6..8].parse::<u8>().ok()?;
+    CivilDate::from_ymd(year, month, day).ok()
 }
 
 /// Secret salt for checksum (in production, use environment variable)
@@ -138,13 +171,13 @@ const LICENSE_SALT: &str = "ALICE-ZIP-ENT-2026-SAKAMOTO";
 pub struct LicenseKey {
     license_type: LicenseType,
     features: Feature,
-    expiry_date: Option<NaiveDate>,
+    expiry_date: Option<CivilDate>,
     raw_key: String,
 }
 
 impl LicenseKey {
     /// Generate a new license key
-    pub fn generate(license_type: LicenseType, expiry: Option<NaiveDate>) -> String {
+    pub fn generate(license_type: LicenseType, expiry: Option<CivilDate>) -> String {
         let features = license_type.default_features();
         Self::generate_with_features(license_type, features, expiry)
     }
@@ -153,12 +186,12 @@ impl LicenseKey {
     pub fn generate_with_features(
         license_type: LicenseType,
         features: Feature,
-        expiry: Option<NaiveDate>,
+        expiry: Option<CivilDate>,
     ) -> String {
         let type_code = license_type.code();
         let features_hex = format!("{:02X}", features.bits());
         let expiry_str = expiry
-            .map(|d| d.format("%Y%m%d").to_string())
+            .map(expiry_text)
             .unwrap_or_else(|| "00000000".to_string());
 
         let checksum = Self::compute_checksum(type_code, &features_hex, &expiry_str);
@@ -204,10 +237,7 @@ impl LicenseKey {
         let expiry_date = if expiry_str == "00000000" {
             None
         } else {
-            Some(
-                NaiveDate::parse_from_str(expiry_str, "%Y%m%d")
-                    .map_err(|_| LicenseError::InvalidFormat)?,
-            )
+            Some(parse_expiry(expiry_str).ok_or(LicenseError::InvalidFormat)?)
         };
 
         // Validate checksum
@@ -248,7 +278,7 @@ impl LicenseKey {
     }
 
     /// Get expiry date
-    pub fn expiry_date(&self) -> Option<NaiveDate> {
+    pub fn expiry_date(&self) -> Option<CivilDate> {
         self.expiry_date
     }
 
@@ -263,7 +293,7 @@ impl LicenseKey {
     }
 
     /// Whether the license is expired on `today` (the day after its expiry date and later)
-    fn is_expired_on(&self, today: NaiveDate) -> bool {
+    fn is_expired_on(&self, today: CivilDate) -> bool {
         self.expiry_date.map(|d| today > d).unwrap_or(false)
     }
 
@@ -273,8 +303,8 @@ impl LicenseKey {
     }
 
     /// Whole days from `today` to the expiry date, 0 on and after it
-    fn days_remaining_on(&self, today: NaiveDate) -> Option<i64> {
-        self.expiry_date.map(|d| (d - today).num_days().max(0))
+    fn days_remaining_on(&self, today: CivilDate) -> Option<i64> {
+        self.expiry_date.map(|d| today.days_until(d).max(0))
     }
 
     /// Get raw key string
@@ -369,8 +399,8 @@ mod tests {
 mod golden_tests {
     use super::*;
 
-    fn ymd(y: i32, m: u32, d: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(y, m, d).expect("a valid test date")
+    fn ymd(y: i64, m: u8, d: u8) -> CivilDate {
+        CivilDate::from_ymd(y, m, d).expect("a valid test date")
     }
 
     #[test]
@@ -421,6 +451,23 @@ mod golden_tests {
             "ALZ-PRO-05-20261301-C730",
             "ALZ-PRO-05-20260000-5437",
             "ALZ-PRO-05-20260431-BD46",
+        ] {
+            assert!(
+                matches!(LicenseKey::parse(key), Err(LicenseError::InvalidFormat)),
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn expiry_texts_that_are_not_eight_digits_are_refused() {
+        // checksums computed outside the crate for each text, so only the date form can refuse
+        // it: 7 digits, 9 digits, a space, a sign
+        for key in [
+            "ALZ-PRO-05-2026123-DB87",
+            "ALZ-PRO-05-202612311-2768",
+            "ALZ-PRO-05-2026 231-18F1",
+            "ALZ-PRO-05-+2026123-A2C6",
         ] {
             assert!(
                 matches!(LicenseKey::parse(key), Err(LicenseError::InvalidFormat)),

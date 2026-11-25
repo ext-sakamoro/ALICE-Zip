@@ -32,8 +32,8 @@ thiserror = "1.0"
 # Bitflags for feature flags
 bitflags = "2.4"
 
-# Time
-chrono = { version = "0.4", features = ["serde"] }
+# Time (calendar dates of license expiry)
+alice-ephemeris = { git = "https://github.com/ext-sakamoro/ALICE-Ephemeris", branch = "main", version = "0.1" }
 
 [features]
 default = ["security", "license"]
