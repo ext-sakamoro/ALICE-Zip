@@ -70,6 +70,11 @@ jobs:
       # and what 0.10 wrote reads here as legacy, to the same samples
       - name: Released 0.10 formats against the current ones (refused one way, legacy the other)
         run: scripts/run_tests.sh refuses_the_current_format=2,residual_containers_across_versions=2 -- cargo test --manifest-path compat/v0_10_reader/Cargo.toml --locked
+      # libalice-enterprise is its own package with its own lock file: its unit tests
+      # (license keys, access control, the crypto wrappers) run here, and a lib
+      # section that runs fewer tests than these fails the step
+      - name: libalice-enterprise unit tests
+        run: scripts/run_tests.sh lib=32 -- cargo test --manifest-path libalice-enterprise/Cargo.toml --locked
       # each published version in one place (libalice from its Cargo.toml) or
       # agreeing where it is written twice; 0 comparisons fail
       - name: Versions agree
