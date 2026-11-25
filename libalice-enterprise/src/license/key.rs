@@ -1,9 +1,9 @@
 //! License Key Generation and Parsing
 
-use sha2::{Sha256, Digest};
-use thiserror::Error;
-use chrono::{NaiveDate, Utc};
 use bitflags::bitflags;
+use chrono::{NaiveDate, Utc};
+use sha2::{Digest, Sha256};
+use thiserror::Error;
 
 /// License validation errors
 #[derive(Error, Debug)]
@@ -120,6 +120,16 @@ impl Feature {
     }
 }
 
+/// The current date in UTC (the only place the license code reads the clock)
+fn today_utc() -> NaiveDate {
+    Utc::now().date_naive()
+}
+
+/// The expiry date of a trial of `days` days started on `today`
+fn trial_expiry(today: NaiveDate, days: u16) -> NaiveDate {
+    today + chrono::Duration::days(i64::from(days))
+}
+
 /// Secret salt for checksum (in production, use environment variable)
 const LICENSE_SALT: &str = "ALICE-ZIP-ENT-2026-SAKAMOTO";
 
@@ -153,13 +163,15 @@ impl LicenseKey {
 
         let checksum = Self::compute_checksum(type_code, &features_hex, &expiry_str);
 
-        format!("ALZ-{}-{}-{}-{}", type_code, features_hex, expiry_str, checksum)
+        format!(
+            "ALZ-{}-{}-{}-{}",
+            type_code, features_hex, expiry_str, checksum
+        )
     }
 
     /// Generate trial license key
     pub fn generate_trial(days: u16) -> String {
-        let expiry = Utc::now().date_naive() + chrono::Duration::days(days as i64);
-        Self::generate(LicenseType::Trial, Some(expiry))
+        Self::generate(LicenseType::Trial, Some(trial_expiry(today_utc(), days)))
     }
 
     /// Parse a license key
@@ -184,17 +196,18 @@ impl LicenseKey {
             .ok_or_else(|| LicenseError::InvalidType(type_code.to_string()))?;
 
         // Validate features
-        let features_int = u16::from_str_radix(features_hex, 16)
-            .map_err(|_| LicenseError::InvalidFormat)?;
-        let features = Feature::from_bits(features_int)
-            .ok_or(LicenseError::InvalidFormat)?;
+        let features_int =
+            u16::from_str_radix(features_hex, 16).map_err(|_| LicenseError::InvalidFormat)?;
+        let features = Feature::from_bits(features_int).ok_or(LicenseError::InvalidFormat)?;
 
         // Validate expiry
         let expiry_date = if expiry_str == "00000000" {
             None
         } else {
-            Some(NaiveDate::parse_from_str(expiry_str, "%Y%m%d")
-                .map_err(|_| LicenseError::InvalidFormat)?)
+            Some(
+                NaiveDate::parse_from_str(expiry_str, "%Y%m%d")
+                    .map_err(|_| LicenseError::InvalidFormat)?,
+            )
         };
 
         // Validate checksum
@@ -246,17 +259,22 @@ impl LicenseKey {
 
     /// Check if license is expired
     pub fn is_expired(&self) -> bool {
-        self.expiry_date
-            .map(|d| Utc::now().date_naive() > d)
-            .unwrap_or(false)
+        self.is_expired_on(today_utc())
+    }
+
+    /// Whether the license is expired on `today` (the day after its expiry date and later)
+    fn is_expired_on(&self, today: NaiveDate) -> bool {
+        self.expiry_date.map(|d| today > d).unwrap_or(false)
     }
 
     /// Get days remaining until expiry
     pub fn days_remaining(&self) -> Option<i64> {
-        self.expiry_date.map(|d| {
-            let today = Utc::now().date_naive();
-            (d - today).num_days().max(0)
-        })
+        self.days_remaining_on(today_utc())
+    }
+
+    /// Whole days from `today` to the expiry date, 0 on and after it
+    fn days_remaining_on(&self, today: NaiveDate) -> Option<i64> {
+        self.expiry_date.map(|d| (d - today).num_days().max(0))
     }
 
     /// Get raw key string
@@ -308,7 +326,7 @@ mod tests {
     #[test]
     fn test_corrupted_checksum() {
         let key = LicenseKey::generate(LicenseType::Professional, None);
-        let corrupted = format!("{}XXXX", &key[..key.len()-4]);
+        let corrupted = format!("{}XXXX", &key[..key.len() - 4]);
         assert!(LicenseKey::parse(&corrupted).is_err());
     }
 
@@ -341,5 +359,104 @@ mod tests {
         assert!(parsed.has_feature(Feature::ENCRYPTION));
         assert!(parsed.has_feature(Feature::QUANTUM));
         assert!(parsed.has_feature(Feature::API));
+    }
+}
+
+/// Goldens of the key text and the date arithmetic. The expected keys were computed outside this
+/// crate (Python: SHA-256 of `TYPE-FEATURES-YYYYMMDD-salt`, first two bytes in upper-case hex) and
+/// the expected dates with Python's `datetime`, so they hold whatever date type the code uses.
+#[cfg(test)]
+mod golden_tests {
+    use super::*;
+
+    fn ymd(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).expect("a valid test date")
+    }
+
+    #[test]
+    fn keys_for_fixed_dates() {
+        let cases = [
+            (
+                LicenseType::Professional,
+                0x05,
+                Some(ymd(2026, 12, 31)),
+                "ALZ-PRO-05-20261231-CB94",
+            ),
+            (
+                LicenseType::Trial,
+                0x01,
+                Some(ymd(2024, 2, 29)),
+                "ALZ-TRL-01-20240229-5560",
+            ),
+            (
+                LicenseType::Enterprise,
+                0xFF,
+                None,
+                "ALZ-ENT-FF-00000000-9B23",
+            ),
+            (
+                LicenseType::Standard,
+                0x03,
+                Some(ymd(9999, 12, 31)),
+                "ALZ-STD-03-99991231-8C1F",
+            ),
+        ];
+        for (t, bits, expiry, want) in cases {
+            let key =
+                LicenseKey::generate_with_features(t, Feature::from_bits_truncate(bits), expiry);
+            assert_eq!(key, want);
+            let parsed = LicenseKey::parse(&key).expect("a generated key parses");
+            assert_eq!(parsed.license_type(), t);
+            assert_eq!(parsed.features().bits(), bits);
+            assert_eq!(parsed.expiry_date(), expiry);
+            assert_eq!(parsed.is_perpetual(), expiry.is_none());
+        }
+    }
+
+    #[test]
+    fn keys_whose_date_is_not_a_calendar_date_are_refused() {
+        // each has the right checksum for its text, so only the date can refuse it
+        for key in [
+            "ALZ-PRO-05-20230229-880E",
+            "ALZ-PRO-05-20261301-C730",
+            "ALZ-PRO-05-20260000-5437",
+            "ALZ-PRO-05-20260431-BD46",
+        ] {
+            assert!(
+                matches!(LicenseKey::parse(key), Err(LicenseError::InvalidFormat)),
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn trial_expiry_adds_whole_days() {
+        for (start, days, want) in [
+            (ymd(2026, 11, 25), 14, ymd(2026, 12, 9)),
+            (ymd(2024, 2, 20), 14, ymd(2024, 3, 5)),
+            (ymd(2023, 12, 25), 10, ymd(2024, 1, 4)),
+            (ymd(2026, 1, 1), 0, ymd(2026, 1, 1)),
+            (ymd(2026, 1, 1), u16::MAX, ymd(2205, 6, 7)),
+        ] {
+            assert_eq!(trial_expiry(start, days), want, "{start} + {days}");
+        }
+    }
+
+    #[test]
+    fn expiry_and_days_remaining_on_a_given_day() {
+        let key = LicenseKey::parse("ALZ-PRO-05-20261231-CB94").expect("golden key");
+        for (today, expired, left) in [
+            (ymd(2026, 1, 1), false, 364),
+            (ymd(2026, 12, 30), false, 1),
+            (ymd(2026, 12, 31), false, 0),
+            (ymd(2027, 1, 1), true, 0),
+            (ymd(2030, 6, 1), true, 0),
+        ] {
+            assert_eq!(key.is_expired_on(today), expired, "{today}");
+            assert_eq!(key.days_remaining_on(today), Some(left), "{today}");
+        }
+        let perpetual = LicenseKey::parse("ALZ-ENT-FF-00000000-9B23").expect("golden key");
+        assert!(!perpetual.is_expired_on(ymd(9999, 12, 31)));
+        assert_eq!(perpetual.days_remaining_on(ymd(2026, 1, 1)), None);
     }
 }
