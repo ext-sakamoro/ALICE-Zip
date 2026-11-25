@@ -1659,7 +1659,7 @@ step "ci.yml / test: Released 0.10 formats against the current ones (refused one
 step "ci.yml / test: libalice-enterprise unit tests"
 (
   gh_step ci.yml.test
-( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh lib=32 -- cargo test --manifest-path libalice-enterprise/Cargo.toml --locked )
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; scripts/run_tests.sh lib=36 -- cargo test --manifest-path libalice-enterprise/Cargo.toml --locked )
 )
 
 step "ci.yml / test: Codec bytes (independent implementation and decoder)"

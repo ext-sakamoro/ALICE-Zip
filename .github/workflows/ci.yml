@@ -74,7 +74,7 @@ jobs:
       # (license keys, access control, the crypto wrappers) run here, and a lib
       # section that runs fewer tests than these fails the step
       - name: libalice-enterprise unit tests
-        run: scripts/run_tests.sh lib=32 -- cargo test --manifest-path libalice-enterprise/Cargo.toml --locked
+        run: scripts/run_tests.sh lib=36 -- cargo test --manifest-path libalice-enterprise/Cargo.toml --locked
       # each published version in one place (libalice from its Cargo.toml) or
       # agreeing where it is written twice; 0 comparisons fail
       - name: Versions agree
