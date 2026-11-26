@@ -1,6 +1,6 @@
 [package]
 name = "alice-zip-enterprise"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 authors = ["Moroya Sakamoto"]
 description = "ALICE-Zip Enterprise Edition - Commercial features for ALICE-Zip compression"
