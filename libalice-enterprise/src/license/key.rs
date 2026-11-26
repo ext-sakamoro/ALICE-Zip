@@ -1,6 +1,7 @@
 //! License Key Generation and Parsing
 
 use alice_ephemeris::time::{CivilDate, Timestamp};
+use alice_ephemeris::{civil_from_mjd, mjd_from_civil};
 use bitflags::bitflags;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -27,6 +28,10 @@ pub enum LicenseError {
     /// Feature not available
     #[error("feature not available: {0}")]
     FeatureNotAvailable(String),
+
+    /// A date outside what a key can carry (years 0..=9999) or outside the calendar
+    #[error("date out of range for a license key")]
+    DateOutOfRange,
 }
 
 /// License types
@@ -126,25 +131,26 @@ impl Feature {
     clippy::disallowed_methods,
     reason = "license expiry is a wall-clock date by definition; read once here and passed in everywhere else"
 )]
-fn today_utc() -> CivilDate {
-    // an offset of 0 is less than a day, and the Timestamp range lies inside the calendar's
-    Timestamp::from_system_time(std::time::SystemTime::now())
-        .civil_date_at_offset(0)
-        .expect("the UTC date of a Timestamp exists")
+fn today_utc() -> Result<CivilDate, LicenseError> {
+    utc_date(Timestamp::from_system_time(std::time::SystemTime::now()))
 }
 
-/// The expiry date of a trial of `days` days started on `today`: midnight UTC of `today`,
-/// `days` days later
-fn trial_expiry(today: CivilDate, days: u16) -> CivilDate {
-    const EPOCH_DAY: i64 = 86_400;
-    let epoch = CivilDate::from_ymd(1970, 1, 1).expect("1970-01-01 is a date");
-    // |days since 1970| stays far below i64::MAX / 86 400 for every date a Timestamp holds
-    let midnight = Timestamp::from_unix(epoch.days_until(today) * EPOCH_DAY, 0)
-        .expect("midnight of a calendar date is in the Timestamp range");
-    midnight
-        .plus_days(i64::from(days))
-        .civil_date_at_offset(0)
-        .expect("the UTC date of a Timestamp exists")
+/// The UTC calendar date of `t`
+fn utc_date(t: Timestamp) -> Result<CivilDate, LicenseError> {
+    t.civil_date_at_offset(0)
+        .ok_or(LicenseError::DateOutOfRange)
+}
+
+/// The expiry date of a trial of `days` days started on `today`: `days` calendar days later.
+/// [`LicenseError::DateOutOfRange`] when that date is outside the years a key carries (0..=9999)
+fn trial_expiry(today: CivilDate, days: u16) -> Result<CivilDate, LicenseError> {
+    let out = |_| LicenseError::DateOutOfRange;
+    let start = mjd_from_civil(today.year(), today.month(), today.day()).map_err(out)?;
+    let (year, month, day) = civil_from_mjd(start + i64::from(days)).map_err(out)?;
+    if !(0..=9999).contains(&year) {
+        return Err(LicenseError::DateOutOfRange);
+    }
+    CivilDate::from_ymd(year, month, day).map_err(out)
 }
 
 /// The `YYYYMMDD` text of a date in the key (years 0..=9999, the only ones a key can carry)
@@ -203,8 +209,11 @@ impl LicenseKey {
     }
 
     /// Generate trial license key
-    pub fn generate_trial(days: u16) -> String {
-        Self::generate(LicenseType::Trial, Some(trial_expiry(today_utc(), days)))
+    ///
+    /// [`LicenseError::DateOutOfRange`] when the expiry falls outside the years a key carries
+    pub fn generate_trial(days: u16) -> Result<String, LicenseError> {
+        let expiry = trial_expiry(today_utc()?, days)?;
+        Ok(Self::generate(LicenseType::Trial, Some(expiry)))
     }
 
     /// Parse a license key
@@ -287,9 +296,9 @@ impl LicenseKey {
         self.expiry_date.is_none()
     }
 
-    /// Check if license is expired
-    pub fn is_expired(&self) -> bool {
-        self.is_expired_on(today_utc())
+    /// Check if license is expired (an error when today's date cannot be read)
+    pub fn is_expired(&self) -> Result<bool, LicenseError> {
+        Ok(self.is_expired_on(today_utc()?))
     }
 
     /// Whether the license is expired on `today` (the day after its expiry date and later)
@@ -297,9 +306,9 @@ impl LicenseKey {
         self.expiry_date.map(|d| today > d).unwrap_or(false)
     }
 
-    /// Get days remaining until expiry
-    pub fn days_remaining(&self) -> Option<i64> {
-        self.days_remaining_on(today_utc())
+    /// Get days remaining until expiry (an error when today's date cannot be read)
+    pub fn days_remaining(&self) -> Result<Option<i64>, LicenseError> {
+        Ok(self.days_remaining_on(today_utc()?))
     }
 
     /// Whole days from `today` to the expiry date, 0 on and after it
@@ -343,7 +352,7 @@ mod tests {
 
         assert_eq!(parsed.license_type(), LicenseType::Professional);
         assert!(parsed.is_perpetual());
-        assert!(!parsed.is_expired());
+        assert!(!parsed.is_expired().unwrap());
     }
 
     #[test]
@@ -362,13 +371,13 @@ mod tests {
 
     #[test]
     fn test_trial_expiry() {
-        let key = LicenseKey::generate_trial(14);
+        let key = LicenseKey::generate_trial(14).unwrap();
         let parsed = LicenseKey::parse(&key).unwrap();
 
         assert_eq!(parsed.license_type(), LicenseType::Trial);
         assert!(!parsed.is_perpetual());
-        assert!(!parsed.is_expired());
-        assert!(parsed.days_remaining().unwrap() <= 14);
+        assert!(!parsed.is_expired().unwrap());
+        assert!(parsed.days_remaining().unwrap().unwrap() <= 14);
     }
 
     #[test]
@@ -485,8 +494,38 @@ mod golden_tests {
             (ymd(2026, 1, 1), 0, ymd(2026, 1, 1)),
             (ymd(2026, 1, 1), u16::MAX, ymd(2205, 6, 7)),
         ] {
-            assert_eq!(trial_expiry(start, days), want, "{start} + {days}");
+            assert_eq!(trial_expiry(start, days).unwrap(), want, "{start} + {days}");
         }
+    }
+
+    #[test]
+    fn trial_expiry_outside_the_years_a_key_carries_is_an_error() {
+        for (start, days) in [
+            (ymd(9999, 12, 31), 1),
+            (ymd(9900, 1, 1), u16::MAX),
+            (ymd(-1, 12, 1), 30),
+            (ymd(1_000_000_000, 12, 31), 0),
+        ] {
+            assert!(
+                matches!(trial_expiry(start, days), Err(LicenseError::DateOutOfRange)),
+                "{start} + {days}"
+            );
+        }
+        // the last day a key carries is still a date
+        assert_eq!(
+            trial_expiry(ymd(9999, 12, 30), 1).unwrap(),
+            ymd(9999, 12, 31)
+        );
+        assert_eq!(trial_expiry(ymd(-1, 12, 31), 1).unwrap(), ymd(0, 1, 1));
+    }
+
+    #[test]
+    fn the_utc_date_of_every_timestamp_is_read() {
+        // the Timestamp range lies inside the calendar's, so the error branch is not reached from a
+        // Timestamp; both ends of the range give a date
+        assert_eq!(utc_date(Timestamp::UNIX_EPOCH).unwrap(), ymd(1970, 1, 1));
+        assert_eq!(utc_date(Timestamp::MIN).unwrap(), ymd(-262_143, 1, 1));
+        assert_eq!(utc_date(Timestamp::MAX).unwrap(), ymd(262_142, 12, 31));
     }
 
     #[test]

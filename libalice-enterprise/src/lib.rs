@@ -44,14 +44,15 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Returns `true` if the license is valid and not expired.
 pub fn validate_license(key: &str) -> bool {
     license::LicenseKey::parse(key)
-        .map(|k| !k.is_expired())
+        .map(|k| matches!(k.is_expired(), Ok(false)))
         .unwrap_or(false)
 }
 
 /// Activate trial license
 ///
-/// Returns trial license key valid for specified days.
-pub fn activate_trial(days: u16) -> String {
+/// Returns trial license key valid for specified days, or
+/// [`license::LicenseError::DateOutOfRange`] when its expiry is outside the years a key carries.
+pub fn activate_trial(days: u16) -> Result<String, license::LicenseError> {
     license::LicenseKey::generate_trial(days)
 }
 

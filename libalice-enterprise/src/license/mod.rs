@@ -45,7 +45,7 @@ pub mod global {
     /// Initialize with a license key
     pub fn init(key: &str) -> Result<(), super::LicenseError> {
         let license = LicenseKey::parse(key)?;
-        if license.is_expired() {
+        if license.is_expired()? {
             return Err(super::LicenseError::Expired);
         }
         let mut guard = CURRENT_LICENSE.write().unwrap();
@@ -54,9 +54,8 @@ pub mod global {
     }
 
     /// Activate trial license
-    pub fn activate_trial(days: u16) {
-        let key = LicenseKey::generate_trial(days);
-        let _ = init(&key);
+    pub fn activate_trial(days: u16) -> Result<(), super::LicenseError> {
+        init(&LicenseKey::generate_trial(days)?)
     }
 
     /// Check if a feature is available
@@ -97,20 +96,20 @@ mod tests {
         let key = LicenseKey::generate(LicenseType::Professional, None);
         let parsed = LicenseKey::parse(&key).unwrap();
         assert_eq!(parsed.license_type(), LicenseType::Professional);
-        assert!(!parsed.is_expired());
+        assert!(!parsed.is_expired().unwrap());
     }
 
     #[test]
     fn test_trial_key() {
-        let key = LicenseKey::generate_trial(14);
+        let key = LicenseKey::generate_trial(14).unwrap();
         let parsed = LicenseKey::parse(&key).unwrap();
         assert_eq!(parsed.license_type(), LicenseType::Trial);
-        assert!(parsed.days_remaining().unwrap() <= 14);
+        assert!(parsed.days_remaining().unwrap().unwrap() <= 14);
     }
 
     #[test]
     fn test_global_api() {
-        global::activate_trial(30);
+        global::activate_trial(30).unwrap();
         assert!(global::has_feature("encryption"));
         global::clear();
     }

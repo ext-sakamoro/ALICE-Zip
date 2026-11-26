@@ -40,10 +40,10 @@ let key = LicenseKey::generate(LicenseType::Professional, None);
 
 // Parse and validate
 let license = LicenseKey::parse(&key)?;
-assert!(!license.is_expired());
+assert!(!license.is_expired()?);
 
 // Activate trial (14 days)
-let trial_key = LicenseKey::generate_trial(14);
+let trial_key = LicenseKey::generate_trial(14)?;
 ```
 
 ### Encrypted Archives
