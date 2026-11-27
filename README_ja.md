@@ -451,10 +451,10 @@ cargo build --manifest-path libalice/Cargo.toml --release
 
 どれも同じ考え方を共有する: **データそのものでなく、生成の手順を符号化する**
 
-<!-- law-integration:begin law=e6544bea973fd11ae6399caa7492486cd4d26d52 -->
+<!-- law-integration:begin law=04e44e4a20b566eda60284f8d4cf29959f41b641 -->
 ## ALICE-Law との統合
 
-ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `e6544bea973f` とこの repository の `alice-law-conformance.toml` から生成する 手で編集しない
+ALICE-Law の `scripts/gen-law-readme-block.py` が ALICE-Law `04e44e4a20b5` とこの repository の `alice-law-conformance.toml` から生成する 手で編集しない
 
 | | |
 |---|---|
