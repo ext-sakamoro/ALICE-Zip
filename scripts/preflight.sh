@@ -6,8 +6,10 @@
 # Run `--quick` before every push.
 #
 # usage: scripts/preflight.sh [--quick]   (--quick skips the test / bench suites)
-# generator rev 13c60fc63085b2e65d558ab66e5fb9ed5fbdedd6
+# generator rev eac8a868aa22d7410344c5257e4b03ab4565e422
 set -euo pipefail
+[ -z "${ALICE_PREFLIGHT_RUNNING:-}" ] || { echo "preflight: already running in this process tree (pid ${ALICE_PREFLIGHT_RUNNING}): a step runs this file again" >&2; exit 1; }
+export ALICE_PREFLIGHT_RUNNING=$$
 cd "$(dirname "$0")/.."
 # --- heavy slot (begin) ---
 # ALICE_HEAVY_SLOTS (default 2, 1..16) heavy runs at a time on this machine. Slot k is a lock the kernel holds (flock
@@ -1002,6 +1004,12 @@ step "ci.yml / clippy: README ALICE-Law block preflight check (tests)"
 (
   gh_step ci.yml.clippy
 ( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; python3 scripts/test_law_readme_block_check.py )
+)
+
+step "ci.yml / clippy: README ALICE-Law block names the pinned revision"
+(
+  gh_step ci.yml.clippy
+( export CARGO_TERM_COLOR="always" ALL_FEATURES="std,fft,parallel,lzma"; python3 scripts/law_readme_block_check.py )
 )
 
 step "ci.yml / clippy: Clippy canary (every planted banned call is flagged)"
